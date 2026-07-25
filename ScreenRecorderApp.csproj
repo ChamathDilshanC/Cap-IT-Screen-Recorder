@@ -37,7 +37,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="ffmpeg\ffmpeg.exe">
+    <!-- ffmpeg.exe is a large third-party binary excluded from git (see ffmpeg/README.md) — the
+         Condition keeps a fresh clone buildable before that file has been downloaded/placed locally. -->
+    <None Include="ffmpeg\ffmpeg.exe" Condition="Exists('ffmpeg\ffmpeg.exe')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>

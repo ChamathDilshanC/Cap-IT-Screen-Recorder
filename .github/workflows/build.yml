@@ -1,0 +1,29 @@
+name: Build
+
+# WinUI 3 / Windows App SDK targets require the Windows SDK + MSBuild toolset, so this only runs on
+# windows-latest — it cannot build on ubuntu-latest or macos-latest. There's no test project yet, so
+# this just verifies the app still compiles for x64 on every push/PR.
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore -p:Platform=x64
+
+      - name: Build
+        run: dotnet build -c Release -p:Platform=x64 --no-restore
