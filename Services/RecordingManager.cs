@@ -1,0 +1,240 @@
+using ScreenRecorderApp.Models;
+using ScreenRecorderApp.Services.Capture;
+using ScreenRecorderApp.Services.Encoding;
+
+namespace ScreenRecorderApp.Services;
+
+/// <summary>
+/// Orchestrates video capture, audio capture, and the FFmpeg encoder into a single record/pause/stop
+/// session. Decouples the event-driven screen capture from a fixed-FPS output by re-sending the most
+/// recently captured frame on every pacer tick (duplicating it when the screen hasn't changed, or
+/// while paused), which keeps the encoded video's frame count in sync with real elapsed time.
+/// </summary>
+public sealed class RecordingManager : IDisposable
+{
+    private readonly VideoCaptureService _video = new();
+    private readonly AudioCaptureService _audio = new();
+    private readonly FFmpegEncoderService _ffmpeg = new();
+    private readonly object _videoLock = new();
+
+    private byte[] _frameBuffer = [];
+    private byte[] _blackFrame = [];
+    private CancellationTokenSource? _pacerCts;
+    private Task? _pacerTask;
+
+    private nint? _previewMonitorHandle;
+    private bool _previewCursor;
+    private CursorStyle _previewCursorStyle;
+
+    private DateTime _startTimeUtc;
+    private TimeSpan _pausedAccum;
+    private DateTime? _pauseStartedUtc;
+
+    public RecordingState State { get; private set; } = RecordingState.Idle;
+    public string? LastOutputPath { get; private set; }
+    public string? LastError { get; private set; }
+
+    public int PreviewWidth => _video.Width;
+    public int PreviewHeight => _video.Height;
+
+    public TimeSpan Elapsed
+    {
+        get
+        {
+            if (State is RecordingState.Idle or RecordingState.Starting) return TimeSpan.Zero;
+            var pausedSoFar = _pausedAccum + (_pauseStartedUtc is { } p ? DateTime.UtcNow - p : TimeSpan.Zero);
+            return DateTime.UtcNow - _startTimeUtc - pausedSoFar;
+        }
+    }
+
+    public List<MonitorInfo> GetMonitors() => MonitorEnumerator.GetMonitors();
+
+    public List<AudioDeviceOption> GetMicrophones() => AudioDeviceEnumerator.GetMicrophones();
+
+    /// <summary>Copies the most recently captured frame into <paramref name="buffer"/> for a live preview UI. Works whenever video capture is active — before recording (preview mode), while recording, or paused.</summary>
+    public bool TryGetPreviewFrame(byte[] buffer) => _video.TryGetLatestFrame(buffer);
+
+    /// <summary>
+    /// Starts (or restarts, if the monitor/cursor setting changed) a preview-only capture of the given
+    /// monitor so the UI can show live video before the user presses Start Recording. No-op once a real
+    /// recording is underway — call from a background thread, this blocks on DXGI device creation.
+    /// </summary>
+    public void StartPreview(MonitorInfo monitor, bool captureCursor, CursorStyle cursorStyle)
+    {
+        lock (_videoLock)
+        {
+            if (State != RecordingState.Idle) return;
+            if (_video.IsCapturing && _previewMonitorHandle == monitor.Handle
+                && _previewCursor == captureCursor && _previewCursorStyle == cursorStyle) return;
+
+            _video.Stop();
+            try
+            {
+                _video.Prepare(monitor, captureCursor, cursorStyle);
+                _video.BeginCapture();
+                _previewMonitorHandle = monitor.Handle;
+                _previewCursor = captureCursor;
+                _previewCursorStyle = cursorStyle;
+            }
+            catch
+            {
+                // Best effort: preview is a nice-to-have, not fatal to leave capture stopped here.
+                _video.Stop();
+                _previewMonitorHandle = null;
+            }
+        }
+    }
+
+    /// <summary>Stops preview-only capture. No-op while actually recording.</summary>
+    public void StopPreview()
+    {
+        lock (_videoLock)
+        {
+            if (State != RecordingState.Idle) return;
+            _video.Stop();
+            _previewMonitorHandle = null;
+        }
+    }
+
+    public async Task StartAsync(RecordingSettings settings, MonitorInfo monitor)
+    {
+        if (State != RecordingState.Idle) return;
+
+        State = RecordingState.Starting;
+        LastError = null;
+
+        try
+        {
+            // Tear down any preview-only capture first so recording gets a freshly configured one — the
+            // preview may be running against stale cursor settings or (in principle) a different monitor.
+            lock (_videoLock) { _video.Stop(); }
+            _previewMonitorHandle = null;
+
+            // Prepare (but don't start) capture first so we know the real resolution.
+            await Task.Run(() => { lock (_videoLock) { _video.Prepare(monitor, settings.CaptureCursor, settings.CursorStyle); } });
+
+            var outputPath = settings.BuildOutputFilePath();
+            var audioRequested = settings.CaptureSystemAudio || settings.CaptureMicrophone;
+
+            // ffmpeg's rawvideo demuxer blocks probing the video pipe until real bytes arrive, and
+            // won't even attempt to open the audio pipe until that probe is satisfied. So: connect
+            // video only, start writing frames immediately, THEN wait for audio to connect — waiting
+            // for both pipes up front deadlocks since nothing is writing yet.
+            await _ffmpeg.StartAsync(settings, _video.Width, _video.Height, audioRequested, outputPath);
+
+            _frameBuffer = new byte[_video.FrameByteSize];
+            _blackFrame = new byte[_video.FrameByteSize];
+
+            lock (_videoLock) { _video.BeginCapture(); }
+
+            _pacerCts = new CancellationTokenSource();
+            _pacerTask = Task.Run(() => PacerLoopAsync(settings.Fps, _pacerCts.Token));
+
+            if (audioRequested)
+            {
+                await _ffmpeg.WaitForAudioConnectionAsync();
+                _audio.Start(settings.CaptureSystemAudio, settings.CaptureMicrophone, settings.MicrophoneDeviceId, _ffmpeg.AudioPipe!);
+            }
+
+            LastOutputPath = outputPath;
+            _startTimeUtc = DateTime.UtcNow;
+            _pausedAccum = TimeSpan.Zero;
+            _pauseStartedUtc = null;
+
+            State = RecordingState.Recording;
+        }
+        catch (Exception ex)
+        {
+            LastError = ex.Message;
+            await CleanupAfterFailureAsync();
+            State = RecordingState.Idle;
+            throw;
+        }
+    }
+
+    private async Task PacerLoopAsync(int fps, CancellationToken ct)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(1000.0 / fps));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(ct).ConfigureAwait(false))
+            {
+                if (State != RecordingState.Paused)
+                {
+                    _video.TryGetLatestFrame(_frameBuffer);
+                }
+
+                var pipe = _ffmpeg.VideoPipe;
+                if (pipe is null) return;
+
+                await pipe.WriteAsync(_frameBuffer.Length > 0 ? _frameBuffer : _blackFrame, ct).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Normal shutdown.
+        }
+        catch (IOException)
+        {
+            // Pipe closed by the encoder shutting down.
+        }
+        catch (ObjectDisposedException)
+        {
+            // Pipe closed by the encoder shutting down.
+        }
+    }
+
+    public void Pause()
+    {
+        if (State != RecordingState.Recording) return;
+        State = RecordingState.Paused;
+        _audio.IsMuted = true;
+        _pauseStartedUtc = DateTime.UtcNow;
+    }
+
+    public void Resume()
+    {
+        if (State != RecordingState.Paused) return;
+        if (_pauseStartedUtc is { } p) _pausedAccum += DateTime.UtcNow - p;
+        _pauseStartedUtc = null;
+        _audio.IsMuted = false;
+        State = RecordingState.Recording;
+    }
+
+    public async Task<string?> StopAsync()
+    {
+        if (State is RecordingState.Idle or RecordingState.Stopping) return LastOutputPath;
+
+        State = RecordingState.Stopping;
+
+        _pacerCts?.Cancel();
+        if (_pacerTask is not null)
+        {
+            try { await _pacerTask; } catch { /* already logged inside the loop */ }
+        }
+
+        _audio.Stop();
+        lock (_videoLock) { _video.Stop(); }
+
+        await _ffmpeg.StopAsync();
+
+        State = RecordingState.Idle;
+        return LastOutputPath;
+    }
+
+    private async Task CleanupAfterFailureAsync()
+    {
+        _pacerCts?.Cancel();
+        _audio.Stop();
+        lock (_videoLock) { _video.Stop(); }
+        try { await _ffmpeg.StopAsync(); } catch { /* best effort */ }
+    }
+
+    public void Dispose()
+    {
+        _pacerCts?.Cancel();
+        _audio.Dispose();
+        lock (_videoLock) { _video.Dispose(); }
+        _ffmpeg.Dispose();
+    }
+}
