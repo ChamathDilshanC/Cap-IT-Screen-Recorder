@@ -9,4 +9,4 @@ excluded from git because it's a large third-party binary, not project source.
 3. Build as usual — see the main [README](../README.md#building).
 
 If you just want to run the app rather than build it, download the installer from the
-[Releases page](../../releases) instead — it already bundles `ffmpeg.exe`.
+[Releases page](../releases) instead — it already bundles `ffmpeg.exe`.
