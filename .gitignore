@@ -1,0 +1,17 @@
+# Build output
+bin/
+obj/
+
+# Visual Studio / Rider
+.vs/
+*.user
+*.suo
+
+# Local assistant/tooling config (not part of the project)
+.claude/
+
+# Installer output — the compiled .exe is published as a GitHub Release asset instead of committed
+Installer/Output/
+
+# Bundled third-party binary (~97MB) — too large to track directly; see ffmpeg/README.md
+ffmpeg/ffmpeg.exe
