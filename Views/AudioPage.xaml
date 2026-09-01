@@ -1,0 +1,33 @@
+<Page
+    x:Class="ScreenRecorderApp.Views.AudioPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:ctcontrols="using:CommunityToolkit.WinUI.Controls"
+    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+
+    <Page.Resources>
+        <Style x:Key="SectionDescriptionText" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+    </Page.Resources>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Padding="32,28" Spacing="18" HorizontalAlignment="Stretch">
+            <StackPanel Spacing="4">
+                <TextBlock Text="Audio Enhancement" Style="{StaticResource TitleTextBlockStyle}" />
+                <TextBlock Text="AI-assisted microphone cleanup. (Basic system audio/microphone toggles stay on the Settings tab — this is about improving mic quality, not choosing sources.)"
+                           Style="{StaticResource SectionDescriptionText}" />
+            </StackPanel>
+
+            <ctcontrols:SettingsCard Header="Coming soon"
+                                      Description="AI microphone noise suppression via FFmpeg's afftdn/arnndn audio filters, cleaning up background hum and hiss before encoding.">
+                <ctcontrols:SettingsCard.HeaderIcon>
+                    <FontIcon Glyph="&#xE767;" />
+                </ctcontrols:SettingsCard.HeaderIcon>
+                <FontIcon Glyph="&#xE916;" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+            </ctcontrols:SettingsCard>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

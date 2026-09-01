@@ -1,0 +1,33 @@
+<Page
+    x:Class="ScreenRecorderApp.Views.EffectsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:ctcontrols="using:CommunityToolkit.WinUI.Controls"
+    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+
+    <Page.Resources>
+        <Style x:Key="SectionDescriptionText" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+    </Page.Resources>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Padding="32,28" Spacing="18" HorizontalAlignment="Stretch">
+            <StackPanel Spacing="4">
+                <TextBlock Text="Cursor Effects" Style="{StaticResource TitleTextBlockStyle}" />
+                <TextBlock Text="Extra polish for where the viewer's eye should go."
+                           Style="{StaticResource SectionDescriptionText}" />
+            </StackPanel>
+
+            <ctcontrols:SettingsCard Header="Coming soon"
+                                      Description="A cursor spotlight that dims the rest of the screen around the pointer, and a click-ripple animation on every mouse click — both composited the same way the existing cursor overlay is.">
+                <ctcontrols:SettingsCard.HeaderIcon>
+                    <FontIcon Glyph="&#xE81E;" />
+                </ctcontrols:SettingsCard.HeaderIcon>
+                <FontIcon Glyph="&#xE916;" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+            </ctcontrols:SettingsCard>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

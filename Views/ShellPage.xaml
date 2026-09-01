@@ -23,6 +23,26 @@
                     <FontIcon Glyph="&#xE721;" />
                 </NavigationViewItem.Icon>
             </NavigationViewItem>
+            <NavigationViewItem Content="Webcam" Tag="Webcam">
+                <NavigationViewItem.Icon>
+                    <FontIcon Glyph="&#xE722;" />
+                </NavigationViewItem.Icon>
+            </NavigationViewItem>
+            <NavigationViewItem Content="Annotations" Tag="Annotations">
+                <NavigationViewItem.Icon>
+                    <FontIcon Glyph="&#xE70F;" />
+                </NavigationViewItem.Icon>
+            </NavigationViewItem>
+            <NavigationViewItem Content="Effects" Tag="Effects">
+                <NavigationViewItem.Icon>
+                    <FontIcon Glyph="&#xE81E;" />
+                </NavigationViewItem.Icon>
+            </NavigationViewItem>
+            <NavigationViewItem Content="Audio" Tag="Audio">
+                <NavigationViewItem.Icon>
+                    <FontIcon Glyph="&#xE767;" />
+                </NavigationViewItem.Icon>
+            </NavigationViewItem>
             <NavigationViewItem Content="Settings" Tag="Settings">
                 <NavigationViewItem.Icon>
                     <FontIcon Glyph="&#xE713;" />

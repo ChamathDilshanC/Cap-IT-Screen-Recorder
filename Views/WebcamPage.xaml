@@ -1,0 +1,33 @@
+<Page
+    x:Class="ScreenRecorderApp.Views.WebcamPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:ctcontrols="using:CommunityToolkit.WinUI.Controls"
+    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+
+    <Page.Resources>
+        <Style x:Key="SectionDescriptionText" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+    </Page.Resources>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Padding="32,28" Spacing="18" HorizontalAlignment="Stretch">
+            <StackPanel Spacing="4">
+                <TextBlock Text="Webcam" Style="{StaticResource TitleTextBlockStyle}" />
+                <TextBlock Text="A picture-in-picture webcam overlay for your recordings."
+                           Style="{StaticResource SectionDescriptionText}" />
+            </StackPanel>
+
+            <ctcontrols:SettingsCard Header="Coming soon"
+                                      Description="A circular webcam overlay you can position in a corner of the recording, with an optional AI background blur/removal mode — so no green screen needed.">
+                <ctcontrols:SettingsCard.HeaderIcon>
+                    <FontIcon Glyph="&#xE722;" />
+                </ctcontrols:SettingsCard.HeaderIcon>
+                <FontIcon Glyph="&#xE916;" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+            </ctcontrols:SettingsCard>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

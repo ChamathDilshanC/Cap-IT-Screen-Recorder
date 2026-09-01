@@ -1,0 +1,33 @@
+<Page
+    x:Class="ScreenRecorderApp.Views.AnnotationsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:ctcontrols="using:CommunityToolkit.WinUI.Controls"
+    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+
+    <Page.Resources>
+        <Style x:Key="SectionDescriptionText" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+    </Page.Resources>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Padding="32,28" Spacing="18" HorizontalAlignment="Stretch">
+            <StackPanel Spacing="4">
+                <TextBlock Text="Annotations" Style="{StaticResource TitleTextBlockStyle}" />
+                <TextBlock Text="Draw on screen while recording to call out what matters."
+                           Style="{StaticResource SectionDescriptionText}" />
+            </StackPanel>
+
+            <ctcontrols:SettingsCard Header="Coming soon"
+                                      Description="Arrows, rectangles, and highlights, drawn live over the desktop via a transparent full-screen overlay window and baked directly into the recording as you draw.">
+                <ctcontrols:SettingsCard.HeaderIcon>
+                    <FontIcon Glyph="&#xE70F;" />
+                </ctcontrols:SettingsCard.HeaderIcon>
+                <FontIcon Glyph="&#xE916;" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+            </ctcontrols:SettingsCard>
+        </StackPanel>
+    </ScrollViewer>
+</Page>
