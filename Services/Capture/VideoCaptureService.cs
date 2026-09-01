@@ -307,6 +307,16 @@ public sealed class VideoCaptureService : IDisposable
             throw new NotSupportedException("Windows.Graphics.Capture isn't supported on this system.");
         }
 
+        // A stale selection (the window closed since it was picked, e.g. a saved-settings target that's
+        // no longer running) makes WGC's CreateForWindow fail with a bare, unhelpful E_INVALIDARG —
+        // "The parameter is incorrect." with no indication why. Catching it here up front gives the
+        // caller a message that actually says what's wrong instead of a raw HRESULT translation.
+        if (!NativeMethods.IsWindow(window.Handle))
+        {
+            throw new InvalidOperationException(
+                $"'{window.Title}' is no longer open. Refresh the window list on the Settings tab and pick another window.");
+        }
+
         _targetWindowHandle = window.Handle;
 
         var featureLevels = new[]
