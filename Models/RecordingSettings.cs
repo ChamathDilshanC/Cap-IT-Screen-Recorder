@@ -76,6 +76,19 @@ public sealed record CursorStyleOption(CursorStyle Value, string Label)
     ];
 }
 
+/// <summary>Pairs a cursor-following zoom factor with a friendly label for display in a ComboBox.</summary>
+public sealed record ZoomLevelOption(double Factor, string Label)
+{
+    public override string ToString() => Label;
+
+    public static readonly IReadOnlyList<ZoomLevelOption> All =
+    [
+        new(1.5, "150%"),
+        new(2.0, "200%"),
+        new(3.0, "300%"),
+    ];
+}
+
 /// <summary>All user-configurable options for a recording session.</summary>
 public sealed class RecordingSettings
 {
@@ -95,9 +108,18 @@ public sealed class RecordingSettings
     public bool CaptureCursor { get; set; } = true;
     public CursorStyle CursorStyle { get; set; } = CursorStyle.SystemDefault;
 
+    public bool MouseTrackingZoomEnabled { get; set; } = false;
+    public double ZoomFactor { get; set; } = 2.0;
+    public bool KeystrokeOverlayEnabled { get; set; } = false;
+
     public HardwareEncoder Encoder { get; set; } = HardwareEncoder.Auto;
     public OutputContainer Container { get; set; } = OutputContainer.Mp4;
     public OutputResolution Resolution { get; set; } = OutputResolution.Native;
+
+    // Only takes effect when the resolved encoder is libx264 (Auto or SoftwareX264) — see
+    // FFmpegEncoderService.BuildEncoderTuning. Trades meaningfully larger files for 4:4:4 chroma (no
+    // color-bleed/blur around text edges), so it's opt-in rather than the default.
+    public bool MaximizeTextClarity { get; set; } = false;
 
     public string OutputDirectory { get; set; } =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyVideos), "Cap-IT Recordings");

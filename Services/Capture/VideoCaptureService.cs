@@ -1,5 +1,8 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using ScreenRecorderApp.Models;
+using ScreenRecorderApp.Services.Capture.Interop;
+using ScreenRecorderApp.Services.Tracking;
 using SharpGen.Runtime;
 using Vortice.Direct3D;
 using Vortice.Direct3D11;
@@ -47,6 +50,42 @@ public sealed class VideoCaptureService : IDisposable
     private int _cursorX;
     private int _cursorY;
 
+    // Mouse tracking zoom: both the zoom factor and the pan center are eased toward their targets every
+    // frame (rather than snapping) so enabling/disabling the effect and following a moving cursor both
+    // read as smooth camera motion instead of a jump cut. The *target* factor itself is gated on recent
+    // interaction (see _lastActivityTicks) rather than being "on" continuously whenever zoom is enabled.
+    private const double ZoomTimeConstant = 0.18; // seconds — smaller = snappier camera motion
+    private const double IdleTimeoutSeconds = 1.5;
+    private const int MovementActivityThresholdPx = 3;
+    private bool _zoomEnabled;
+    private double _zoomTargetFactor = 1.0;
+    private double _zoomCurrentFactor = 1.0;
+    private double _zoomCenterX;
+    private double _zoomCenterY;
+    private bool _zoomCenterInitialized;
+    private byte[]? _zoomScratchBuffer;
+    private readonly Stopwatch _zoomClock = Stopwatch.StartNew();
+    private double _lastZoomFrameSeconds;
+
+    // Written from the capture thread (mouse movement, via DXGI) and from the keyboard/mouse hook
+    // threads (typing, clicks) — Volatile access instead of a lock since it's a single primitive value
+    // and ApplyZoom only ever needs the most recent write, not strict ordering with anything else.
+    private long _lastActivityTicks;
+
+    // While typing, the zoom follows the text caret instead of the (possibly stale) mouse position —
+    // set on every keypress via CaretLocator, cleared back to null on the next mouse movement/click so
+    // whichever signal happened most recently "wins" the pan target. Coordinates are monitor-local
+    // (same space as _cursorX/_cursorY), converted from CaretLocator's virtual-screen coordinates using
+    // _monitorOriginX/Y.
+    private double? _typingTargetX;
+    private double? _typingTargetY;
+    private int _monitorOriginX;
+    private int _monitorOriginY;
+
+    private GlobalKeyboardHook? _keyboardHook;
+    private GlobalMouseHook? _mouseHook;
+    private KeystrokeOverlayRenderer? _keystrokeOverlay;
+
     // Raw pointer-shape scratch buffer for GetFramePointerShape(), grown as needed and reused across
     // shape updates; the decoded/converted result is cached separately since the shape only changes
     // occasionally (e.g. hovering a different kind of control), not every frame.
@@ -60,12 +99,56 @@ public sealed class VideoCaptureService : IDisposable
     /// frames yet. Split out from <see cref="BeginCapture"/> so the caller can spawn/connect the ffmpeg
     /// encoder (which needs the resolution up front) before any frames start flowing.
     /// </summary>
-    public void Prepare(MonitorInfo monitor, bool captureCursor, CursorStyle cursorStyle = CursorStyle.Arrow)
+    public void Prepare(MonitorInfo monitor, bool captureCursor, CursorStyle cursorStyle = CursorStyle.Arrow,
+        bool zoomEnabled = false, double zoomFactor = 2.0, bool keystrokeOverlayEnabled = false)
     {
         if (_prepared) return;
 
         _captureCursor = captureCursor;
         _cursorStyle = cursorStyle;
+
+        _zoomEnabled = zoomEnabled;
+        _zoomTargetFactor = zoomFactor;
+        _zoomCurrentFactor = 1.0;
+        _zoomCenterInitialized = false;
+        _lastActivityTicks = 0; // starts idle: zoom eases in only once real activity is observed
+        _lastZoomFrameSeconds = _zoomClock.Elapsed.TotalSeconds;
+        _typingTargetX = null;
+        _typingTargetY = null;
+
+        // Needed to convert CaretLocator's virtual-screen coordinates into this monitor's local pixel
+        // space (0..Width, 0..Height) — the same space _cursorX/_cursorY already live in.
+        var monitorInfo = new NativeMethods.MonitorInfoEx
+        {
+            cbSize = Marshal.SizeOf<NativeMethods.MonitorInfoEx>()
+        };
+        if (NativeMethods.GetMonitorInfo(monitor.Handle, ref monitorInfo))
+        {
+            _monitorOriginX = monitorInfo.rcMonitor.Left;
+            _monitorOriginY = monitorInfo.rcMonitor.Top;
+        }
+
+        if (keystrokeOverlayEnabled)
+        {
+            _keystrokeOverlay = new KeystrokeOverlayRenderer();
+        }
+
+        // The keyboard hook doubles as a zoom-activity signal, so it's needed whenever *either* feature
+        // wants it; OnKeyboardActivity always marks activity and only forwards to the overlay renderer
+        // when that feature is actually on, decoupling "is typing activity" from "is the overlay visible."
+        if (zoomEnabled || keystrokeOverlayEnabled)
+        {
+            _keyboardHook = new GlobalKeyboardHook();
+            _keyboardHook.KeyPressed += OnKeyboardActivity;
+        }
+
+        // DXGI reports cursor *position* every frame already (used for movement-based activity below),
+        // but never button state — a click needs a real hook.
+        if (zoomEnabled)
+        {
+            _mouseHook = new GlobalMouseHook();
+            _mouseHook.Click += OnMouseActivity;
+        }
 
         using var factory = DXGI.CreateDXGIFactory1<IDXGIFactory1>();
 
@@ -138,8 +221,46 @@ public sealed class VideoCaptureService : IDisposable
 
         _running = true;
         IsCapturing = true;
+        _keyboardHook?.Start();
+        _mouseHook?.Start();
         _captureThread = new Thread(CaptureLoop) { IsBackground = true, Name = "DesktopDuplicationCapture" };
         _captureThread.Start();
+    }
+
+    private void MarkActivity() => Volatile.Write(ref _lastActivityTicks, DateTime.UtcNow.Ticks);
+
+    /// <summary>Mouse movement/click: the pan target goes back to following the cursor.</summary>
+    private void OnMouseActivity()
+    {
+        MarkActivity();
+        _typingTargetX = null;
+        _typingTargetY = null;
+    }
+
+    /// <summary>Keypress: the pan target follows the text caret instead, when one can be located.</summary>
+    private void OnKeyboardActivity(string display)
+    {
+        MarkActivity();
+
+        if (_zoomEnabled && CaretLocator.TryGetCaretScreenPosition(out var screenX, out var screenY))
+        {
+            var localX = screenX - _monitorOriginX;
+            var localY = screenY - _monitorOriginY;
+            // Ignore a caret that isn't on the monitor being recorded (e.g. typing on a second
+            // display) rather than pinning the zoom uselessly at the frame's edge.
+            if (localX >= 0 && localX <= Width && localY >= 0 && localY <= Height)
+            {
+                _typingTargetX = localX;
+                _typingTargetY = localY;
+            }
+            else
+            {
+                _typingTargetX = null;
+                _typingTargetY = null;
+            }
+        }
+
+        _keystrokeOverlay?.OnKeyPressed(display);
     }
 
     private void CaptureLoop()
@@ -167,9 +288,16 @@ public sealed class VideoCaptureService : IDisposable
                 // the very next frame after every single mouse update.
                 if (frameInfo.LastMouseUpdateTime != 0)
                 {
+                    var newX = frameInfo.PointerPosition.Position.X;
+                    var newY = frameInfo.PointerPosition.Position.Y;
+                    if (Math.Abs(newX - _cursorX) > MovementActivityThresholdPx || Math.Abs(newY - _cursorY) > MovementActivityThresholdPx)
+                    {
+                        OnMouseActivity();
+                    }
+
                     _cursorVisible = frameInfo.PointerPosition.Visible;
-                    _cursorX = frameInfo.PointerPosition.Position.X;
-                    _cursorY = frameInfo.PointerPosition.Position.Y;
+                    _cursorX = newX;
+                    _cursorY = newY;
                 }
 
                 // The shape itself (what the cursor actually looks like right now — arrow, I-beam,
@@ -247,6 +375,9 @@ public sealed class VideoCaptureService : IDisposable
                     BlendCursorIcon(buffer, width, height, iconValue, _cursorX, _cursorY);
                 }
             }
+
+            ApplyZoom(buffer, width, height);
+            ApplyKeystrokeOverlay(buffer, width, height);
 
             lock (_frameLock)
             {
@@ -409,6 +540,158 @@ public sealed class VideoCaptureService : IDisposable
         }
     }
 
+    /// <summary>
+    /// Eases the zoom factor and pan center toward their targets, then — if the eased factor is
+    /// meaningfully above 1x — resamples a centered crop of <paramref name="frame"/> back up to the full
+    /// frame size in place, in effect a "camera" pushing in on and following the cursor. The target factor
+    /// itself is gated on recent interaction: zoom eases back to 1x whenever the user has been idle
+    /// (no mouse movement/click/keypress) for <see cref="IdleTimeoutSeconds"/>, not just when the feature
+    /// is toggled off — that's what makes it "smart" rather than continuously zoomed while enabled.
+    /// Runs every frame (not just while <see cref="_zoomEnabled"/>) so disabling zoom, or going idle,
+    /// eases back out to 1x instead of snapping.
+    /// </summary>
+    private void ApplyZoom(byte[] frame, int width, int height)
+    {
+        var nowSeconds = _zoomClock.Elapsed.TotalSeconds;
+        var dt = Math.Max(0, nowSeconds - _lastZoomFrameSeconds);
+        _lastZoomFrameSeconds = nowSeconds;
+        // Exponential ease toward the target, driven by real elapsed time rather than a fixed per-frame
+        // blend factor — reads as smooth, consistent easing regardless of the capture thread's actual
+        // (variable) frame timing, instead of assuming a fixed FPS.
+        var alpha = dt <= 0 ? 0 : 1 - Math.Exp(-dt / ZoomTimeConstant);
+
+        var idleSeconds = TimeSpan.FromTicks(DateTime.UtcNow.Ticks - Volatile.Read(ref _lastActivityTicks)).TotalSeconds;
+        var isIdle = idleSeconds > IdleTimeoutSeconds;
+        var targetFactor = (_zoomEnabled && !isIdle) ? _zoomTargetFactor : 1.0;
+        _zoomCurrentFactor += (targetFactor - _zoomCurrentFactor) * alpha;
+
+        // While typing, follow the text caret instead of the mouse — _typingTargetX/Y is set on every
+        // keypress and cleared on the next mouse movement/click, so whichever happened most recently
+        // decides the pan target.
+        double targetCenterX, targetCenterY;
+        if (_typingTargetX is double typingX && _typingTargetY is double typingY)
+        {
+            targetCenterX = typingX;
+            targetCenterY = typingY;
+        }
+        else
+        {
+            targetCenterX = _cursorVisible ? _cursorX : width / 2.0;
+            targetCenterY = _cursorVisible ? _cursorY : height / 2.0;
+        }
+        if (!_zoomCenterInitialized)
+        {
+            _zoomCenterX = targetCenterX;
+            _zoomCenterY = targetCenterY;
+            _zoomCenterInitialized = true;
+        }
+        _zoomCenterX += (targetCenterX - _zoomCenterX) * alpha;
+        _zoomCenterY += (targetCenterY - _zoomCenterY) * alpha;
+
+        if (_zoomCurrentFactor <= 1.001) return;
+
+        double cropWidth = width / _zoomCurrentFactor;
+        double cropHeight = height / _zoomCurrentFactor;
+        double cropX = Math.Clamp(_zoomCenterX - cropWidth / 2, 0, width - cropWidth);
+        double cropY = Math.Clamp(_zoomCenterY - cropHeight / 2, 0, height - cropHeight);
+        double scaleX = cropWidth / width;
+        double scaleY = cropHeight / height;
+
+        if (_zoomScratchBuffer is null || _zoomScratchBuffer.Length != frame.Length)
+        {
+            _zoomScratchBuffer = new byte[frame.Length];
+        }
+        var dst = _zoomScratchBuffer;
+
+        // Bilinear resampling, parallelized per output row: a 4-tap blend instead of nearest-neighbor's
+        // 1-tap pick. At the fractional zoom ratios this feature actually uses (1.5x/2x/3x), nearest
+        // neighbor visibly blocks/aliases text edges; bilinear is the standard fix and still cheap enough
+        // to run every frame at capture resolution (real Lanczos/bicubic would cost several times more
+        // per pixel for a live pan/zoom preview, for a gain that's marginal once bilinear has already
+        // removed the blockiness — not worth the real-time risk here).
+        int maxX = width - 1;
+        int maxY = height - 1;
+        Parallel.For(0, height, y =>
+        {
+            double srcYf = cropY + y * scaleY;
+            int y0 = Math.Clamp((int)srcYf, 0, maxY);
+            int y1 = Math.Min(y0 + 1, maxY);
+            double fy = srcYf - y0;
+            int srcRow0 = y0 * width * 4;
+            int srcRow1 = y1 * width * 4;
+            int dstRow = y * width * 4;
+
+            for (int x = 0; x < width; x++)
+            {
+                double srcXf = cropX + x * scaleX;
+                int x0 = Math.Clamp((int)srcXf, 0, maxX);
+                int x1 = Math.Min(x0 + 1, maxX);
+                double fx = srcXf - x0;
+
+                int i00 = srcRow0 + x0 * 4;
+                int i10 = srcRow0 + x1 * 4;
+                int i01 = srcRow1 + x0 * 4;
+                int i11 = srcRow1 + x1 * 4;
+                int dstIdx = dstRow + x * 4;
+
+                for (int c = 0; c < 4; c++)
+                {
+                    double top = frame[i00 + c] * (1 - fx) + frame[i10 + c] * fx;
+                    double bottom = frame[i01 + c] * (1 - fx) + frame[i11 + c] * fx;
+                    dst[dstIdx + c] = (byte)(top * (1 - fy) + bottom * fy);
+                }
+            }
+        });
+
+        Buffer.BlockCopy(dst, 0, frame, 0, frame.Length);
+    }
+
+    private void ApplyKeystrokeOverlay(byte[] frame, int width, int height)
+    {
+        if (_keystrokeOverlay is null) return;
+        if (!_keystrokeOverlay.TryGetOverlay(out var overlay, out var overlayWidth, out var overlayHeight)) return;
+
+        const int margin = 28;
+        int originX = (width - overlayWidth) / 2;
+        int originY = height - overlayHeight - margin;
+        BlendOverlay(frame, width, height, overlay, overlayWidth, overlayHeight, originX, originY);
+    }
+
+    /// <summary>Straight-alpha blends a small BGRA overlay bitmap onto <paramref name="frame"/> at a fixed position — the keystroke-overlay counterpart to <see cref="BlendCursorIcon"/>, without that method's cursor-specific invert-alpha handling.</summary>
+    private static void BlendOverlay(byte[] frame, int frameWidth, int frameHeight, byte[] overlay, int overlayWidth, int overlayHeight, int originX, int originY)
+    {
+        for (int y = 0; y < overlayHeight; y++)
+        {
+            int fy = originY + y;
+            if (fy < 0 || fy >= frameHeight) continue;
+
+            for (int x = 0; x < overlayWidth; x++)
+            {
+                int fx = originX + x;
+                if (fx < 0 || fx >= frameWidth) continue;
+
+                int oi = (y * overlayWidth + x) * 4;
+                byte alpha = overlay[oi + 3];
+                if (alpha == 0) continue;
+
+                int fi = (fy * frameWidth + fx) * 4;
+                if (alpha == 255)
+                {
+                    frame[fi + 0] = overlay[oi + 0];
+                    frame[fi + 1] = overlay[oi + 1];
+                    frame[fi + 2] = overlay[oi + 2];
+                }
+                else
+                {
+                    float a = alpha / 255f;
+                    frame[fi + 0] = (byte)(overlay[oi + 0] * a + frame[fi + 0] * (1 - a));
+                    frame[fi + 1] = (byte)(overlay[oi + 1] * a + frame[fi + 1] * (1 - a));
+                    frame[fi + 2] = (byte)(overlay[oi + 2] * a + frame[fi + 2] * (1 - a));
+                }
+            }
+        }
+    }
+
     /// <summary>Copies the most recent frame into <paramref name="destination"/>. Returns false if no frame has arrived yet.</summary>
     public bool TryGetLatestFrame(byte[] destination)
     {
@@ -434,6 +717,24 @@ public sealed class VideoCaptureService : IDisposable
         _running = false;
         _captureThread?.Join(1000);
         _captureThread = null;
+
+        if (_keyboardHook is not null)
+        {
+            _keyboardHook.KeyPressed -= OnKeyboardActivity;
+            _keyboardHook.Dispose();
+            _keyboardHook = null;
+        }
+        if (_mouseHook is not null)
+        {
+            _mouseHook.Click -= OnMouseActivity;
+            _mouseHook.Dispose();
+            _mouseHook = null;
+        }
+        _keystrokeOverlay = null;
+        _typingTargetX = null;
+        _typingTargetY = null;
+        _zoomCurrentFactor = 1.0;
+        _zoomCenterInitialized = false;
 
         _stagingTexture?.Dispose();
         _stagingTexture = null;

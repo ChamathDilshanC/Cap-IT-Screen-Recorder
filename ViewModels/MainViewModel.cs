@@ -8,6 +8,7 @@ using Microsoft.UI.Xaml.Media.Imaging;
 using ScreenRecorderApp.Models;
 using ScreenRecorderApp.Services;
 using ScreenRecorderApp.Services.Capture;
+using ScreenRecorderApp.Services.Encoding;
 
 namespace ScreenRecorderApp.ViewModels;
 
@@ -24,6 +25,7 @@ public partial class MainViewModel : BaseViewModel
     public IReadOnlyList<OutputContainer> ContainerOptions { get; } = Enum.GetValues<OutputContainer>();
     public IReadOnlyList<ResolutionOption> ResolutionOptions { get; } = ResolutionOption.All;
     public IReadOnlyList<CursorStyleOption> CursorStyleOptions { get; } = CursorStyleOption.All;
+    public IReadOnlyList<ZoomLevelOption> ZoomLevelOptions { get; } = ZoomLevelOption.All;
 
     [ObservableProperty] private MonitorInfo? _selectedMonitor;
     [ObservableProperty] private AudioDeviceOption? _selectedMicrophone;
@@ -33,6 +35,10 @@ public partial class MainViewModel : BaseViewModel
     [ObservableProperty] private bool _captureCursor = true;
     [ObservableProperty] private CursorStyleOption _selectedCursorStyle = CursorStyleOption.All[0];
 
+    [ObservableProperty] private bool _mouseTrackingZoomEnabled;
+    [ObservableProperty] private ZoomLevelOption _selectedZoomLevel = ZoomLevelOption.All[0];
+    [ObservableProperty] private bool _keystrokeOverlayEnabled;
+
     [ObservableProperty] private int _fps = 30;
     [ObservableProperty] private double _videoBitrateKbps = 12000;
     public string BitrateLabel => $"Video bitrate: {VideoBitrateKbps:0} kbps";
@@ -41,11 +47,26 @@ public partial class MainViewModel : BaseViewModel
     [ObservableProperty] private ResolutionOption _selectedResolution = ResolutionOption.All[0];
     [ObservableProperty] private string _outputDirectory = new RecordingSettings().OutputDirectory;
 
+    // The yuv444p "Maximize text clarity" path only exists for libx264 (Auto or SoftwareX264) — see
+    // FFmpegEncoderService.BuildEncoderTuning.
+    [ObservableProperty] private bool _maximizeTextClarity;
+    public bool CanMaximizeTextClarity => SelectedEncoder is HardwareEncoder.Auto or HardwareEncoder.SoftwareX264;
+
     [ObservableProperty] private RecordingState _state = RecordingState.Idle;
     [ObservableProperty] private string _elapsedText = "00:00:00";
     [ObservableProperty] private string _statusMessage = "Ready";
     [ObservableProperty] private string? _lastOutputPath;
     [ObservableProperty] private WriteableBitmap? _previewSource;
+
+    [ObservableProperty] private bool _ffmpegSetupRequired;
+    [ObservableProperty] private bool _isDownloadingFFmpeg;
+    [ObservableProperty] private double _ffmpegDownloadProgress;
+    [ObservableProperty] private string _ffmpegSetupMessage = "";
+    public bool ShowFFmpegSetupBanner => FfmpegSetupRequired || IsDownloadingFFmpeg;
+    public string FFmpegDownloadProgressText => $"{FfmpegDownloadProgress:0}%";
+
+    private TaskCompletionSource<bool>? _ffmpegDecisionTcs;
+    private CancellationTokenSource? _ffmpegDownloadCts;
 
     private byte[]? _previewBuffer;
 
@@ -106,7 +127,21 @@ public partial class MainViewModel : BaseViewModel
 
     partial void OnSelectedCursorStyleChanged(CursorStyleOption value) => RestartPreviewIfIdle();
 
+    partial void OnMouseTrackingZoomEnabledChanged(bool value) => RestartPreviewIfIdle();
+
+    partial void OnSelectedZoomLevelChanged(ZoomLevelOption value) => RestartPreviewIfIdle();
+
+    partial void OnKeystrokeOverlayEnabledChanged(bool value) => RestartPreviewIfIdle();
+
+    partial void OnSelectedEncoderChanged(HardwareEncoder value) => OnPropertyChanged(nameof(CanMaximizeTextClarity));
+
     partial void OnVideoBitrateKbpsChanged(double value) => OnPropertyChanged(nameof(BitrateLabel));
+
+    partial void OnFfmpegSetupRequiredChanged(bool value) => OnPropertyChanged(nameof(ShowFFmpegSetupBanner));
+
+    partial void OnIsDownloadingFFmpegChanged(bool value) => OnPropertyChanged(nameof(ShowFFmpegSetupBanner));
+
+    partial void OnFfmpegDownloadProgressChanged(double value) => OnPropertyChanged(nameof(FFmpegDownloadProgressText));
 
     /// <summary>(Re)starts the before-recording live preview on a background thread. Safe to call any
     /// time a relevant setting changes; it's a no-op unless idle and a monitor is selected.</summary>
@@ -117,9 +152,12 @@ public partial class MainViewModel : BaseViewModel
         var monitor = SelectedMonitor;
         var cursor = CaptureCursor;
         var cursorStyle = SelectedCursorStyle.Value;
+        var zoomEnabled = MouseTrackingZoomEnabled;
+        var zoomFactor = SelectedZoomLevel.Factor;
+        var keystrokeOverlay = KeystrokeOverlayEnabled;
         _ = Task.Run(() =>
         {
-            try { _manager.StartPreview(monitor, cursor, cursorStyle); }
+            try { _manager.StartPreview(monitor, cursor, cursorStyle, zoomEnabled, zoomFactor, keystrokeOverlay); }
             catch { /* best effort: live preview is a convenience, not required to record */ }
         });
     }
@@ -144,12 +182,66 @@ public partial class MainViewModel : BaseViewModel
         SelectedMicrophone = Microphones.FirstOrDefault(m => m.Id == current) ?? Microphones.FirstOrDefault();
     }
 
+    /// <summary>
+    /// Confirms ffmpeg is available before recording starts, offering to download it in place (via
+    /// <see cref="FFmpegDownloader"/>) if it isn't. Returns false if the user declined or the download
+    /// failed, in which case the caller should abort starting.
+    /// </summary>
+    private async Task<bool> EnsureFFmpegAvailableAsync()
+    {
+        if (FFmpegLocator.FindFFmpeg() is not null) return true;
+
+        _ffmpegDecisionTcs = new TaskCompletionSource<bool>();
+        FfmpegSetupMessage = "ffmpeg wasn't found. Download it now (~90 MB) to enable recording?";
+        FfmpegSetupRequired = true;
+        var wantsDownload = await _ffmpegDecisionTcs.Task;
+        FfmpegSetupRequired = false;
+        if (!wantsDownload) return false;
+
+        IsDownloadingFFmpeg = true;
+        _ffmpegDownloadCts = new CancellationTokenSource();
+        try
+        {
+            var progress = new Progress<double>(p => FfmpegDownloadProgress = p);
+            await FFmpegDownloader.DownloadAndInstallAsync(progress, _ffmpegDownloadCts.Token);
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            StatusMessage = "ffmpeg download cancelled.";
+            return false;
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"ffmpeg download failed: {ex.Message}";
+            return false;
+        }
+        finally
+        {
+            IsDownloadingFFmpeg = false;
+            FfmpegDownloadProgress = 0;
+            _ffmpegDownloadCts?.Dispose();
+            _ffmpegDownloadCts = null;
+        }
+    }
+
+    [RelayCommand]
+    private void ConfirmDownloadFFmpeg() => _ffmpegDecisionTcs?.TrySetResult(true);
+
+    [RelayCommand]
+    private void CancelFFmpegSetup() => _ffmpegDecisionTcs?.TrySetResult(false);
+
+    [RelayCommand]
+    private void CancelFFmpegDownload() => _ffmpegDownloadCts?.Cancel();
+
     private bool CanStart() => IsIdle && SelectedMonitor is not null;
 
     [RelayCommand(CanExecute = nameof(CanStart))]
     private async Task StartRecordingAsync()
     {
         if (SelectedMonitor is null) return;
+
+        if (!await EnsureFFmpegAvailableAsync()) return;
 
         var settings = new RecordingSettings
         {
@@ -162,10 +254,14 @@ public partial class MainViewModel : BaseViewModel
             MicrophoneDeviceId = SelectedMicrophone?.Id,
             CaptureCursor = CaptureCursor,
             CursorStyle = SelectedCursorStyle.Value,
+            MouseTrackingZoomEnabled = MouseTrackingZoomEnabled,
+            ZoomFactor = SelectedZoomLevel.Factor,
+            KeystrokeOverlayEnabled = KeystrokeOverlayEnabled,
             Encoder = SelectedEncoder,
             Container = SelectedContainer,
             Resolution = SelectedResolution.Value,
             OutputDirectory = OutputDirectory,
+            MaximizeTextClarity = MaximizeTextClarity && CanMaximizeTextClarity,
         };
 
         try
