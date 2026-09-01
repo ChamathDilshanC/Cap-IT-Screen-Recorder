@@ -165,15 +165,21 @@ public sealed class FFmpegEncoderService : IDisposable
         // Capture always happens at the monitor's native resolution (VideoCaptureService/live preview are
         // unaffected); scaling to the user-selected output quality is left entirely to ffmpeg's own
         // high-quality scaler here, on the encode side only. "-2" keeps the width proportional to the
-        // requested height and rounds to the nearest even number (required for yuv420p).
+        // requested height and rounds to the nearest even number (required for yuv420p). flags=lanczos
+        // asks swscale for its sharpest resampling kernel — ffmpeg's own SIMD-optimized scaler, so unlike
+        // a hand-rolled per-frame filter this costs nothing worth worrying about.
         var targetHeight = TargetHeight(settings.Resolution);
         if (targetHeight is int th && th != videoHeight)
         {
-            sb.Append($"-vf \"scale=-2:{th}\" ");
+            sb.Append($"-vf \"scale=-2:{th}:flags=lanczos\" ");
         }
 
-        sb.Append($"-c:v {encoder} -pix_fmt yuv420p ");
-        sb.Append(BuildEncoderTuning(encoder, settings.VideoBitrateKbps));
+        // The yuv444p "maximize text clarity" path only exists for libx264 — hardware encoders don't
+        // reliably support 4:4:4 in consumer ffmpeg builds, so it silently has no effect there.
+        var useTextClarity = settings.MaximizeTextClarity && encoder == "libx264";
+        var pixFmt = useTextClarity ? "yuv444p" : "yuv420p";
+        sb.Append($"-c:v {encoder} -pix_fmt {pixFmt} ");
+        sb.Append(BuildEncoderTuning(encoder, settings.VideoBitrateKbps, useTextClarity));
 
         if (audioPipeName is not null)
         {
@@ -197,14 +203,29 @@ public sealed class FFmpegEncoderService : IDisposable
         return sb.ToString();
     }
 
-    private static string BuildEncoderTuning(string encoder, int bitrateKbps)
+    /// <summary>
+    /// Quality-first rate control per encoder instead of a flat average bitrate: content-adaptive bit
+    /// allocation (CRF for libx264, quality-target VBR for nvenc) spends bits where the frame actually
+    /// needs them — e.g. on text — instead of wasting them on static regions, while <c>-maxrate</c>/
+    /// <c>-bufsize</c> still keep the user's bitrate setting as a hard ceiling so file size stays bounded.
+    /// amf/qsv keep their existing bitrate-VBR rate control (their CRF-equivalent modes are less
+    /// consistently supported across ffmpeg builds) and only get a safe quality-preset bump, since both
+    /// are hardware-accelerated with no real-time encoding risk from that.
+    /// </summary>
+    private static string BuildEncoderTuning(string encoder, int bitrateKbps, bool useTextClarity)
     {
         return encoder switch
         {
-            "h264_nvenc" => $"-preset p4 -rc vbr -b:v {bitrateKbps}k -maxrate {(int)(bitrateKbps * 1.5)}k -bufsize {bitrateKbps * 2}k ",
-            "h264_amf" => $"-quality balanced -b:v {bitrateKbps}k -maxrate {(int)(bitrateKbps * 1.5)}k ",
-            "h264_qsv" => $"-preset medium -b:v {bitrateKbps}k -maxrate {(int)(bitrateKbps * 1.5)}k ",
-            _ => $"-preset veryfast -b:v {bitrateKbps}k -maxrate {(int)(bitrateKbps * 1.5)}k -bufsize {bitrateKbps * 2}k ",
+            // p6 (up from p4) and -cq are essentially free quality on the dedicated encode ASIC.
+            "h264_nvenc" => $"-preset p6 -rc vbr -cq 19 -b:v {bitrateKbps}k -maxrate {(int)(bitrateKbps * 1.5)}k -bufsize {bitrateKbps * 2}k ",
+            "h264_amf" => $"-quality quality -b:v {bitrateKbps}k -maxrate {(int)(bitrateKbps * 1.5)}k ",
+            "h264_qsv" => $"-preset veryslow -b:v {bitrateKbps}k -maxrate {(int)(bitrateKbps * 1.5)}k ",
+            // libx264: CRF-driven quality capped by the user's bitrate slider as -maxrate, no flat -b:v.
+            // "veryfast" stays the default preset to keep a safety margin against falling behind
+            // real-time at high resolutions/framerates; the text-clarity path trades that margin for
+            // quality deliberately, since the user has explicitly opted into it.
+            _ when useTextClarity => $"-profile:v high444 -preset medium -crf 16 -maxrate {(int)(bitrateKbps * 1.8)}k -bufsize {bitrateKbps * 2}k ",
+            _ => $"-preset veryfast -crf 18 -maxrate {bitrateKbps}k -bufsize {bitrateKbps * 2}k ",
         };
     }
 
