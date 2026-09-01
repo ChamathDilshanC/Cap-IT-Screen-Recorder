@@ -39,6 +39,10 @@ public sealed class AppSettings
     public bool WebcamEnabled { get; set; } = false;
     public string? WebcamDeviceId { get; set; }
 
+    public bool SpotlightEnabled { get; set; } = false;
+    public double SpotlightRadius { get; set; } = 180;
+    public bool ClickRipplesEnabled { get; set; } = false;
+
     public bool MaximizeTextClarity { get; set; } = false;
 
     public string OutputDirectory { get; set; } = new RecordingSettings().OutputDirectory;

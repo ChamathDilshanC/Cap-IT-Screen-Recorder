@@ -136,6 +136,13 @@ public sealed class RecordingSettings
     public bool WebcamEnabled { get; set; } = false;
     public string? WebcamDeviceId { get; set; }
 
+    // Advanced cursor effects (Phase 4). SpotlightRadius is canvas pixels (same space _cursorX/_cursorY
+    // already live in) — a Slider-bound raw value rather than an options list, since "how big" is a
+    // continuous preference, not a handful of named presets like ZoomLevelOption.
+    public bool SpotlightEnabled { get; set; } = false;
+    public double SpotlightRadius { get; set; } = 180;
+    public bool ClickRipplesEnabled { get; set; } = false;
+
     public HardwareEncoder Encoder { get; set; } = HardwareEncoder.Auto;
     public OutputContainer Container { get; set; } = OutputContainer.Mp4;
     public OutputResolution Resolution { get; set; } = OutputResolution.Native;

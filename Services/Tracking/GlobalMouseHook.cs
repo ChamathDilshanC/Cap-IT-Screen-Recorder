@@ -5,9 +5,12 @@ namespace ScreenRecorderApp.Services.Tracking;
 /// <summary>
 /// Installs a system-wide WH_MOUSE_LL hook on a dedicated thread (mirrors <see cref="GlobalKeyboardHook"/>'s
 /// pattern exactly — low-level hooks only fire on the thread that installed them, and only while that
-/// thread is pumping messages) and raises <see cref="Click"/> for button-down and wheel events. Used as an
-/// activity signal for the smart zoom feature; DXGI's Desktop Duplication API reports cursor *position*
-/// every frame already, but never button state, so clicks need a real hook.
+/// thread is pumping messages) and raises <see cref="Click"/> for button-down and wheel events, plus
+/// <see cref="ClickAt"/> (button-down only) with the click's screen coordinates read straight out of the
+/// hook's own MSLLHOOKSTRUCT — more precise than a follow-up GetCursorPos() call, since there's no timing
+/// gap between the click and reading where it happened. <see cref="Click"/> is the original, unchanged
+/// signal the smart zoom feature already depends on; <see cref="ClickAt"/> is additive (Phase 4's click
+/// ripples), not a replacement, specifically so this extension can't regress the existing feature.
 /// </summary>
 public sealed class GlobalMouseHook : IDisposable
 {
@@ -16,6 +19,20 @@ public sealed class GlobalMouseHook : IDisposable
     private const int WM_RBUTTONDOWN = 0x0204;
     private const int WM_MBUTTONDOWN = 0x0207;
     private const int WM_MOUSEWHEEL = 0x020A;
+
+    // Mirrors the real MSLLHOOKSTRUCT layout (POINT pt; DWORD mouseData; DWORD flags; DWORD time; ULONG_PTR
+    // dwExtraInfo) — flattened to ptX/ptY fields rather than a nested POINT struct, matching this file's
+    // own MSG struct below.
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MsllHookStruct
+    {
+        public int ptX;
+        public int ptY;
+        public uint mouseData;
+        public uint flags;
+        public uint time;
+        public nint dwExtraInfo;
+    }
 
     private delegate nint LowLevelMouseProc(int nCode, nint wParam, nint lParam);
 
@@ -66,6 +83,12 @@ public sealed class GlobalMouseHook : IDisposable
 
     public event Action? Click;
 
+    /// <summary>Fires for button-down only (not the wheel — a wheel "click" has no meaningful ring
+    /// origin) with the click's position in screen coordinates. Callers that need canvas-local space
+    /// (e.g. for compositing a ripple) should run this through VideoCaptureService's existing
+    /// MapScreenToCanvas, the same transform click-to-caret and cursor tracking already use.</summary>
+    public event Action<int, int>? ClickAt;
+
     public void Start()
     {
         if (_thread is not null) return;
@@ -104,6 +127,13 @@ public sealed class GlobalMouseHook : IDisposable
             if (message is WM_LBUTTONDOWN or WM_RBUTTONDOWN or WM_MBUTTONDOWN or WM_MOUSEWHEEL)
             {
                 try { Click?.Invoke(); }
+                catch { /* best effort: never let a subscriber exception break the hook chain */ }
+            }
+
+            if (message is WM_LBUTTONDOWN or WM_RBUTTONDOWN or WM_MBUTTONDOWN)
+            {
+                var data = Marshal.PtrToStructure<MsllHookStruct>(lParam);
+                try { ClickAt?.Invoke(data.ptX, data.ptY); }
                 catch { /* best effort: never let a subscriber exception break the hook chain */ }
             }
         }

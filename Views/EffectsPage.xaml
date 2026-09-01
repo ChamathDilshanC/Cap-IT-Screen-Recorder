@@ -21,12 +21,30 @@
                            Style="{StaticResource SectionDescriptionText}" />
             </StackPanel>
 
-            <ctcontrols:SettingsCard Header="Coming soon"
-                                      Description="A cursor spotlight that dims the rest of the screen around the pointer, and a click-ripple animation on every mouse click — both composited the same way the existing cursor overlay is.">
-                <ctcontrols:SettingsCard.HeaderIcon>
+            <ctcontrols:SettingsExpander Header="Spotlight" Description="Dims the rest of the screen, leaving a sharp circle around the cursor" IsExpanded="True">
+                <ctcontrols:SettingsExpander.HeaderIcon>
                     <FontIcon Glyph="&#xE81E;" />
+                </ctcontrols:SettingsExpander.HeaderIcon>
+                <ToggleSwitch OnContent="On" OffContent="Off"
+                              IsOn="{x:Bind ViewModel.SpotlightEnabled, Mode=TwoWay}"
+                              IsEnabled="{x:Bind ViewModel.IsIdle, Mode=OneWay}" />
+                <ctcontrols:SettingsExpander.Items>
+                    <ctcontrols:SettingsCard Header="Spotlight radius" Description="{x:Bind ViewModel.SpotlightRadiusLabel, Mode=OneWay}">
+                        <Slider MinWidth="220"
+                            Minimum="80" Maximum="400" StepFrequency="10"
+                            Value="{x:Bind ViewModel.SpotlightRadius, Mode=TwoWay}"
+                            IsEnabled="{x:Bind ViewModel.IsIdle, Mode=OneWay}" />
+                    </ctcontrols:SettingsCard>
+                </ctcontrols:SettingsExpander.Items>
+            </ctcontrols:SettingsExpander>
+
+            <ctcontrols:SettingsCard Header="Click ripples" Description="A brief expanding ring wherever you click, left or right">
+                <ctcontrols:SettingsCard.HeaderIcon>
+                    <FontIcon Glyph="&#xE7C9;" />
                 </ctcontrols:SettingsCard.HeaderIcon>
-                <FontIcon Glyph="&#xE916;" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                <ToggleSwitch OnContent="On" OffContent="Off"
+                              IsOn="{x:Bind ViewModel.ClickRipplesEnabled, Mode=TwoWay}"
+                              IsEnabled="{x:Bind ViewModel.IsIdle, Mode=OneWay}" />
             </ctcontrols:SettingsCard>
         </StackPanel>
     </ScrollViewer>

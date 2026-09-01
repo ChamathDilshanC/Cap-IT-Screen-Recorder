@@ -4,8 +4,10 @@ using ScreenRecorderApp.ViewModels;
 
 namespace ScreenRecorderApp.Views;
 
-/// <summary>Stub page — Master Plan item 5 (cursor spotlight + click-ripple effects). No backend logic
-/// yet; wired into the shared MainViewModel now so a later phase is a pure addition.</summary>
+/// <summary>Phase 4 Step 1: settings/toggles for the cursor spotlight and click-ripple effects. The
+/// global click hook (GlobalMouseHook.ClickAt) is real and wired at the VideoCaptureService level for
+/// Step 2's rendering; VideoCaptureService doesn't composite either effect onto frames yet, so enabling
+/// these toggles only persists the preference for now.</summary>
 public sealed partial class EffectsPage : Page
 {
     public MainViewModel ViewModel { get; private set; } = null!;

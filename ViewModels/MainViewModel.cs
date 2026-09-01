@@ -60,6 +60,14 @@ public partial class MainViewModel : BaseViewModel
     [ObservableProperty] private WebcamDeviceOption? _selectedWebcam;
     [ObservableProperty] private bool _webcamEnabled;
 
+    // Advanced cursor effects (Phase 4 Step 1 — hooks/settings/UI only; VideoCaptureService doesn't
+    // render the spotlight or ripples onto frames yet, so these don't touch RestartPreviewIfIdle either,
+    // same reasoning as the webcam properties above at their equivalent stage).
+    [ObservableProperty] private bool _spotlightEnabled;
+    [ObservableProperty] private double _spotlightRadius = 180;
+    public string SpotlightRadiusLabel => $"{SpotlightRadius:0}px";
+    [ObservableProperty] private bool _clickRipplesEnabled;
+
     [ObservableProperty] private int _fps = 30;
     [ObservableProperty] private double _videoBitrateKbps = 12000;
     public string BitrateLabel => $"Video bitrate: {VideoBitrateKbps:0} kbps";
@@ -208,6 +216,9 @@ public partial class MainViewModel : BaseViewModel
             MouseTrackingZoomEnabled = s.MouseTrackingZoomEnabled;
             SelectedZoomLevel = ZoomLevelOptions.FirstOrDefault(z => z.Factor == s.ZoomFactor) ?? SelectedZoomLevel;
             KeystrokeOverlayEnabled = s.KeystrokeOverlayEnabled;
+            SpotlightEnabled = s.SpotlightEnabled;
+            SpotlightRadius = s.SpotlightRadius;
+            ClickRipplesEnabled = s.ClickRipplesEnabled;
             MaximizeTextClarity = s.MaximizeTextClarity;
             if (!string.IsNullOrWhiteSpace(s.OutputDirectory)) OutputDirectory = s.OutputDirectory;
         }
@@ -238,6 +249,9 @@ public partial class MainViewModel : BaseViewModel
         KeystrokeOverlayEnabled = KeystrokeOverlayEnabled,
         WebcamEnabled = WebcamEnabled,
         WebcamDeviceId = SelectedWebcam?.Id,
+        SpotlightEnabled = SpotlightEnabled,
+        SpotlightRadius = SpotlightRadius,
+        ClickRipplesEnabled = ClickRipplesEnabled,
         MaximizeTextClarity = MaximizeTextClarity,
         OutputDirectory = OutputDirectory,
     };
@@ -353,6 +367,18 @@ public partial class MainViewModel : BaseViewModel
         RestartPreviewIfIdle();
         QueueSaveSettings();
     }
+
+    // No RestartPreviewIfIdle() here yet — same reasoning as the webcam properties above: nothing renders
+    // these onto frames until the byte-array compositing step lands.
+    partial void OnSpotlightEnabledChanged(bool value) => QueueSaveSettings();
+
+    partial void OnSpotlightRadiusChanged(double value)
+    {
+        OnPropertyChanged(nameof(SpotlightRadiusLabel));
+        QueueSaveSettings();
+    }
+
+    partial void OnClickRipplesEnabledChanged(bool value) => QueueSaveSettings();
 
     partial void OnSelectedEncoderChanged(HardwareEncoder value)
     {
@@ -531,6 +557,9 @@ public partial class MainViewModel : BaseViewModel
             KeystrokeOverlayEnabled = KeystrokeOverlayEnabled,
             WebcamEnabled = WebcamEnabled,
             WebcamDeviceId = SelectedWebcam?.Id,
+            SpotlightEnabled = SpotlightEnabled,
+            SpotlightRadius = SpotlightRadius,
+            ClickRipplesEnabled = ClickRipplesEnabled,
             Encoder = SelectedEncoder,
             Container = SelectedContainer,
             Resolution = SelectedResolution.Value,
