@@ -15,7 +15,13 @@ namespace ScreenRecorderApp.ViewModels;
 public partial class MainViewModel : BaseViewModel
 {
     private readonly RecordingManager _manager = new();
+    private readonly SettingsService _settingsService = new();
     private readonly DispatcherQueueTimer _uiTimer;
+
+    // Guards the load-and-apply pass in the constructor so setting ~15 properties from disk doesn't
+    // immediately queue ~15 redundant saves of the values it just read.
+    private bool _isLoadingSettings;
+    private CancellationTokenSource? _saveDebounceCts;
 
     public ObservableCollection<MonitorInfo> Monitors { get; } = [];
     public ObservableCollection<AudioDeviceOption> Microphones { get; } = [];
@@ -95,6 +101,97 @@ public partial class MainViewModel : BaseViewModel
 
         RefreshMonitors();
         RefreshMicrophones();
+        LoadAndApplySettings();
+    }
+
+    /// <summary>Loads persisted preferences and applies them, matching the saved monitor/microphone by
+    /// name/id against what was just enumerated (falling back to the existing default-selection already
+    /// picked by RefreshMonitors/RefreshMicrophones if nothing matches — e.g. a saved monitor got
+    /// unplugged). Guarded so applying these ~15 values doesn't immediately queue ~15 saves right back.</summary>
+    private void LoadAndApplySettings()
+    {
+        _isLoadingSettings = true;
+        try
+        {
+            var s = _settingsService.Load();
+
+            if (s.MonitorDeviceName is not null)
+            {
+                var match = Monitors.FirstOrDefault(m => m.DeviceName == s.MonitorDeviceName);
+                if (match is not null) SelectedMonitor = match;
+            }
+            if (s.MicrophoneDeviceId is not null)
+            {
+                var match = Microphones.FirstOrDefault(m => m.Id == s.MicrophoneDeviceId);
+                if (match is not null) SelectedMicrophone = match;
+            }
+
+            Fps = FpsOptions.Contains(s.Fps) ? s.Fps : Fps;
+            VideoBitrateKbps = s.VideoBitrateKbps;
+            SelectedEncoder = s.Encoder;
+            SelectedContainer = s.Container;
+            SelectedResolution = ResolutionOptions.FirstOrDefault(r => r.Value == s.Resolution) ?? SelectedResolution;
+            CaptureCursor = s.CaptureCursor;
+            SelectedCursorStyle = CursorStyleOptions.FirstOrDefault(c => c.Value == s.CursorStyle) ?? SelectedCursorStyle;
+            CaptureSystemAudio = s.CaptureSystemAudio;
+            CaptureMicrophone = s.CaptureMicrophone;
+            MouseTrackingZoomEnabled = s.MouseTrackingZoomEnabled;
+            SelectedZoomLevel = ZoomLevelOptions.FirstOrDefault(z => z.Factor == s.ZoomFactor) ?? SelectedZoomLevel;
+            KeystrokeOverlayEnabled = s.KeystrokeOverlayEnabled;
+            MaximizeTextClarity = s.MaximizeTextClarity;
+            if (!string.IsNullOrWhiteSpace(s.OutputDirectory)) OutputDirectory = s.OutputDirectory;
+        }
+        finally
+        {
+            _isLoadingSettings = false;
+        }
+    }
+
+    private AppSettings BuildAppSettings() => new()
+    {
+        MonitorDeviceName = SelectedMonitor?.DeviceName,
+        Fps = Fps,
+        VideoBitrateKbps = VideoBitrateKbps,
+        Encoder = SelectedEncoder,
+        Container = SelectedContainer,
+        Resolution = SelectedResolution.Value,
+        CaptureCursor = CaptureCursor,
+        CursorStyle = SelectedCursorStyle.Value,
+        CaptureSystemAudio = CaptureSystemAudio,
+        CaptureMicrophone = CaptureMicrophone,
+        MicrophoneDeviceId = SelectedMicrophone?.Id,
+        MouseTrackingZoomEnabled = MouseTrackingZoomEnabled,
+        ZoomFactor = SelectedZoomLevel.Factor,
+        KeystrokeOverlayEnabled = KeystrokeOverlayEnabled,
+        MaximizeTextClarity = MaximizeTextClarity,
+        OutputDirectory = OutputDirectory,
+    };
+
+    /// <summary>Debounced (~400ms) save — called from every setting's On&lt;Prop&gt;Changed partial so a
+    /// slider drag doesn't hit disk on every tick, only once motion settles.</summary>
+    private void QueueSaveSettings()
+    {
+        if (_isLoadingSettings) return;
+
+        _saveDebounceCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        _saveDebounceCts = cts;
+        var snapshot = BuildAppSettings();
+
+        _ = Task.Run(async () =>
+        {
+            try { await Task.Delay(400, cts.Token); }
+            catch (OperationCanceledException) { return; }
+            if (cts.Token.IsCancellationRequested) return;
+            _settingsService.Save(snapshot);
+        });
+    }
+
+    /// <summary>Immediate, non-debounced save — call on app shutdown so the last pending change isn't lost.</summary>
+    public void FlushSettings()
+    {
+        _saveDebounceCts?.Cancel();
+        _settingsService.Save(BuildAppSettings());
     }
 
     partial void OnPreviewSourceChanged(WriteableBitmap? value)
@@ -121,27 +218,72 @@ public partial class MainViewModel : BaseViewModel
     {
         StartRecordingCommand.NotifyCanExecuteChanged();
         RestartPreviewIfIdle();
+        QueueSaveSettings();
     }
 
-    partial void OnCaptureCursorChanged(bool value) => RestartPreviewIfIdle();
+    partial void OnCaptureCursorChanged(bool value)
+    {
+        RestartPreviewIfIdle();
+        QueueSaveSettings();
+    }
 
-    partial void OnSelectedCursorStyleChanged(CursorStyleOption value) => RestartPreviewIfIdle();
+    partial void OnSelectedCursorStyleChanged(CursorStyleOption value)
+    {
+        RestartPreviewIfIdle();
+        QueueSaveSettings();
+    }
 
-    partial void OnMouseTrackingZoomEnabledChanged(bool value) => RestartPreviewIfIdle();
+    partial void OnMouseTrackingZoomEnabledChanged(bool value)
+    {
+        RestartPreviewIfIdle();
+        QueueSaveSettings();
+    }
 
-    partial void OnSelectedZoomLevelChanged(ZoomLevelOption value) => RestartPreviewIfIdle();
+    partial void OnSelectedZoomLevelChanged(ZoomLevelOption value)
+    {
+        RestartPreviewIfIdle();
+        QueueSaveSettings();
+    }
 
-    partial void OnKeystrokeOverlayEnabledChanged(bool value) => RestartPreviewIfIdle();
+    partial void OnKeystrokeOverlayEnabledChanged(bool value)
+    {
+        RestartPreviewIfIdle();
+        QueueSaveSettings();
+    }
 
-    partial void OnSelectedEncoderChanged(HardwareEncoder value) => OnPropertyChanged(nameof(CanMaximizeTextClarity));
+    partial void OnSelectedEncoderChanged(HardwareEncoder value)
+    {
+        OnPropertyChanged(nameof(CanMaximizeTextClarity));
+        QueueSaveSettings();
+    }
 
-    partial void OnVideoBitrateKbpsChanged(double value) => OnPropertyChanged(nameof(BitrateLabel));
+    partial void OnVideoBitrateKbpsChanged(double value)
+    {
+        OnPropertyChanged(nameof(BitrateLabel));
+        QueueSaveSettings();
+    }
 
     partial void OnFfmpegSetupRequiredChanged(bool value) => OnPropertyChanged(nameof(ShowFFmpegSetupBanner));
 
     partial void OnIsDownloadingFFmpegChanged(bool value) => OnPropertyChanged(nameof(ShowFFmpegSetupBanner));
 
     partial void OnFfmpegDownloadProgressChanged(double value) => OnPropertyChanged(nameof(FFmpegDownloadProgressText));
+
+    partial void OnSelectedMicrophoneChanged(AudioDeviceOption? value) => QueueSaveSettings();
+
+    partial void OnFpsChanged(int value) => QueueSaveSettings();
+
+    partial void OnSelectedContainerChanged(OutputContainer value) => QueueSaveSettings();
+
+    partial void OnSelectedResolutionChanged(ResolutionOption value) => QueueSaveSettings();
+
+    partial void OnCaptureSystemAudioChanged(bool value) => QueueSaveSettings();
+
+    partial void OnCaptureMicrophoneChanged(bool value) => QueueSaveSettings();
+
+    partial void OnMaximizeTextClarityChanged(bool value) => QueueSaveSettings();
+
+    partial void OnOutputDirectoryChanged(string value) => QueueSaveSettings();
 
     /// <summary>(Re)starts the before-recording live preview on a background thread. Safe to call any
     /// time a relevant setting changes; it's a no-op unless idle and a monitor is selected.</summary>

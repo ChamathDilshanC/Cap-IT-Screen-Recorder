@@ -20,6 +20,7 @@ public sealed partial class MainWindow : Window
 
         Title = "Cap-IT Screen Recorder";
         RootFrame.Navigate(typeof(ShellPage));
+        Closed += OnClosed;
 
         try
         {
@@ -48,6 +49,13 @@ public sealed partial class MainWindow : Window
         {
             // Sizing is a nicety; ignore if the platform APIs are unavailable.
         }
+    }
+
+    // Best-effort clean save on shutdown so a change made just before closing isn't lost to the ~400ms
+    // debounce in MainViewModel.QueueSaveSettings.
+    private void OnClosed(object sender, WindowEventArgs args)
+    {
+        (RootFrame.Content as ShellPage)?.ViewModel.FlushSettings();
     }
 
     private void OnAppWindowChanged(AppWindow sender, AppWindowChangedEventArgs args)
