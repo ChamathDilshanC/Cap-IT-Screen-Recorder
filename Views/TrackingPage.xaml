@@ -1,0 +1,65 @@
+<Page
+    x:Class="ScreenRecorderApp.Views.TrackingPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:ctcontrols="using:CommunityToolkit.WinUI.Controls"
+    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+
+    <Page.Resources>
+        <Style x:Key="SectionDescriptionText" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+    </Page.Resources>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Padding="32,28" Spacing="18" HorizontalAlignment="Stretch">
+            <StackPanel Spacing="4">
+                <TextBlock Text="Smart Tracking" Style="{StaticResource TitleTextBlockStyle}" />
+                <TextBlock Text="Configure the interaction-triggered mouse zoom and the on-screen keystroke overlay. Both preview live on the Home tab before you start recording."
+                           Style="{StaticResource SectionDescriptionText}" />
+            </StackPanel>
+
+            <!-- Mouse tracking zoom -->
+            <ctcontrols:SettingsExpander Header="Mouse Tracking Zoom"
+                                          Description="Smoothly zooms toward the mouse while you're moving or clicking it, and toward the text caret while you're typing, then eases back out to the full desktop about 1.5s after you stop — a camera that follows the action instead of staying zoomed in the whole time."
+                                          IsExpanded="True">
+                <ctcontrols:SettingsExpander.HeaderIcon>
+                    <FontIcon Glyph="&#xE721;" />
+                </ctcontrols:SettingsExpander.HeaderIcon>
+                <ctcontrols:SettingsExpander.Items>
+                    <ctcontrols:SettingsCard Header="Enable mouse tracking zoom">
+                        <ToggleSwitch OnContent="On" OffContent="Off"
+                                      IsOn="{x:Bind ViewModel.MouseTrackingZoomEnabled, Mode=TwoWay}"
+                                      IsEnabled="{x:Bind ViewModel.IsIdle, Mode=OneWay}" />
+                    </ctcontrols:SettingsCard>
+
+                    <ctcontrols:SettingsCard Header="Zoom level"
+                                              Visibility="{x:Bind ViewModel.MouseTrackingZoomEnabled, Mode=OneWay}">
+                        <ComboBox MinWidth="160"
+                            ItemsSource="{x:Bind ViewModel.ZoomLevelOptions}"
+                            SelectedItem="{x:Bind ViewModel.SelectedZoomLevel, Mode=TwoWay}"
+                            IsEnabled="{x:Bind ViewModel.IsIdle, Mode=OneWay}" />
+                    </ctcontrols:SettingsCard>
+                </ctcontrols:SettingsExpander.Items>
+            </ctcontrols:SettingsExpander>
+
+            <!-- Keystroke overlay -->
+            <ctcontrols:SettingsExpander Header="Keystroke Overlay"
+                                          Description="Shows your recent keystrokes on screen as you type, briefly fading out after each key. Useful for tutorials and demos."
+                                          IsExpanded="True">
+                <ctcontrols:SettingsExpander.HeaderIcon>
+                    <FontIcon Glyph="&#xE765;" />
+                </ctcontrols:SettingsExpander.HeaderIcon>
+                <ctcontrols:SettingsExpander.Items>
+                    <ctcontrols:SettingsCard Header="Enable keystroke overlay">
+                        <ToggleSwitch OnContent="On" OffContent="Off"
+                                      IsOn="{x:Bind ViewModel.KeystrokeOverlayEnabled, Mode=TwoWay}"
+                                      IsEnabled="{x:Bind ViewModel.IsIdle, Mode=OneWay}" />
+                    </ctcontrols:SettingsCard>
+                </ctcontrols:SettingsExpander.Items>
+            </ctcontrols:SettingsExpander>
+        </StackPanel>
+    </ScrollViewer>
+</Page>
