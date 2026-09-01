@@ -4,8 +4,9 @@ using ScreenRecorderApp.ViewModels;
 
 namespace ScreenRecorderApp.Views;
 
-/// <summary>Stub page — Master Plan item 2 (circular webcam PiP overlay with AI background blur). No
-/// backend logic yet; wired into the shared MainViewModel now so a later phase is a pure addition.</summary>
+/// <summary>Phase 3 Step 1: device selection/persistence UI for the circular webcam PiP overlay. Actual
+/// frame capture and compositing onto the recording (Phase 3 Step 2) isn't wired up yet — VideoCaptureService
+/// doesn't touch the webcam at all so far, so enabling the toggle here only persists the preference.</summary>
 public sealed partial class WebcamPage : Page
 {
     public MainViewModel ViewModel { get; private set; } = null!;

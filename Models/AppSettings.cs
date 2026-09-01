@@ -36,6 +36,9 @@ public sealed class AppSettings
     public double ZoomFactor { get; set; } = 2.0;
     public bool KeystrokeOverlayEnabled { get; set; } = false;
 
+    public bool WebcamEnabled { get; set; } = false;
+    public string? WebcamDeviceId { get; set; }
+
     public bool MaximizeTextClarity { get; set; } = false;
 
     public string OutputDirectory { get; set; } = new RecordingSettings().OutputDirectory;

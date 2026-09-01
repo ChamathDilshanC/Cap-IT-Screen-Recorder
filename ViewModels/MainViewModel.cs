@@ -27,6 +27,7 @@ public partial class MainViewModel : BaseViewModel
     public ObservableCollection<MonitorInfo> Monitors { get; } = [];
     public ObservableCollection<AudioDeviceOption> Microphones { get; } = [];
     public ObservableCollection<WindowInfo> Windows { get; } = [];
+    public ObservableCollection<WebcamDeviceOption> Webcams { get; } = [];
 
     public IReadOnlyList<CaptureTargetKindOption> CaptureTargetKindOptions { get; } = CaptureTargetKindOption.All;
     public IReadOnlyList<int> FpsOptions { get; } = [15, 24, 30, 60];
@@ -52,6 +53,12 @@ public partial class MainViewModel : BaseViewModel
     [ObservableProperty] private bool _mouseTrackingZoomEnabled;
     [ObservableProperty] private ZoomLevelOption _selectedZoomLevel = ZoomLevelOption.All[0];
     [ObservableProperty] private bool _keystrokeOverlayEnabled;
+
+    // Circular webcam PiP overlay (Phase 3 Step 1 — device selection/persistence only; VideoCaptureService
+    // doesn't composite it onto frames yet, so these don't touch RestartPreviewIfIdle like the capture
+    // target/cursor properties above do).
+    [ObservableProperty] private WebcamDeviceOption? _selectedWebcam;
+    [ObservableProperty] private bool _webcamEnabled;
 
     [ObservableProperty] private int _fps = 30;
     [ObservableProperty] private double _videoBitrateKbps = 12000;
@@ -120,6 +127,36 @@ public partial class MainViewModel : BaseViewModel
         RefreshMicrophones();
         RefreshWindows();
         LoadAndApplySettings();
+        _ = InitializeWebcamAsync();
+    }
+
+    /// <summary>
+    /// Webcam enumeration is WinRT-async (DeviceInformation.FindAllAsync) unlike every other Refresh*
+    /// method here, so it can't run synchronously inline with LoadAndApplySettings in the constructor —
+    /// this populates the list, then re-matches the saved device (by exact id, same convention
+    /// MicrophoneDeviceId already uses) once it's available, and applies the saved enabled toggle.
+    /// Guarded the same way LoadAndApplySettings is, so applying these two values doesn't immediately
+    /// queue a save right back.
+    /// </summary>
+    private async Task InitializeWebcamAsync()
+    {
+        await RefreshWebcamsAsync();
+
+        _isLoadingSettings = true;
+        try
+        {
+            var s = _settingsService.Load();
+            if (s.WebcamDeviceId is not null)
+            {
+                var match = Webcams.FirstOrDefault(w => w.Id == s.WebcamDeviceId);
+                if (match is not null) SelectedWebcam = match;
+            }
+            WebcamEnabled = s.WebcamEnabled;
+        }
+        finally
+        {
+            _isLoadingSettings = false;
+        }
     }
 
     /// <summary>Loads persisted preferences and applies them, matching the saved monitor/microphone by
@@ -199,6 +236,8 @@ public partial class MainViewModel : BaseViewModel
         MouseTrackingZoomEnabled = MouseTrackingZoomEnabled,
         ZoomFactor = SelectedZoomLevel.Factor,
         KeystrokeOverlayEnabled = KeystrokeOverlayEnabled,
+        WebcamEnabled = WebcamEnabled,
+        WebcamDeviceId = SelectedWebcam?.Id,
         MaximizeTextClarity = MaximizeTextClarity,
         OutputDirectory = OutputDirectory,
     };
@@ -303,6 +342,11 @@ public partial class MainViewModel : BaseViewModel
         QueueSaveSettings();
     }
 
+    // No RestartPreviewIfIdle() here yet — VideoCaptureService doesn't composite the webcam onto frames
+    // until Phase 3 Step 2, so there's nothing for the live preview to reflect from these two yet.
+    partial void OnSelectedWebcamChanged(WebcamDeviceOption? value) => QueueSaveSettings();
+    partial void OnWebcamEnabledChanged(bool value) => QueueSaveSettings();
+
     partial void OnSelectedEncoderChanged(HardwareEncoder value)
     {
         OnPropertyChanged(nameof(CanMaximizeTextClarity));
@@ -385,6 +429,16 @@ public partial class MainViewModel : BaseViewModel
         Windows.Clear();
         foreach (var w in _manager.GetWindows()) Windows.Add(w);
         SelectedWindow = Windows.FirstOrDefault(w => w.Handle == current) ?? Windows.FirstOrDefault();
+    }
+
+    [RelayCommand]
+    private async Task RefreshWebcamsAsync()
+    {
+        var current = SelectedWebcam?.Id;
+        var webcams = await WebcamDeviceEnumerator.GetWebcamsAsync();
+        Webcams.Clear();
+        foreach (var w in webcams) Webcams.Add(w);
+        SelectedWebcam = Webcams.FirstOrDefault(w => w.Id == current) ?? Webcams.FirstOrDefault();
     }
 
     /// <summary>

@@ -129,6 +129,13 @@ public sealed class RecordingSettings
     public double ZoomFactor { get; set; } = 2.0;
     public bool KeystrokeOverlayEnabled { get; set; } = false;
 
+    // Circular webcam PiP overlay (Phase 3). WebcamDeviceId is the WinRT DeviceInformation.Id string —
+    // opaque but stable for a given physical device, matched by exact equality at load, same convention
+    // MicrophoneDeviceId already uses (unlike MonitorDeviceName/window title+process, no friendlier
+    // re-match key exists or is needed here).
+    public bool WebcamEnabled { get; set; } = false;
+    public string? WebcamDeviceId { get; set; }
+
     public HardwareEncoder Encoder { get; set; } = HardwareEncoder.Auto;
     public OutputContainer Container { get; set; } = OutputContainer.Mp4;
     public OutputResolution Resolution { get; set; } = OutputResolution.Native;

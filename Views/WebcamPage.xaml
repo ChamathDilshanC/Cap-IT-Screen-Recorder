@@ -17,17 +17,32 @@
         <StackPanel Padding="32,28" Spacing="18" HorizontalAlignment="Stretch">
             <StackPanel Spacing="4">
                 <TextBlock Text="Webcam" Style="{StaticResource TitleTextBlockStyle}" />
-                <TextBlock Text="A picture-in-picture webcam overlay for your recordings."
+                <TextBlock Text="A circular picture-in-picture webcam overlay for your recordings."
                            Style="{StaticResource SectionDescriptionText}" />
             </StackPanel>
 
-            <ctcontrols:SettingsCard Header="Coming soon"
-                                      Description="A circular webcam overlay you can position in a corner of the recording, with an optional AI background blur/removal mode — so no green screen needed.">
-                <ctcontrols:SettingsCard.HeaderIcon>
+            <ctcontrols:SettingsExpander Header="Webcam overlay" Description="Shown as a circular overlay on top of the recording" IsExpanded="True">
+                <ctcontrols:SettingsExpander.HeaderIcon>
                     <FontIcon Glyph="&#xE722;" />
-                </ctcontrols:SettingsCard.HeaderIcon>
-                <FontIcon Glyph="&#xE916;" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
-            </ctcontrols:SettingsCard>
+                </ctcontrols:SettingsExpander.HeaderIcon>
+                <ToggleSwitch OnContent="On" OffContent="Off"
+                              IsOn="{x:Bind ViewModel.WebcamEnabled, Mode=TwoWay}"
+                              IsEnabled="{x:Bind ViewModel.IsIdle, Mode=OneWay}" />
+                <ctcontrols:SettingsExpander.Items>
+                    <ctcontrols:SettingsCard Header="Camera" Description="Which webcam to overlay">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <ComboBox MinWidth="260"
+                                ItemsSource="{x:Bind ViewModel.Webcams}"
+                                SelectedItem="{x:Bind ViewModel.SelectedWebcam, Mode=TwoWay}"
+                                IsEnabled="{x:Bind ViewModel.IsIdle, Mode=OneWay}" />
+                            <Button Command="{x:Bind ViewModel.RefreshWebcamsCommand}"
+                                    ToolTipService.ToolTip="Refresh webcams">
+                                <FontIcon Glyph="&#xE72C;" FontSize="14" />
+                            </Button>
+                        </StackPanel>
+                    </ctcontrols:SettingsCard>
+                </ctcontrols:SettingsExpander.Items>
+            </ctcontrols:SettingsExpander>
         </StackPanel>
     </ScrollViewer>
 </Page>
