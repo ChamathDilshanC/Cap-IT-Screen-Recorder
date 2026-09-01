@@ -1,5 +1,17 @@
 namespace ScreenRecorderApp.Models;
 
+/// <summary>Pairs a <see cref="CaptureTargetKind"/> with a friendly label for display in a ComboBox.</summary>
+public sealed record CaptureTargetKindOption(CaptureTargetKind Value, string Label)
+{
+    public override string ToString() => Label;
+
+    public static readonly IReadOnlyList<CaptureTargetKindOption> All =
+    [
+        new(CaptureTargetKind.Monitor, "Entire display"),
+        new(CaptureTargetKind.Window, "Specific window"),
+    ];
+}
+
 public enum HardwareEncoder
 {
     Auto,
@@ -92,8 +104,13 @@ public sealed record ZoomLevelOption(double Factor, string Label)
 /// <summary>All user-configurable options for a recording session.</summary>
 public sealed class RecordingSettings
 {
+    public CaptureTargetKind CaptureTargetKind { get; set; } = CaptureTargetKind.Monitor;
+
     public nint MonitorHandle { get; set; }
     public string MonitorFriendlyName { get; set; } = "Primary Display";
+
+    public nint TargetWindowHandle { get; set; }
+    public string? TargetWindowTitle { get; set; }
 
     public int CaptureWidth { get; set; } = 1920;
     public int CaptureHeight { get; set; } = 1080;

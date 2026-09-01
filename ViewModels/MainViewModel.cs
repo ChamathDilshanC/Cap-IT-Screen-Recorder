@@ -16,6 +16,7 @@ public partial class MainViewModel : BaseViewModel
 {
     private readonly RecordingManager _manager = new();
     private readonly SettingsService _settingsService = new();
+    private readonly DispatcherQueue _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
     private readonly DispatcherQueueTimer _uiTimer;
 
     // Guards the load-and-apply pass in the constructor so setting ~15 properties from disk doesn't
@@ -25,7 +26,9 @@ public partial class MainViewModel : BaseViewModel
 
     public ObservableCollection<MonitorInfo> Monitors { get; } = [];
     public ObservableCollection<AudioDeviceOption> Microphones { get; } = [];
+    public ObservableCollection<WindowInfo> Windows { get; } = [];
 
+    public IReadOnlyList<CaptureTargetKindOption> CaptureTargetKindOptions { get; } = CaptureTargetKindOption.All;
     public IReadOnlyList<int> FpsOptions { get; } = [15, 24, 30, 60];
     public IReadOnlyList<HardwareEncoder> EncoderOptions { get; } = Enum.GetValues<HardwareEncoder>();
     public IReadOnlyList<OutputContainer> ContainerOptions { get; } = Enum.GetValues<OutputContainer>();
@@ -33,7 +36,12 @@ public partial class MainViewModel : BaseViewModel
     public IReadOnlyList<CursorStyleOption> CursorStyleOptions { get; } = CursorStyleOption.All;
     public IReadOnlyList<ZoomLevelOption> ZoomLevelOptions { get; } = ZoomLevelOption.All;
 
+    [ObservableProperty] private CaptureTargetKindOption _selectedCaptureTargetKind = CaptureTargetKindOption.All[0];
+    public bool IsWindowCaptureMode => SelectedCaptureTargetKind.Value == CaptureTargetKind.Window;
+    public bool IsMonitorCaptureMode => !IsWindowCaptureMode;
+
     [ObservableProperty] private MonitorInfo? _selectedMonitor;
+    [ObservableProperty] private WindowInfo? _selectedWindow;
     [ObservableProperty] private AudioDeviceOption? _selectedMicrophone;
 
     [ObservableProperty] private bool _captureSystemAudio = true;
@@ -99,8 +107,18 @@ public partial class MainViewModel : BaseViewModel
         // monitor is selected, before the user ever presses Start Recording.
         _uiTimer.Start();
 
+        // Fires from VideoCaptureService's WGC Closed handler, which runs on WGC's own thread, not the
+        // UI thread — everything below touches [ObservableProperty]-backed state XAML bindings expect
+        // updates for on the UI thread, so it has to be marshaled via the DispatcherQueue captured above.
+        _manager.CaptureTargetLost += () => _dispatcherQueue.TryEnqueue(() =>
+        {
+            StatusMessage = "The captured window was closed.";
+            if (IsBusy) _ = StopRecordingAsync();
+        });
+
         RefreshMonitors();
         RefreshMicrophones();
+        RefreshWindows();
         LoadAndApplySettings();
     }
 
@@ -126,6 +144,21 @@ public partial class MainViewModel : BaseViewModel
                 if (match is not null) SelectedMicrophone = match;
             }
 
+            // A saved HWND wouldn't survive a restart anyway — re-match by title + process name against
+            // whatever's actually running right now, and only switch into Window mode if that succeeds;
+            // otherwise stay in (the already-selected default) Monitor mode rather than land on a mode
+            // with nothing selected.
+            if (s.CaptureTargetKind == CaptureTargetKind.Window && s.TargetWindowTitle is not null)
+            {
+                var match = Windows.FirstOrDefault(w => w.Title == s.TargetWindowTitle && w.ProcessName == s.TargetWindowProcessName)
+                             ?? Windows.FirstOrDefault(w => w.Title == s.TargetWindowTitle);
+                if (match is not null)
+                {
+                    SelectedWindow = match;
+                    SelectedCaptureTargetKind = CaptureTargetKindOptions.First(k => k.Value == CaptureTargetKind.Window);
+                }
+            }
+
             Fps = FpsOptions.Contains(s.Fps) ? s.Fps : Fps;
             VideoBitrateKbps = s.VideoBitrateKbps;
             SelectedEncoder = s.Encoder;
@@ -149,7 +182,10 @@ public partial class MainViewModel : BaseViewModel
 
     private AppSettings BuildAppSettings() => new()
     {
+        CaptureTargetKind = SelectedCaptureTargetKind.Value,
         MonitorDeviceName = SelectedMonitor?.DeviceName,
+        TargetWindowTitle = SelectedWindow?.Title,
+        TargetWindowProcessName = SelectedWindow?.ProcessName,
         Fps = Fps,
         VideoBitrateKbps = VideoBitrateKbps,
         Encoder = SelectedEncoder,
@@ -221,6 +257,22 @@ public partial class MainViewModel : BaseViewModel
         QueueSaveSettings();
     }
 
+    partial void OnSelectedWindowChanged(WindowInfo? value)
+    {
+        StartRecordingCommand.NotifyCanExecuteChanged();
+        RestartPreviewIfIdle();
+        QueueSaveSettings();
+    }
+
+    partial void OnSelectedCaptureTargetKindChanged(CaptureTargetKindOption value)
+    {
+        OnPropertyChanged(nameof(IsWindowCaptureMode));
+        OnPropertyChanged(nameof(IsMonitorCaptureMode));
+        StartRecordingCommand.NotifyCanExecuteChanged();
+        RestartPreviewIfIdle();
+        QueueSaveSettings();
+    }
+
     partial void OnCaptureCursorChanged(bool value)
     {
         RestartPreviewIfIdle();
@@ -286,12 +338,14 @@ public partial class MainViewModel : BaseViewModel
     partial void OnOutputDirectoryChanged(string value) => QueueSaveSettings();
 
     /// <summary>(Re)starts the before-recording live preview on a background thread. Safe to call any
-    /// time a relevant setting changes; it's a no-op unless idle and a monitor is selected.</summary>
+    /// time a relevant setting changes; it's a no-op unless idle and a capture target is selected.</summary>
     private void RestartPreviewIfIdle()
     {
-        if (!IsIdle || SelectedMonitor is null) return;
+        var isWindowMode = IsWindowCaptureMode;
+        if (!IsIdle || (isWindowMode ? SelectedWindow is null : SelectedMonitor is null)) return;
 
-        var monitor = SelectedMonitor;
+        var monitor = isWindowMode ? null : SelectedMonitor;
+        var window = isWindowMode ? SelectedWindow : null;
         var cursor = CaptureCursor;
         var cursorStyle = SelectedCursorStyle.Value;
         var zoomEnabled = MouseTrackingZoomEnabled;
@@ -299,7 +353,7 @@ public partial class MainViewModel : BaseViewModel
         var keystrokeOverlay = KeystrokeOverlayEnabled;
         _ = Task.Run(() =>
         {
-            try { _manager.StartPreview(monitor, cursor, cursorStyle, zoomEnabled, zoomFactor, keystrokeOverlay); }
+            try { _manager.StartPreview(monitor, window, cursor, cursorStyle, zoomEnabled, zoomFactor, keystrokeOverlay); }
             catch { /* best effort: live preview is a convenience, not required to record */ }
         });
     }
@@ -322,6 +376,15 @@ public partial class MainViewModel : BaseViewModel
         Microphones.Clear();
         foreach (var mic in _manager.GetMicrophones()) Microphones.Add(mic);
         SelectedMicrophone = Microphones.FirstOrDefault(m => m.Id == current) ?? Microphones.FirstOrDefault();
+    }
+
+    [RelayCommand]
+    private void RefreshWindows()
+    {
+        var current = SelectedWindow?.Handle;
+        Windows.Clear();
+        foreach (var w in _manager.GetWindows()) Windows.Add(w);
+        SelectedWindow = Windows.FirstOrDefault(w => w.Handle == current) ?? Windows.FirstOrDefault();
     }
 
     /// <summary>
@@ -376,19 +439,23 @@ public partial class MainViewModel : BaseViewModel
     [RelayCommand]
     private void CancelFFmpegDownload() => _ffmpegDownloadCts?.Cancel();
 
-    private bool CanStart() => IsIdle && SelectedMonitor is not null;
+    private bool CanStart() => IsIdle && (IsWindowCaptureMode ? SelectedWindow is not null : SelectedMonitor is not null);
 
     [RelayCommand(CanExecute = nameof(CanStart))]
     private async Task StartRecordingAsync()
     {
-        if (SelectedMonitor is null) return;
+        var isWindowMode = IsWindowCaptureMode;
+        if (isWindowMode ? SelectedWindow is null : SelectedMonitor is null) return;
 
         if (!await EnsureFFmpegAvailableAsync()) return;
 
         var settings = new RecordingSettings
         {
-            MonitorHandle = SelectedMonitor.Handle,
-            MonitorFriendlyName = SelectedMonitor.FriendlyName,
+            CaptureTargetKind = SelectedCaptureTargetKind.Value,
+            MonitorHandle = SelectedMonitor?.Handle ?? 0,
+            MonitorFriendlyName = SelectedMonitor?.FriendlyName ?? "",
+            TargetWindowHandle = SelectedWindow?.Handle ?? 0,
+            TargetWindowTitle = SelectedWindow?.Title,
             Fps = Fps,
             VideoBitrateKbps = (int)VideoBitrateKbps,
             CaptureSystemAudio = CaptureSystemAudio,
@@ -409,9 +476,10 @@ public partial class MainViewModel : BaseViewModel
         try
         {
             StatusMessage = "Starting…";
-            await _manager.StartAsync(settings, SelectedMonitor);
+            await _manager.StartAsync(settings, SelectedMonitor, SelectedWindow);
             State = _manager.State;
-            StatusMessage = $"Recording {SelectedMonitor.FriendlyName} @ {Fps} FPS ({SelectedResolution.Label})";
+            var targetLabel = isWindowMode ? SelectedWindow!.Title : SelectedMonitor!.FriendlyName;
+            StatusMessage = $"Recording {targetLabel} @ {Fps} FPS ({SelectedResolution.Label})";
         }
         catch (Exception ex)
         {

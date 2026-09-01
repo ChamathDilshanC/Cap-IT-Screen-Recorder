@@ -10,7 +10,14 @@ namespace ScreenRecorderApp.Models;
 /// </summary>
 public sealed class AppSettings
 {
+    public CaptureTargetKind CaptureTargetKind { get; set; } = CaptureTargetKind.Monitor;
     public string? MonitorDeviceName { get; set; }
+
+    // A saved HWND is meaningless across a restart, so the target window is re-matched by title +
+    // process name against whatever's actually running — best-effort, falls back to Monitor mode if
+    // nothing matches (same fallback style already used for a saved monitor that got unplugged).
+    public string? TargetWindowTitle { get; set; }
+    public string? TargetWindowProcessName { get; set; }
 
     public int Fps { get; set; } = 30;
     public double VideoBitrateKbps { get; set; } = 12000;

@@ -23,11 +23,19 @@ public sealed class RecordingManager : IDisposable
     private Task? _pacerTask;
 
     private nint? _previewMonitorHandle;
+    private nint? _previewWindowHandle;
     private bool _previewCursor;
     private CursorStyle _previewCursorStyle;
     private bool _previewZoomEnabled;
     private double _previewZoomFactor;
     private bool _previewKeystrokeOverlay;
+
+    /// <summary>Fires if a specific-window recording/preview's target window is closed out from under it (window mode only) — pass-through of <see cref="VideoCaptureService.CaptureTargetLost"/>.</summary>
+    public event Action? CaptureTargetLost
+    {
+        add => _video.CaptureTargetLost += value;
+        remove => _video.CaptureTargetLost -= value;
+    }
 
     private DateTime _startTimeUtc;
     private TimeSpan _pausedAccum;
@@ -54,21 +62,24 @@ public sealed class RecordingManager : IDisposable
 
     public List<AudioDeviceOption> GetMicrophones() => AudioDeviceEnumerator.GetMicrophones();
 
+    public List<WindowInfo> GetWindows() => WindowEnumerator.GetWindows();
+
     /// <summary>Copies the most recently captured frame into <paramref name="buffer"/> for a live preview UI. Works whenever video capture is active — before recording (preview mode), while recording, or paused.</summary>
     public bool TryGetPreviewFrame(byte[] buffer) => _video.TryGetLatestFrame(buffer);
 
     /// <summary>
-    /// Starts (or restarts, if the monitor/cursor setting changed) a preview-only capture of the given
-    /// monitor so the UI can show live video before the user presses Start Recording. No-op once a real
-    /// recording is underway — call from a background thread, this blocks on DXGI device creation.
+    /// Starts (or restarts, if the target/cursor setting changed) a preview-only capture of the given
+    /// monitor or window so the UI can show live video before the user presses Start Recording. Exactly
+    /// one of <paramref name="monitor"/>/<paramref name="window"/> should be non-null. No-op once a real
+    /// recording is underway — call from a background thread, this blocks on device creation.
     /// </summary>
-    public void StartPreview(MonitorInfo monitor, bool captureCursor, CursorStyle cursorStyle,
+    public void StartPreview(MonitorInfo? monitor, WindowInfo? window, bool captureCursor, CursorStyle cursorStyle,
         bool zoomEnabled = false, double zoomFactor = 2.0, bool keystrokeOverlayEnabled = false)
     {
         lock (_videoLock)
         {
             if (State != RecordingState.Idle) return;
-            if (_video.IsCapturing && _previewMonitorHandle == monitor.Handle
+            if (_video.IsCapturing && _previewMonitorHandle == monitor?.Handle && _previewWindowHandle == window?.Handle
                 && _previewCursor == captureCursor && _previewCursorStyle == cursorStyle
                 && _previewZoomEnabled == zoomEnabled && _previewZoomFactor == zoomFactor
                 && _previewKeystrokeOverlay == keystrokeOverlayEnabled) return;
@@ -76,9 +87,10 @@ public sealed class RecordingManager : IDisposable
             _video.Stop();
             try
             {
-                _video.Prepare(monitor, captureCursor, cursorStyle, zoomEnabled, zoomFactor, keystrokeOverlayEnabled);
+                _video.Prepare(monitor, window, captureCursor, cursorStyle, zoomEnabled, zoomFactor, keystrokeOverlayEnabled);
                 _video.BeginCapture();
-                _previewMonitorHandle = monitor.Handle;
+                _previewMonitorHandle = monitor?.Handle;
+                _previewWindowHandle = window?.Handle;
                 _previewCursor = captureCursor;
                 _previewCursorStyle = cursorStyle;
                 _previewZoomEnabled = zoomEnabled;
@@ -90,6 +102,7 @@ public sealed class RecordingManager : IDisposable
                 // Best effort: preview is a nice-to-have, not fatal to leave capture stopped here.
                 _video.Stop();
                 _previewMonitorHandle = null;
+                _previewWindowHandle = null;
             }
         }
     }
@@ -102,10 +115,11 @@ public sealed class RecordingManager : IDisposable
             if (State != RecordingState.Idle) return;
             _video.Stop();
             _previewMonitorHandle = null;
+            _previewWindowHandle = null;
         }
     }
 
-    public async Task StartAsync(RecordingSettings settings, MonitorInfo monitor)
+    public async Task StartAsync(RecordingSettings settings, MonitorInfo? monitor, WindowInfo? window)
     {
         if (State != RecordingState.Idle) return;
 
@@ -115,12 +129,13 @@ public sealed class RecordingManager : IDisposable
         try
         {
             // Tear down any preview-only capture first so recording gets a freshly configured one — the
-            // preview may be running against stale cursor settings or (in principle) a different monitor.
+            // preview may be running against stale cursor settings or (in principle) a different target.
             lock (_videoLock) { _video.Stop(); }
             _previewMonitorHandle = null;
+            _previewWindowHandle = null;
 
             // Prepare (but don't start) capture first so we know the real resolution.
-            await Task.Run(() => { lock (_videoLock) { _video.Prepare(monitor, settings.CaptureCursor, settings.CursorStyle,
+            await Task.Run(() => { lock (_videoLock) { _video.Prepare(monitor, window, settings.CaptureCursor, settings.CursorStyle,
                 settings.MouseTrackingZoomEnabled, settings.ZoomFactor, settings.KeystrokeOverlayEnabled); } });
 
             var outputPath = settings.BuildOutputFilePath();

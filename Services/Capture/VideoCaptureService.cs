@@ -7,21 +7,35 @@ using SharpGen.Runtime;
 using Vortice.Direct3D;
 using Vortice.Direct3D11;
 using Vortice.DXGI;
+using Windows.Graphics;
+using Windows.Graphics.Capture;
+using Windows.Graphics.DirectX;
+using Windows.Graphics.DirectX.Direct3D11;
 
 namespace ScreenRecorderApp.Services.Capture;
 
 /// <summary>
-/// Captures a monitor using the DXGI Desktop Duplication API and keeps the most recently decoded
-/// BGRA frame available for a pacing thread to pull at a fixed FPS.
+/// Captures either a whole monitor (DXGI Desktop Duplication) or a single application window
+/// (Windows.Graphics.Capture), and keeps the most recently decoded BGRA frame — always at a fixed
+/// <see cref="Width"/>/<see cref="Height"/> regardless of which path produced it — available for a
+/// pacing thread to pull at a fixed FPS.
 /// </summary>
 /// <remarks>
-/// This used to be built on Windows.Graphics.Capture, which requires bridging into WinRT via
-/// hand-written COM interop (there's no public API to create a GraphicsCaptureItem for an arbitrary
-/// monitor otherwise). That interop reliably crashed the whole process a few seconds into recording
-/// with an unrecoverable AccessViolationException in a GC finalizer releasing a WinRT object reference
-/// — a native/managed-boundary crash no try/catch can stop. Desktop Duplication is a plain DXGI/D3D11
-/// COM API with no WinRT involved at all, which removes that entire class of bug; Vortice's bindings
-/// for it are the same well-tested ones already used for device creation elsewhere in this file.
+/// Monitor capture used to be built on Windows.Graphics.Capture (WGC) too, and was rewritten onto DXGI
+/// Desktop Duplication after the hand-written WinRT COM interop WGC requires (there's no public API to
+/// create a GraphicsCaptureItem for an arbitrary HWND/HMONITOR otherwise) reliably crashed the whole
+/// process a few seconds into recording with an unrecoverable AccessViolationException in a GC finalizer
+/// releasing a WinRT object reference — a native/managed-boundary crash no try/catch can stop. Desktop
+/// Duplication has no such interop at all, which is why it's still the monitor-capture path today.
+///
+/// Application-specific (single-window) capture has no Desktop Duplication equivalent — it's WGC-only —
+/// so the same interop risk is unavoidable for that mode. It's mitigated, not eliminated, by strict
+/// object-lifetime discipline: every WGC object (<see cref="_captureItem"/>, <see cref="_framePool"/>,
+/// <see cref="_captureSession"/>, <see cref="_wgcDevice"/>) is a field, created in
+/// <see cref="Prepare"/>/<see cref="BeginCapture"/> and disposed in a strict order in <see cref="Stop"/>
+/// — never a local variable that could be garbage-collected while a native callback still references it,
+/// which is the specific pattern the earlier crash followed. See
+/// <see cref="Interop.GraphicsCaptureInterop"/> for the interop points themselves.
 /// </remarks>
 public sealed class VideoCaptureService : IDisposable
 {
@@ -29,6 +43,39 @@ public sealed class VideoCaptureService : IDisposable
     private ID3D11DeviceContext? _context;
     private IDXGIOutputDuplication? _duplication;
     private ID3D11Texture2D? _stagingTexture;
+
+    private CaptureTargetKind _captureTarget = CaptureTargetKind.Monitor;
+    private nint _targetWindowHandle;
+
+    // Window capture (WGC) — see this class's remarks for why every one of these is a field, never a
+    // local, and why Stop() disposes them in a specific order.
+    private GraphicsCaptureItem? _captureItem;
+    private Direct3D11CaptureFramePool? _framePool;
+    private GraphicsCaptureSession? _captureSession;
+    private IDirect3DDevice? _wgcDevice;
+    private ID3D11Texture2D? _wgcStagingTexture;
+    private int _wgcStagingWidth;
+    private int _wgcStagingHeight;
+    private SizeInt32 _wgcPoolSize;
+
+    // GraphicsCaptureItem.Closed turns out not to be a reliable signal in practice here: WGC simply stops
+    // delivering FrameArrived at all once the target window is gone, rather than firing Closed — so an
+    // independent poll is the only thing that reliably notices. IsWindow() is cheap and unambiguous, so a
+    // slow poll (not every frame) is plenty; still hooked up to Closed too, since a poll can lag it by up
+    // to the poll interval and there's no reason not to react the instant either signal fires.
+    private System.Threading.Timer? _windowValidityTimer;
+    private int _targetLostSignaled;
+
+    /// <summary>Fires if the captured window is closed while recording/previewing (window mode only) — the caller should stop cleanly rather than let capture just go silent.</summary>
+    public event Action? CaptureTargetLost;
+
+    private void SignalCaptureTargetLostOnce()
+    {
+        if (System.Threading.Interlocked.Exchange(ref _targetLostSignaled, 1) == 0)
+        {
+            CaptureTargetLost?.Invoke();
+        }
+    }
 
     private Thread? _captureThread;
     private volatile bool _running;
@@ -82,6 +129,14 @@ public sealed class VideoCaptureService : IDisposable
     private int _monitorOriginX;
     private int _monitorOriginY;
 
+    // Window mode's counterpart to _monitorOriginX/Y: the window can move *and* be resized, so instead
+    // of a fixed origin resolved once, MapScreenToCanvas re-reads the window's current screen rect every
+    // time it's called and combines it with the letterbox scale/offset (updated every WGC frame in
+    // CopyWgcFrameToBuffer, since the window's aspect ratio relative to the fixed canvas can change).
+    private double _letterboxScale = 1.0;
+    private double _letterboxOffsetX;
+    private double _letterboxOffsetY;
+
     private GlobalKeyboardHook? _keyboardHook;
     private GlobalMouseHook? _mouseHook;
     private KeystrokeOverlayRenderer? _keystrokeOverlay;
@@ -94,15 +149,22 @@ public sealed class VideoCaptureService : IDisposable
     private CursorIconBitmap? _systemCursorIcon;
 
     /// <summary>
-    /// Creates the D3D11 device (on the same adapter that owns the target monitor) and the output
-    /// duplication, resolving the real capture resolution (Width/Height) — but does not start pulling
-    /// frames yet. Split out from <see cref="BeginCapture"/> so the caller can spawn/connect the ffmpeg
-    /// encoder (which needs the resolution up front) before any frames start flowing.
+    /// Resolves the real capture resolution (Width/Height) and stands up either the DXGI or the WGC
+    /// acquisition path — but does not start pulling frames yet. Split out from <see cref="BeginCapture"/>
+    /// so the caller can spawn/connect the ffmpeg encoder (which needs the resolution up front) before
+    /// any frames start flowing. Exactly one of <paramref name="monitor"/>/<paramref name="window"/> must
+    /// be non-null.
     /// </summary>
-    public void Prepare(MonitorInfo monitor, bool captureCursor, CursorStyle cursorStyle = CursorStyle.Arrow,
+    public void Prepare(MonitorInfo? monitor, WindowInfo? window, bool captureCursor, CursorStyle cursorStyle = CursorStyle.Arrow,
         bool zoomEnabled = false, double zoomFactor = 2.0, bool keystrokeOverlayEnabled = false)
     {
         if (_prepared) return;
+        if (monitor is null && window is null)
+        {
+            throw new ArgumentException("Either a monitor or a window must be specified.");
+        }
+
+        _captureTarget = window is not null ? CaptureTargetKind.Window : CaptureTargetKind.Monitor;
 
         _captureCursor = captureCursor;
         _cursorStyle = cursorStyle;
@@ -115,18 +177,9 @@ public sealed class VideoCaptureService : IDisposable
         _lastZoomFrameSeconds = _zoomClock.Elapsed.TotalSeconds;
         _typingTargetX = null;
         _typingTargetY = null;
-
-        // Needed to convert CaretLocator's virtual-screen coordinates into this monitor's local pixel
-        // space (0..Width, 0..Height) — the same space _cursorX/_cursorY already live in.
-        var monitorInfo = new NativeMethods.MonitorInfoEx
-        {
-            cbSize = Marshal.SizeOf<NativeMethods.MonitorInfoEx>()
-        };
-        if (NativeMethods.GetMonitorInfo(monitor.Handle, ref monitorInfo))
-        {
-            _monitorOriginX = monitorInfo.rcMonitor.Left;
-            _monitorOriginY = monitorInfo.rcMonitor.Top;
-        }
+        _letterboxScale = 1.0;
+        _letterboxOffsetX = 0;
+        _letterboxOffsetY = 0;
 
         if (keystrokeOverlayEnabled)
         {
@@ -142,12 +195,39 @@ public sealed class VideoCaptureService : IDisposable
             _keyboardHook.KeyPressed += OnKeyboardActivity;
         }
 
-        // DXGI reports cursor *position* every frame already (used for movement-based activity below),
-        // but never button state — a click needs a real hook.
+        // A click needs a real hook in both modes — DXGI reports cursor *position* every frame already
+        // (used for movement-based activity in CaptureLoop), and window mode polls position itself in
+        // OnWgcFrameArrived, but neither ever reports button state on its own.
         if (zoomEnabled)
         {
             _mouseHook = new GlobalMouseHook();
             _mouseHook.Click += OnMouseActivity;
+        }
+
+        if (_captureTarget == CaptureTargetKind.Window)
+        {
+            PrepareWindowCapture(window!);
+        }
+        else
+        {
+            PrepareMonitorCapture(monitor!);
+        }
+
+        _prepared = true;
+    }
+
+    private void PrepareMonitorCapture(MonitorInfo monitor)
+    {
+        // Needed to convert CaretLocator's virtual-screen coordinates into this monitor's local pixel
+        // space (0..Width, 0..Height) — the same space _cursorX/_cursorY already live in.
+        var monitorInfo = new NativeMethods.MonitorInfoEx
+        {
+            cbSize = Marshal.SizeOf<NativeMethods.MonitorInfoEx>()
+        };
+        if (NativeMethods.GetMonitorInfo(monitor.Handle, ref monitorInfo))
+        {
+            _monitorOriginX = monitorInfo.rcMonitor.Left;
+            _monitorOriginY = monitorInfo.rcMonitor.Top;
         }
 
         using var factory = DXGI.CreateDXGIFactory1<IDXGIFactory1>();
@@ -210,9 +290,81 @@ public sealed class VideoCaptureService : IDisposable
         var desc = _duplication.Description;
         Width = (int)desc.ModeDescription.Width;
         Height = (int)desc.ModeDescription.Height;
-
-        _prepared = true;
     }
+
+    /// <summary>
+    /// Stands up the WGC path for a specific window: a plain D3D11 device (not tied to any one adapter
+    /// the way monitor capture is, since a window can move between displays), the interop calls to wrap
+    /// it as the WinRT device WGC needs and to create a GraphicsCaptureItem for the HWND (see
+    /// <see cref="Interop.GraphicsCaptureInterop"/>), and a frame pool sized to the window's current size
+    /// — which becomes this session's fixed Width/Height for everything downstream, per this class's
+    /// remarks on the fixed-pipe requirement.
+    /// </summary>
+    private void PrepareWindowCapture(WindowInfo window)
+    {
+        if (!GraphicsCaptureSession.IsSupported())
+        {
+            throw new NotSupportedException("Windows.Graphics.Capture isn't supported on this system.");
+        }
+
+        _targetWindowHandle = window.Handle;
+
+        var featureLevels = new[]
+        {
+            FeatureLevel.Level_11_1,
+            FeatureLevel.Level_11_0,
+            FeatureLevel.Level_10_1,
+            FeatureLevel.Level_10_0,
+        };
+        D3D11.D3D11CreateDevice(
+            null,
+            Vortice.Direct3D.DriverType.Hardware,
+            DeviceCreationFlags.BgraSupport,
+            featureLevels,
+            out var device).CheckError();
+        _device = device;
+        _context = device!.ImmediateContext;
+
+        using var dxgiDevice = device.QueryInterface<Vortice.DXGI.IDXGIDevice>();
+        GraphicsCaptureInterop.CreateDirect3D11DeviceFromDXGIDevice(dxgiDevice.NativePointer, out var wgcDevicePtr);
+        _wgcDevice = WinRT.MarshalInterface<IDirect3DDevice>.FromAbi(wgcDevicePtr);
+
+        _captureItem = GraphicsCaptureInterop.CreateItemForWindow(window.Handle);
+        _captureItem.Closed += OnCaptureItemClosed;
+
+        // Unlike a monitor resolution (always even in practice), an arbitrarily-resized window can land
+        // on an odd pixel size — and libx264 flatly refuses an odd width/height for yuv420p ("height not
+        // divisible by 2"), which fails the encoder open silently enough that ffmpeg exits "successfully"
+        // having muxed nothing at all (a 0-byte output, no error surfaced to the UI). Round down to even;
+        // losing at most one row/column of the letterbox canvas is unnoticeable.
+        Width = _captureItem.Size.Width & ~1;
+        Height = _captureItem.Size.Height & ~1;
+        _wgcPoolSize = _captureItem.Size;
+
+        // CreateFreeThreaded (not Create) is required here: Prepare() runs off a background Task.Run
+        // thread with no DispatcherQueue, and Direct3D11CaptureFramePool.Create() needs one on the
+        // calling thread to dispatch FrameArrived onto — without it, WGC captures frames into the pool
+        // internally but never raises the event, so BeginCapture() "succeeds" yet zero frames ever
+        // arrive. CreateFreeThreaded fires FrameArrived on an arbitrary MTA thread instead, which is
+        // exactly what OnWgcFrameArrived's threading discipline (frameLock, no UI-affinitized calls) is
+        // already built for.
+        _framePool = Direct3D11CaptureFramePool.CreateFreeThreaded(_wgcDevice, DirectXPixelFormat.B8G8R8A8UIntNormalized, 2, _wgcPoolSize);
+        _framePool.FrameArrived += OnWgcFrameArrived;
+
+        _captureSession = _framePool.CreateCaptureSession(_captureItem);
+        _captureSession.IsCursorCaptureEnabled = _captureCursor;
+        // Note: newer Windows versions can suppress WGC's yellow capture border via
+        // GraphicsCaptureSession.IsBorderRequired, but that member isn't present in this SDK's
+        // projection — a cosmetic gap only, not a functional one, so left as the OS default.
+
+        _targetLostSignaled = 0;
+        _windowValidityTimer = new System.Threading.Timer(_ =>
+        {
+            if (!NativeMethods.IsWindow(_targetWindowHandle)) SignalCaptureTargetLostOnce();
+        }, null, TimeSpan.FromMilliseconds(500), TimeSpan.FromMilliseconds(500));
+    }
+
+    private void OnCaptureItemClosed(GraphicsCaptureItem sender, object args) => SignalCaptureTargetLostOnce();
 
     /// <summary>Starts delivering frames on a dedicated background thread. Call <see cref="Prepare"/> first.</summary>
     public void BeginCapture()
@@ -223,8 +375,16 @@ public sealed class VideoCaptureService : IDisposable
         IsCapturing = true;
         _keyboardHook?.Start();
         _mouseHook?.Start();
-        _captureThread = new Thread(CaptureLoop) { IsBackground = true, Name = "DesktopDuplicationCapture" };
-        _captureThread.Start();
+
+        if (_captureTarget == CaptureTargetKind.Window)
+        {
+            _captureSession!.StartCapture();
+        }
+        else
+        {
+            _captureThread = new Thread(CaptureLoop) { IsBackground = true, Name = "DesktopDuplicationCapture" };
+            _captureThread.Start();
+        }
     }
 
     private void MarkActivity() => Volatile.Write(ref _lastActivityTicks, DateTime.UtcNow.Ticks);
@@ -244,11 +404,10 @@ public sealed class VideoCaptureService : IDisposable
 
         if (_zoomEnabled && CaretLocator.TryGetCaretScreenPosition(out var screenX, out var screenY))
         {
-            var localX = screenX - _monitorOriginX;
-            var localY = screenY - _monitorOriginY;
-            // Ignore a caret that isn't on the monitor being recorded (e.g. typing on a second
-            // display) rather than pinning the zoom uselessly at the frame's edge.
-            if (localX >= 0 && localX <= Width && localY >= 0 && localY <= Height)
+            MapScreenToCanvas(screenX, screenY, out var localX, out var localY, out var visible);
+            // Ignore a caret that isn't within the captured area (e.g. typing on a second display, or
+            // outside the captured window) rather than pinning the zoom uselessly at the frame's edge.
+            if (visible)
             {
                 _typingTargetX = localX;
                 _typingTargetY = localY;
@@ -261,6 +420,30 @@ public sealed class VideoCaptureService : IDisposable
         }
 
         _keystrokeOverlay?.OnKeyPressed(display);
+    }
+
+    /// <summary>
+    /// Maps a virtual-screen point (as CaretLocator and GetCursorPos report) into this capture's
+    /// canvas-local pixel space (0..Width, 0..Height) — monitor mode via the fixed origin resolved once
+    /// in <see cref="PrepareMonitorCapture"/>, window mode via the window's *current* screen position
+    /// (it can move) combined with the letterbox scale/offset (updated every frame, since the window can
+    /// be resized). <paramref name="visible"/> is false when the point falls outside the captured area.
+    /// </summary>
+    private void MapScreenToCanvas(double screenX, double screenY, out double canvasX, out double canvasY, out bool visible)
+    {
+        if (_captureTarget == CaptureTargetKind.Window)
+        {
+            NativeMethods.GetWindowRect(_targetWindowHandle, out var rect);
+            canvasX = (screenX - rect.Left) * _letterboxScale + _letterboxOffsetX;
+            canvasY = (screenY - rect.Top) * _letterboxScale + _letterboxOffsetY;
+            visible = screenX >= rect.Left && screenX <= rect.Right && screenY >= rect.Top && screenY <= rect.Bottom;
+        }
+        else
+        {
+            canvasX = screenX - _monitorOriginX;
+            canvasY = screenY - _monitorOriginY;
+            visible = canvasX >= 0 && canvasX <= Width && canvasY >= 0 && canvasY <= Height;
+        }
     }
 
     private void CaptureLoop()
@@ -391,6 +574,156 @@ public sealed class VideoCaptureService : IDisposable
         {
             _context.Unmap(_stagingTexture, 0);
         }
+    }
+
+    /// <summary>
+    /// Guards every access to the WGC-path D3D11 device/context/staging texture that happens off this
+    /// class's own call stack — i.e. everything <see cref="OnWgcFrameArrived"/> touches. WGC's
+    /// FrameArrived fires on WGC's own thread, entirely independent of whatever thread called
+    /// <see cref="Stop"/>; without this lock, Stop() can dispose <c>_device</c>/<c>_context</c>/
+    /// <c>_wgcStagingTexture</c> while a frame-arrived callback is still mid-flight using them — a
+    /// use-after-free race that reproduces the exact unrecoverable AccessViolationException this class's
+    /// remarks describe from the earlier WGC integration. Held for the whole body of
+    /// <see cref="OnWgcFrameArrived"/>, and by <see cref="Stop"/> before it touches any of those fields,
+    /// so Stop() simply blocks until an in-flight callback finishes instead of racing it.
+    /// </summary>
+    private readonly object _wgcCallbackLock = new();
+
+    /// <summary>WGC's frame-arrived callback — fires on WGC's own thread. See <see cref="_wgcCallbackLock"/>.</summary>
+    private void OnWgcFrameArrived(Direct3D11CaptureFramePool sender, object args)
+    {
+        lock (_wgcCallbackLock)
+        {
+            try
+            {
+                using var frame = sender.TryGetNextFrame();
+                if (frame is null) return;
+
+                // The frame pool's own buffer size has to track the window's actual current size — a WGC
+                // requirement independent of (and separate from) letterboxing that frame onto our fixed
+                // Width/Height canvas below.
+                if (frame.ContentSize.Width != _wgcPoolSize.Width || frame.ContentSize.Height != _wgcPoolSize.Height)
+                {
+                    _wgcPoolSize = frame.ContentSize;
+                    sender.Recreate(_wgcDevice, DirectXPixelFormat.B8G8R8A8UIntNormalized, 2, _wgcPoolSize);
+                }
+
+                CopyWgcFrameToBuffer(frame);
+            }
+            catch
+            {
+                // Best effort: skip this frame rather than tearing down capture (e.g. a transient
+                // device-lost or a frame arriving mid-Recreate).
+            }
+        }
+    }
+
+    private void CopyWgcFrameToBuffer(Direct3D11CaptureFrame frame)
+    {
+        // See GraphicsCaptureInterop's remarks: a classic RCW cast/call here reliably throws
+        // InvalidCastException in this process (CsWinRT's global ComWrappers registration), so this goes
+        // through a raw COM vtable call instead.
+        var texturePtr = GraphicsCaptureInterop.GetInterfaceFromWinRTObject(frame.Surface, GraphicsCaptureInterop.Id3D11Texture2DIid);
+        using var sourceTexture = new ID3D11Texture2D(texturePtr);
+
+        var desc = sourceTexture.Description;
+        int srcWidth = (int)desc.Width;
+        int srcHeight = (int)desc.Height;
+        if (srcWidth <= 0 || srcHeight <= 0) return;
+
+        if (_wgcStagingTexture is null || _wgcStagingWidth != srcWidth || _wgcStagingHeight != srcHeight)
+        {
+            _wgcStagingTexture?.Dispose();
+            var stagingDesc = new Texture2DDescription
+            {
+                Width = desc.Width,
+                Height = desc.Height,
+                MipLevels = 1,
+                ArraySize = 1,
+                Format = desc.Format,
+                SampleDescription = new SampleDescription(1, 0),
+                Usage = ResourceUsage.Staging,
+                BindFlags = BindFlags.None,
+                CPUAccessFlags = CpuAccessFlags.Read,
+                MiscFlags = ResourceOptionFlags.None
+            };
+            _wgcStagingTexture = _device!.CreateTexture2D(stagingDesc);
+            _wgcStagingWidth = srcWidth;
+            _wgcStagingHeight = srcHeight;
+        }
+
+        _context!.CopyResource(_wgcStagingTexture, sourceTexture);
+
+        MappedSubresource mapped = _context.Map(_wgcStagingTexture, 0, MapMode.Read, Vortice.Direct3D11.MapFlags.None);
+        try
+        {
+            int rowBytes = srcWidth * 4;
+            var srcBuffer = new byte[rowBytes * srcHeight];
+            nint srcPtr = mapped.DataPointer;
+            int rowPitch = (int)mapped.RowPitch;
+            for (int y = 0; y < srcHeight; y++)
+            {
+                Marshal.Copy(IntPtr.Add(srcPtr, y * rowPitch), srcBuffer, y * rowBytes, rowBytes);
+            }
+
+            // Letterbox: scale-to-fit the captured window onto the fixed Width x Height canvas, centered,
+            // with black bars for whatever the scale-to-fit doesn't cover — this is what lets the window
+            // be resized live without ever changing the frame size ffmpeg was told to expect. The system
+            // cursor is already baked into srcBuffer by WGC itself (IsCursorCaptureEnabled), so this is a
+            // plain resample, not a composite.
+            var canvas = new byte[Width * Height * 4]; // zero-initialized = black; alpha unused downstream
+            double scale = Math.Min((double)Width / srcWidth, (double)Height / srcHeight);
+            int destRectW = Math.Max(1, (int)Math.Round(srcWidth * scale));
+            int destRectH = Math.Max(1, (int)Math.Round(srcHeight * scale));
+            int destRectX = (Width - destRectW) / 2;
+            int destRectY = (Height - destRectH) / 2;
+            _letterboxScale = scale;
+            _letterboxOffsetX = destRectX;
+            _letterboxOffsetY = destRectY;
+
+            ResampleCatmullRomInto(srcBuffer, srcWidth, srcHeight, 0, 0, srcWidth, srcHeight,
+                canvas, Width, Height, destRectX, destRectY, destRectW, destRectH);
+
+            PollWindowCursor();
+
+            ApplyZoom(canvas, Width, Height);
+            ApplyKeystrokeOverlay(canvas, Width, Height);
+
+            lock (_frameLock)
+            {
+                _latestFrame = canvas;
+                _frameWidth = Width;
+                _frameHeight = Height;
+                _hasFrame = true;
+            }
+        }
+        finally
+        {
+            _context.Unmap(_wgcStagingTexture, 0);
+        }
+    }
+
+    /// <summary>
+    /// Window mode's counterpart to <see cref="CaptureLoop"/>'s DXGI pointer-position handling: WGC gives
+    /// us no equivalent per-frame pointer event, so this polls <c>GetCursorPos</c> once per captured
+    /// frame instead, purely to feed the smart-zoom activity/follow signal — the visible cursor pixels
+    /// themselves are already baked in by WGC (<see cref="_captureCursor"/> → <c>IsCursorCaptureEnabled</c>),
+    /// so nothing here draws anything.
+    /// </summary>
+    private void PollWindowCursor()
+    {
+        if (!NativeMethods.GetCursorPos(out var pt)) return;
+
+        MapScreenToCanvas(pt.X, pt.Y, out var localX, out var localY, out var visible);
+        int ix = (int)localX;
+        int iy = (int)localY;
+        if (visible && (Math.Abs(ix - _cursorX) > MovementActivityThresholdPx || Math.Abs(iy - _cursorY) > MovementActivityThresholdPx))
+        {
+            OnMouseActivity();
+        }
+        _cursorVisible = visible;
+        _cursorX = ix;
+        _cursorY = iy;
     }
 
     // Reserved alpha value meaning "invert the destination pixel" instead of a normal opaque/blended
@@ -594,8 +927,6 @@ public sealed class VideoCaptureService : IDisposable
         double cropHeight = height / _zoomCurrentFactor;
         double cropX = Math.Clamp(_zoomCenterX - cropWidth / 2, 0, width - cropWidth);
         double cropY = Math.Clamp(_zoomCenterY - cropHeight / 2, 0, height - cropHeight);
-        double scaleX = cropWidth / width;
-        double scaleY = cropHeight / height;
 
         if (_zoomScratchBuffer is null || _zoomScratchBuffer.Length != frame.Length)
         {
@@ -603,32 +934,61 @@ public sealed class VideoCaptureService : IDisposable
         }
         var dst = _zoomScratchBuffer;
 
-        // Catmull-Rom bicubic resampling (16-tap, separable), parallelized per output row. This used to
-        // be bilinear (4-tap): cheaper, but bilinear's weights are a plain positive-only average, which
-        // is exactly what makes it soften/blur edges — visibly noticeable on zoomed text. Catmull-Rom's
-        // small negative side lobes are what recover that lost edge contrast (the same property that
-        // makes it "sharper" than bilinear in every image resampler that offers it), fixing the blur at
-        // its root cause instead of papering over it with a post-hoc sharpen filter that can't
-        // distinguish real detail from an artifact and risks haloing high-contrast UI text. It's ~4x
-        // bilinear's per-pixel cost (16 taps vs 4), which is a bounded, real-time-safe increase given
-        // bilinear was already proven fast enough here — and it only runs while actually zoomed.
-        int maxX = width - 1;
-        int maxY = height - 1;
-        Parallel.For(0, height, y =>
+        ResampleCatmullRomInto(frame, width, height, cropX, cropY, cropWidth, cropHeight,
+            dst, width, height, 0, 0, width, height);
+
+        Buffer.BlockCopy(dst, 0, frame, 0, frame.Length);
+    }
+
+    /// <summary>
+    /// Catmull-Rom bicubic resampling (16-tap, separable), parallelized per output row: maps the
+    /// <paramref name="srcRectW"/>x<paramref name="srcRectH"/> region of <paramref name="src"/> starting
+    /// at (<paramref name="srcX"/>, <paramref name="srcY"/>) onto the
+    /// <paramref name="dstRectW"/>x<paramref name="dstRectH"/> region of <paramref name="dst"/> starting
+    /// at (<paramref name="dstX"/>, <paramref name="dstY"/>) — everything outside that destination
+    /// region is left untouched, so callers that need letterbox bars fill <paramref name="dst"/> first.
+    /// Two call sites: <see cref="ApplyZoom"/> (crop region → the full canvas) and
+    /// <see cref="CopyWgcFrameToBuffer"/> (the whole captured window → a centered sub-rectangle of the
+    /// fixed canvas). One resample kernel either way.
+    ///
+    /// This used to be bilinear (4-tap): cheaper, but bilinear's weights are a plain positive-only
+    /// average, which is exactly what makes it soften/blur edges — visibly noticeable on zoomed text.
+    /// Catmull-Rom's small negative side lobes are what recover that lost edge contrast (the same
+    /// property that makes it "sharper" than bilinear in every image resampler that offers it), fixing
+    /// the blur at its root cause instead of papering over it with a post-hoc sharpen filter that can't
+    /// distinguish real detail from an artifact and risks haloing high-contrast UI text. It's ~4x
+    /// bilinear's per-pixel cost (16 taps vs 4), which is a bounded, real-time-safe increase given
+    /// bilinear was already proven fast enough here.
+    /// </summary>
+    private static void ResampleCatmullRomInto(byte[] src, int srcW, int srcH, double srcX, double srcY, double srcRectW, double srcRectH,
+        byte[] dst, int dstW, int dstH, int dstX, int dstY, int dstRectW, int dstRectH)
+    {
+        int maxX = srcW - 1;
+        int maxY = srcH - 1;
+        double scaleX = srcRectW / dstRectW;
+        double scaleY = srcRectH / dstRectH;
+
+        Parallel.For(0, dstRectH, row =>
         {
-            double srcYf = cropY + y * scaleY;
+            int y = dstY + row;
+            if (y < 0 || y >= dstH) return;
+
+            double srcYf = srcY + row * scaleY;
             int iy = (int)Math.Floor(srcYf);
             double ty = srcYf - iy;
             double wy0 = CatmullRomWeight(ty + 1), wy1 = CatmullRomWeight(ty), wy2 = CatmullRomWeight(ty - 1), wy3 = CatmullRomWeight(ty - 2);
-            int ry0 = Math.Clamp(iy - 1, 0, maxY) * width * 4;
-            int ry1 = Math.Clamp(iy, 0, maxY) * width * 4;
-            int ry2 = Math.Clamp(iy + 1, 0, maxY) * width * 4;
-            int ry3 = Math.Clamp(iy + 2, 0, maxY) * width * 4;
-            int dstRow = y * width * 4;
+            int ry0 = Math.Clamp(iy - 1, 0, maxY) * srcW * 4;
+            int ry1 = Math.Clamp(iy, 0, maxY) * srcW * 4;
+            int ry2 = Math.Clamp(iy + 1, 0, maxY) * srcW * 4;
+            int ry3 = Math.Clamp(iy + 2, 0, maxY) * srcW * 4;
+            int dstRow = y * dstW * 4;
 
-            for (int x = 0; x < width; x++)
+            for (int col = 0; col < dstRectW; col++)
             {
-                double srcXf = cropX + x * scaleX;
+                int x = dstX + col;
+                if (x < 0 || x >= dstW) continue;
+
+                double srcXf = srcX + col * scaleX;
                 int ix = (int)Math.Floor(srcXf);
                 double tx = srcXf - ix;
                 double wx0 = CatmullRomWeight(tx + 1), wx1 = CatmullRomWeight(tx), wx2 = CatmullRomWeight(tx - 1), wx3 = CatmullRomWeight(tx - 2);
@@ -640,19 +1000,17 @@ public sealed class VideoCaptureService : IDisposable
                 int dstIdx = dstRow + x * 4;
                 for (int c = 0; c < 4; c++)
                 {
-                    double row0 = wx0 * frame[ry0 + cx0 + c] + wx1 * frame[ry0 + cx1 + c] + wx2 * frame[ry0 + cx2 + c] + wx3 * frame[ry0 + cx3 + c];
-                    double row1 = wx0 * frame[ry1 + cx0 + c] + wx1 * frame[ry1 + cx1 + c] + wx2 * frame[ry1 + cx2 + c] + wx3 * frame[ry1 + cx3 + c];
-                    double row2 = wx0 * frame[ry2 + cx0 + c] + wx1 * frame[ry2 + cx1 + c] + wx2 * frame[ry2 + cx2 + c] + wx3 * frame[ry2 + cx3 + c];
-                    double row3 = wx0 * frame[ry3 + cx0 + c] + wx1 * frame[ry3 + cx1 + c] + wx2 * frame[ry3 + cx2 + c] + wx3 * frame[ry3 + cx3 + c];
-                    double sum = wy0 * row0 + wy1 * row1 + wy2 * row2 + wy3 * row3;
+                    double r0 = wx0 * src[ry0 + cx0 + c] + wx1 * src[ry0 + cx1 + c] + wx2 * src[ry0 + cx2 + c] + wx3 * src[ry0 + cx3 + c];
+                    double r1 = wx0 * src[ry1 + cx0 + c] + wx1 * src[ry1 + cx1 + c] + wx2 * src[ry1 + cx2 + c] + wx3 * src[ry1 + cx3 + c];
+                    double r2 = wx0 * src[ry2 + cx0 + c] + wx1 * src[ry2 + cx1 + c] + wx2 * src[ry2 + cx2 + c] + wx3 * src[ry2 + cx3 + c];
+                    double r3 = wx0 * src[ry3 + cx0 + c] + wx1 * src[ry3 + cx1 + c] + wx2 * src[ry3 + cx2 + c] + wx3 * src[ry3 + cx3 + c];
+                    double sum = wy0 * r0 + wy1 * r1 + wy2 * r2 + wy3 * r3;
                     // Unlike bilinear, cubic weights can be negative and the weighted sum can overshoot
                     // past [0, 255] at hard edges — has to be clamped, not just cast.
                     dst[dstIdx + c] = (byte)Math.Clamp(sum + 0.5, 0.0, 255.0);
                 }
             }
         });
-
-        Buffer.BlockCopy(dst, 0, frame, 0, frame.Length);
     }
 
     /// <summary>
@@ -741,34 +1099,68 @@ public sealed class VideoCaptureService : IDisposable
         _captureThread?.Join(1000);
         _captureThread = null;
 
-        if (_keyboardHook is not null)
+        // WGC teardown, in the documented-safe order: session first (stops new frames), then unhook
+        // FrameArrived before disposing the pool (avoid a race where a frame arrives mid-dispose), then
+        // the pool, then release the item/device references. See this class's remarks.
+        _windowValidityTimer?.Dispose();
+        _windowValidityTimer = null;
+        if (_captureSession is not null)
         {
-            _keyboardHook.KeyPressed -= OnKeyboardActivity;
-            _keyboardHook.Dispose();
-            _keyboardHook = null;
+            try { _captureSession.Dispose(); } catch { /* best effort */ }
+            _captureSession = null;
         }
-        if (_mouseHook is not null)
+        if (_framePool is not null)
         {
-            _mouseHook.Click -= OnMouseActivity;
-            _mouseHook.Dispose();
-            _mouseHook = null;
+            _framePool.FrameArrived -= OnWgcFrameArrived;
+            try { _framePool.Dispose(); } catch { /* best effort */ }
+            _framePool = null;
         }
-        _keystrokeOverlay = null;
-        _typingTargetX = null;
-        _typingTargetY = null;
-        _zoomCurrentFactor = 1.0;
-        _zoomCenterInitialized = false;
+        if (_captureItem is not null)
+        {
+            _captureItem.Closed -= OnCaptureItemClosed;
+            _captureItem = null;
+        }
+        // From here down, _device/_context/_wgcStagingTexture get disposed — the exact fields
+        // OnWgcFrameArrived's callback thread reads/writes (see _wgcCallbackLock's remarks). FrameArrived
+        // is already unsubscribed above, so no *new* callback can start, but this still has to wait for
+        // one already in flight rather than race it.
+        lock (_wgcCallbackLock)
+        {
+            _wgcDevice = null;
+            _wgcStagingTexture?.Dispose();
+            _wgcStagingTexture = null;
+            _wgcStagingWidth = 0;
+            _wgcStagingHeight = 0;
 
-        _stagingTexture?.Dispose();
-        _stagingTexture = null;
+            if (_keyboardHook is not null)
+            {
+                _keyboardHook.KeyPressed -= OnKeyboardActivity;
+                _keyboardHook.Dispose();
+                _keyboardHook = null;
+            }
+            if (_mouseHook is not null)
+            {
+                _mouseHook.Click -= OnMouseActivity;
+                _mouseHook.Dispose();
+                _mouseHook = null;
+            }
+            _keystrokeOverlay = null;
+            _typingTargetX = null;
+            _typingTargetY = null;
+            _zoomCurrentFactor = 1.0;
+            _zoomCenterInitialized = false;
 
-        _duplication?.Dispose();
-        _duplication = null;
+            _stagingTexture?.Dispose();
+            _stagingTexture = null;
 
-        _context?.Dispose();
-        _context = null;
-        _device?.Dispose();
-        _device = null;
+            _duplication?.Dispose();
+            _duplication = null;
+
+            _context?.Dispose();
+            _context = null;
+            _device?.Dispose();
+            _device = null;
+        }
 
         if (_pointerShapeBuffer != nint.Zero)
         {
