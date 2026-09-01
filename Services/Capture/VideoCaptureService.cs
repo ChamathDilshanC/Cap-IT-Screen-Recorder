@@ -141,6 +141,12 @@ public sealed class VideoCaptureService : IDisposable
     private GlobalMouseHook? _mouseHook;
     private KeystrokeOverlayRenderer? _keystrokeOverlay;
 
+    // Circular webcam PiP overlay (Phase 3). Started fire-and-forget in Prepare() — MediaCapture
+    // initialization is inherently async (InitializeAsync/CreateFrameReaderAsync/StartAsync are all
+    // WinRT async ops) and Prepare() itself is synchronous, so the overlay simply doesn't appear for the
+    // first moment of a session rather than delaying/failing the screen recording over camera setup.
+    private WebcamCaptureService? _webcam;
+
     // Raw pointer-shape scratch buffer for GetFramePointerShape(), grown as needed and reused across
     // shape updates; the decoded/converted result is cached separately since the shape only changes
     // occasionally (e.g. hovering a different kind of control), not every frame.
@@ -156,7 +162,8 @@ public sealed class VideoCaptureService : IDisposable
     /// be non-null.
     /// </summary>
     public void Prepare(MonitorInfo? monitor, WindowInfo? window, bool captureCursor, CursorStyle cursorStyle = CursorStyle.Arrow,
-        bool zoomEnabled = false, double zoomFactor = 2.0, bool keystrokeOverlayEnabled = false)
+        bool zoomEnabled = false, double zoomFactor = 2.0, bool keystrokeOverlayEnabled = false,
+        bool webcamEnabled = false, string? webcamDeviceId = null)
     {
         if (_prepared) return;
         if (monitor is null && window is null)
@@ -184,6 +191,19 @@ public sealed class VideoCaptureService : IDisposable
         if (keystrokeOverlayEnabled)
         {
             _keystrokeOverlay = new KeystrokeOverlayRenderer();
+        }
+
+        if (webcamEnabled && webcamDeviceId is not null)
+        {
+            var webcam = new WebcamCaptureService();
+            _webcam = webcam;
+            _ = webcam.StartAsync(webcamDeviceId).ContinueWith(t =>
+            {
+                // Best effort: a camera that's unplugged, in use by another app, or permission-denied
+                // shouldn't take down screen recording over it — the overlay just never appears. Not
+                // logged anywhere today; if this turns out to need surfacing to the user, StatusMessage
+                // is the natural place, same as the friendly window-closed/stale-target message.
+            }, TaskContinuationOptions.OnlyOnFaulted);
         }
 
         // The keyboard hook doubles as a zoom-activity signal, so it's needed whenever *either* feature
@@ -571,6 +591,7 @@ public sealed class VideoCaptureService : IDisposable
 
             ApplyZoom(buffer, width, height);
             ApplyKeystrokeOverlay(buffer, width, height);
+            ApplyWebcamOverlay(buffer, width, height);
 
             lock (_frameLock)
             {
@@ -698,6 +719,7 @@ public sealed class VideoCaptureService : IDisposable
 
             ApplyZoom(canvas, Width, Height);
             ApplyKeystrokeOverlay(canvas, Width, Height);
+            ApplyWebcamOverlay(canvas, Width, Height);
 
             lock (_frameLock)
             {
@@ -957,9 +979,11 @@ public sealed class VideoCaptureService : IDisposable
     /// <paramref name="dstRectW"/>x<paramref name="dstRectH"/> region of <paramref name="dst"/> starting
     /// at (<paramref name="dstX"/>, <paramref name="dstY"/>) — everything outside that destination
     /// region is left untouched, so callers that need letterbox bars fill <paramref name="dst"/> first.
-    /// Two call sites: <see cref="ApplyZoom"/> (crop region → the full canvas) and
+    /// Three call sites: <see cref="ApplyZoom"/> (crop region → the full canvas),
     /// <see cref="CopyWgcFrameToBuffer"/> (the whole captured window → a centered sub-rectangle of the
-    /// fixed canvas). One resample kernel either way.
+    /// fixed canvas), and <see cref="WebcamCaptureService"/> (a cropped-square webcam frame → its
+    /// 300x300 circular thumbnail — internal rather than private for exactly that reuse). One resample
+    /// kernel either way.
     ///
     /// This used to be bilinear (4-tap): cheaper, but bilinear's weights are a plain positive-only
     /// average, which is exactly what makes it soften/blur edges — visibly noticeable on zoomed text.
@@ -970,7 +994,7 @@ public sealed class VideoCaptureService : IDisposable
     /// bilinear's per-pixel cost (16 taps vs 4), which is a bounded, real-time-safe increase given
     /// bilinear was already proven fast enough here.
     /// </summary>
-    private static void ResampleCatmullRomInto(byte[] src, int srcW, int srcH, double srcX, double srcY, double srcRectW, double srcRectH,
+    internal static void ResampleCatmullRomInto(byte[] src, int srcW, int srcH, double srcX, double srcY, double srcRectW, double srcRectH,
         byte[] dst, int dstW, int dstH, int dstX, int dstY, int dstRectW, int dstRectH)
     {
         int maxX = srcW - 1;
@@ -1046,6 +1070,24 @@ public sealed class VideoCaptureService : IDisposable
         int originX = (width - overlayWidth) / 2;
         int originY = height - overlayHeight - margin;
         BlendOverlay(frame, width, height, overlay, overlayWidth, overlayHeight, originX, originY);
+    }
+
+    /// <summary>
+    /// Bottom-right picture-in-picture placement — deliberately a different corner from the keystroke
+    /// overlay's bottom-center toast so the two never fight for the same screen space. Drawn last (after
+    /// zoom and keystroke overlay), the same reasoning as the keystroke overlay itself: a PiP webcam
+    /// should stay a fixed size/position on screen regardless of zoom level, not get caught up in the
+    /// zoom crop like the underlying capture content does.
+    /// </summary>
+    private void ApplyWebcamOverlay(byte[] frame, int width, int height)
+    {
+        if (_webcam is null) return;
+        if (!_webcam.TryGetOverlay(out var overlay, out var size)) return;
+
+        const int margin = 24;
+        int originX = width - size - margin;
+        int originY = height - size - margin;
+        BlendOverlay(frame, width, height, overlay, size, size, originX, originY);
     }
 
     /// <summary>Straight-alpha blends a small BGRA overlay bitmap onto <paramref name="frame"/> at a fixed position — the keystroke-overlay counterpart to <see cref="BlendCursorIcon"/>, without that method's cursor-specific invert-alpha handling.</summary>
@@ -1155,6 +1197,16 @@ public sealed class VideoCaptureService : IDisposable
                 _mouseHook = null;
             }
             _keystrokeOverlay = null;
+            // Fire-and-forget, same reasoning as WebcamCaptureService.StopAsync's own remarks: this
+            // Stop() path is synchronous and frame-critical (the DXGI/WGC teardown above it isn't), so it
+            // shouldn't block on a WinRT camera-teardown call. WebcamCaptureService's own lock still
+            // guarantees no in-flight FrameArrived callback races this disposing its MediaCapture.
+            if (_webcam is not null)
+            {
+                var webcam = _webcam;
+                _webcam = null;
+                _ = webcam.StopAsync();
+            }
             _typingTargetX = null;
             _typingTargetY = null;
             _zoomCurrentFactor = 1.0;

@@ -29,6 +29,8 @@ public sealed class RecordingManager : IDisposable
     private bool _previewZoomEnabled;
     private double _previewZoomFactor;
     private bool _previewKeystrokeOverlay;
+    private bool _previewWebcamEnabled;
+    private string? _previewWebcamDeviceId;
 
     /// <summary>Fires if a specific-window recording/preview's target window is closed out from under it (window mode only) — pass-through of <see cref="VideoCaptureService.CaptureTargetLost"/>.</summary>
     public event Action? CaptureTargetLost
@@ -74,7 +76,8 @@ public sealed class RecordingManager : IDisposable
     /// recording is underway — call from a background thread, this blocks on device creation.
     /// </summary>
     public void StartPreview(MonitorInfo? monitor, WindowInfo? window, bool captureCursor, CursorStyle cursorStyle,
-        bool zoomEnabled = false, double zoomFactor = 2.0, bool keystrokeOverlayEnabled = false)
+        bool zoomEnabled = false, double zoomFactor = 2.0, bool keystrokeOverlayEnabled = false,
+        bool webcamEnabled = false, string? webcamDeviceId = null)
     {
         lock (_videoLock)
         {
@@ -82,12 +85,14 @@ public sealed class RecordingManager : IDisposable
             if (_video.IsCapturing && _previewMonitorHandle == monitor?.Handle && _previewWindowHandle == window?.Handle
                 && _previewCursor == captureCursor && _previewCursorStyle == cursorStyle
                 && _previewZoomEnabled == zoomEnabled && _previewZoomFactor == zoomFactor
-                && _previewKeystrokeOverlay == keystrokeOverlayEnabled) return;
+                && _previewKeystrokeOverlay == keystrokeOverlayEnabled
+                && _previewWebcamEnabled == webcamEnabled && _previewWebcamDeviceId == webcamDeviceId) return;
 
             _video.Stop();
             try
             {
-                _video.Prepare(monitor, window, captureCursor, cursorStyle, zoomEnabled, zoomFactor, keystrokeOverlayEnabled);
+                _video.Prepare(monitor, window, captureCursor, cursorStyle, zoomEnabled, zoomFactor, keystrokeOverlayEnabled,
+                    webcamEnabled, webcamDeviceId);
                 _video.BeginCapture();
                 _previewMonitorHandle = monitor?.Handle;
                 _previewWindowHandle = window?.Handle;
@@ -96,6 +101,8 @@ public sealed class RecordingManager : IDisposable
                 _previewZoomEnabled = zoomEnabled;
                 _previewZoomFactor = zoomFactor;
                 _previewKeystrokeOverlay = keystrokeOverlayEnabled;
+                _previewWebcamEnabled = webcamEnabled;
+                _previewWebcamDeviceId = webcamDeviceId;
             }
             catch
             {
@@ -136,7 +143,8 @@ public sealed class RecordingManager : IDisposable
 
             // Prepare (but don't start) capture first so we know the real resolution.
             await Task.Run(() => { lock (_videoLock) { _video.Prepare(monitor, window, settings.CaptureCursor, settings.CursorStyle,
-                settings.MouseTrackingZoomEnabled, settings.ZoomFactor, settings.KeystrokeOverlayEnabled); } });
+                settings.MouseTrackingZoomEnabled, settings.ZoomFactor, settings.KeystrokeOverlayEnabled,
+                settings.WebcamEnabled, settings.WebcamDeviceId); } });
 
             var outputPath = settings.BuildOutputFilePath();
             var audioRequested = settings.CaptureSystemAudio || settings.CaptureMicrophone;

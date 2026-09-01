@@ -342,10 +342,17 @@ public partial class MainViewModel : BaseViewModel
         QueueSaveSettings();
     }
 
-    // No RestartPreviewIfIdle() here yet — VideoCaptureService doesn't composite the webcam onto frames
-    // until Phase 3 Step 2, so there's nothing for the live preview to reflect from these two yet.
-    partial void OnSelectedWebcamChanged(WebcamDeviceOption? value) => QueueSaveSettings();
-    partial void OnWebcamEnabledChanged(bool value) => QueueSaveSettings();
+    partial void OnSelectedWebcamChanged(WebcamDeviceOption? value)
+    {
+        RestartPreviewIfIdle();
+        QueueSaveSettings();
+    }
+
+    partial void OnWebcamEnabledChanged(bool value)
+    {
+        RestartPreviewIfIdle();
+        QueueSaveSettings();
+    }
 
     partial void OnSelectedEncoderChanged(HardwareEncoder value)
     {
@@ -395,9 +402,11 @@ public partial class MainViewModel : BaseViewModel
         var zoomEnabled = MouseTrackingZoomEnabled;
         var zoomFactor = SelectedZoomLevel.Factor;
         var keystrokeOverlay = KeystrokeOverlayEnabled;
+        var webcamEnabled = WebcamEnabled;
+        var webcamDeviceId = SelectedWebcam?.Id;
         _ = Task.Run(() =>
         {
-            try { _manager.StartPreview(monitor, window, cursor, cursorStyle, zoomEnabled, zoomFactor, keystrokeOverlay); }
+            try { _manager.StartPreview(monitor, window, cursor, cursorStyle, zoomEnabled, zoomFactor, keystrokeOverlay, webcamEnabled, webcamDeviceId); }
             catch { /* best effort: live preview is a convenience, not required to record */ }
         });
     }
@@ -520,6 +529,8 @@ public partial class MainViewModel : BaseViewModel
             MouseTrackingZoomEnabled = MouseTrackingZoomEnabled,
             ZoomFactor = SelectedZoomLevel.Factor,
             KeystrokeOverlayEnabled = KeystrokeOverlayEnabled,
+            WebcamEnabled = WebcamEnabled,
+            WebcamDeviceId = SelectedWebcam?.Id,
             Encoder = SelectedEncoder,
             Container = SelectedContainer,
             Resolution = SelectedResolution.Value,
