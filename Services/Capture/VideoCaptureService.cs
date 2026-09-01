@@ -603,47 +603,70 @@ public sealed class VideoCaptureService : IDisposable
         }
         var dst = _zoomScratchBuffer;
 
-        // Bilinear resampling, parallelized per output row: a 4-tap blend instead of nearest-neighbor's
-        // 1-tap pick. At the fractional zoom ratios this feature actually uses (1.5x/2x/3x), nearest
-        // neighbor visibly blocks/aliases text edges; bilinear is the standard fix and still cheap enough
-        // to run every frame at capture resolution (real Lanczos/bicubic would cost several times more
-        // per pixel for a live pan/zoom preview, for a gain that's marginal once bilinear has already
-        // removed the blockiness — not worth the real-time risk here).
+        // Catmull-Rom bicubic resampling (16-tap, separable), parallelized per output row. This used to
+        // be bilinear (4-tap): cheaper, but bilinear's weights are a plain positive-only average, which
+        // is exactly what makes it soften/blur edges — visibly noticeable on zoomed text. Catmull-Rom's
+        // small negative side lobes are what recover that lost edge contrast (the same property that
+        // makes it "sharper" than bilinear in every image resampler that offers it), fixing the blur at
+        // its root cause instead of papering over it with a post-hoc sharpen filter that can't
+        // distinguish real detail from an artifact and risks haloing high-contrast UI text. It's ~4x
+        // bilinear's per-pixel cost (16 taps vs 4), which is a bounded, real-time-safe increase given
+        // bilinear was already proven fast enough here — and it only runs while actually zoomed.
         int maxX = width - 1;
         int maxY = height - 1;
         Parallel.For(0, height, y =>
         {
             double srcYf = cropY + y * scaleY;
-            int y0 = Math.Clamp((int)srcYf, 0, maxY);
-            int y1 = Math.Min(y0 + 1, maxY);
-            double fy = srcYf - y0;
-            int srcRow0 = y0 * width * 4;
-            int srcRow1 = y1 * width * 4;
+            int iy = (int)Math.Floor(srcYf);
+            double ty = srcYf - iy;
+            double wy0 = CatmullRomWeight(ty + 1), wy1 = CatmullRomWeight(ty), wy2 = CatmullRomWeight(ty - 1), wy3 = CatmullRomWeight(ty - 2);
+            int ry0 = Math.Clamp(iy - 1, 0, maxY) * width * 4;
+            int ry1 = Math.Clamp(iy, 0, maxY) * width * 4;
+            int ry2 = Math.Clamp(iy + 1, 0, maxY) * width * 4;
+            int ry3 = Math.Clamp(iy + 2, 0, maxY) * width * 4;
             int dstRow = y * width * 4;
 
             for (int x = 0; x < width; x++)
             {
                 double srcXf = cropX + x * scaleX;
-                int x0 = Math.Clamp((int)srcXf, 0, maxX);
-                int x1 = Math.Min(x0 + 1, maxX);
-                double fx = srcXf - x0;
+                int ix = (int)Math.Floor(srcXf);
+                double tx = srcXf - ix;
+                double wx0 = CatmullRomWeight(tx + 1), wx1 = CatmullRomWeight(tx), wx2 = CatmullRomWeight(tx - 1), wx3 = CatmullRomWeight(tx - 2);
+                int cx0 = Math.Clamp(ix - 1, 0, maxX) * 4;
+                int cx1 = Math.Clamp(ix, 0, maxX) * 4;
+                int cx2 = Math.Clamp(ix + 1, 0, maxX) * 4;
+                int cx3 = Math.Clamp(ix + 2, 0, maxX) * 4;
 
-                int i00 = srcRow0 + x0 * 4;
-                int i10 = srcRow0 + x1 * 4;
-                int i01 = srcRow1 + x0 * 4;
-                int i11 = srcRow1 + x1 * 4;
                 int dstIdx = dstRow + x * 4;
-
                 for (int c = 0; c < 4; c++)
                 {
-                    double top = frame[i00 + c] * (1 - fx) + frame[i10 + c] * fx;
-                    double bottom = frame[i01 + c] * (1 - fx) + frame[i11 + c] * fx;
-                    dst[dstIdx + c] = (byte)(top * (1 - fy) + bottom * fy);
+                    double row0 = wx0 * frame[ry0 + cx0 + c] + wx1 * frame[ry0 + cx1 + c] + wx2 * frame[ry0 + cx2 + c] + wx3 * frame[ry0 + cx3 + c];
+                    double row1 = wx0 * frame[ry1 + cx0 + c] + wx1 * frame[ry1 + cx1 + c] + wx2 * frame[ry1 + cx2 + c] + wx3 * frame[ry1 + cx3 + c];
+                    double row2 = wx0 * frame[ry2 + cx0 + c] + wx1 * frame[ry2 + cx1 + c] + wx2 * frame[ry2 + cx2 + c] + wx3 * frame[ry2 + cx3 + c];
+                    double row3 = wx0 * frame[ry3 + cx0 + c] + wx1 * frame[ry3 + cx1 + c] + wx2 * frame[ry3 + cx2 + c] + wx3 * frame[ry3 + cx3 + c];
+                    double sum = wy0 * row0 + wy1 * row1 + wy2 * row2 + wy3 * row3;
+                    // Unlike bilinear, cubic weights can be negative and the weighted sum can overshoot
+                    // past [0, 255] at hard edges — has to be clamped, not just cast.
+                    dst[dstIdx + c] = (byte)Math.Clamp(sum + 0.5, 0.0, 255.0);
                 }
             }
         });
 
         Buffer.BlockCopy(dst, 0, frame, 0, frame.Length);
+    }
+
+    /// <summary>
+    /// The Catmull-Rom cardinal spline kernel (Mitchell-Netravali with B=0, C=0.5) — the standard choice
+    /// for a resampler that wants to stay sharper than bilinear without the visible ringing of a
+    /// wider-support/less-damped cubic. <paramref name="t"/> is the distance from the sample point in
+    /// source-pixel units; zero outside [-2, 2].
+    /// </summary>
+    private static double CatmullRomWeight(double t)
+    {
+        t = Math.Abs(t);
+        if (t <= 1.0) return 1.5 * t * t * t - 2.5 * t * t + 1.0;
+        if (t < 2.0) return -0.5 * t * t * t + 2.5 * t * t - 4.0 * t + 2.0;
+        return 0.0;
     }
 
     private void ApplyKeystrokeOverlay(byte[] frame, int width, int height)
