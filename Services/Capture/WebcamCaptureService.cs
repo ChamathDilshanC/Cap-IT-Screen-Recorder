@@ -76,6 +76,11 @@ public sealed class WebcamCaptureService
         }
 
         var frameReader = await mediaCapture.CreateFrameReaderAsync(frameSource, MediaEncodingSubtypes.Bgra8);
+        // The documented "minimize latency, don't buffer for completeness" hint — tells the driver
+        // pipeline itself to drop backlog before frames even reach FrameArrived, rather than relying
+        // solely on TryAcquireLatestFrame's app-level discard (which only helps once a frame has already
+        // made it all the way through the driver's own internal buffering).
+        frameReader.AcquisitionMode = MediaFrameReaderAcquisitionMode.Realtime;
         frameReader.FrameArrived += OnFrameArrived;
         await frameReader.StartAsync();
 

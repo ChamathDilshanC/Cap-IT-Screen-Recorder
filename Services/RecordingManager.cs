@@ -29,8 +29,6 @@ public sealed class RecordingManager : IDisposable
     private bool _previewZoomEnabled;
     private double _previewZoomFactor;
     private bool _previewKeystrokeOverlay;
-    private bool _previewWebcamEnabled;
-    private string? _previewWebcamDeviceId;
 
     /// <summary>Fires if a specific-window recording/preview's target window is closed out from under it (window mode only) — pass-through of <see cref="VideoCaptureService.CaptureTargetLost"/>.</summary>
     public event Action? CaptureTargetLost
@@ -82,17 +80,22 @@ public sealed class RecordingManager : IDisposable
         lock (_videoLock)
         {
             if (State != RecordingState.Idle) return;
+
+            // Independent of the screen-capture engine below — SetWebcam is its own no-op check
+            // internally (matching device id + enabled state), so this can run unconditionally on every
+            // call without ever tearing down and re-initializing the camera just because some *other*
+            // setting (monitor, cursor style, zoom...) changed. See VideoCaptureService.SetWebcam.
+            _video.SetWebcam(webcamEnabled, webcamDeviceId);
+
             if (_video.IsCapturing && _previewMonitorHandle == monitor?.Handle && _previewWindowHandle == window?.Handle
                 && _previewCursor == captureCursor && _previewCursorStyle == cursorStyle
                 && _previewZoomEnabled == zoomEnabled && _previewZoomFactor == zoomFactor
-                && _previewKeystrokeOverlay == keystrokeOverlayEnabled
-                && _previewWebcamEnabled == webcamEnabled && _previewWebcamDeviceId == webcamDeviceId) return;
+                && _previewKeystrokeOverlay == keystrokeOverlayEnabled) return;
 
             _video.Stop();
             try
             {
-                _video.Prepare(monitor, window, captureCursor, cursorStyle, zoomEnabled, zoomFactor, keystrokeOverlayEnabled,
-                    webcamEnabled, webcamDeviceId);
+                _video.Prepare(monitor, window, captureCursor, cursorStyle, zoomEnabled, zoomFactor, keystrokeOverlayEnabled);
                 _video.BeginCapture();
                 _previewMonitorHandle = monitor?.Handle;
                 _previewWindowHandle = window?.Handle;
@@ -101,8 +104,6 @@ public sealed class RecordingManager : IDisposable
                 _previewZoomEnabled = zoomEnabled;
                 _previewZoomFactor = zoomFactor;
                 _previewKeystrokeOverlay = keystrokeOverlayEnabled;
-                _previewWebcamEnabled = webcamEnabled;
-                _previewWebcamDeviceId = webcamDeviceId;
             }
             catch
             {
@@ -141,10 +142,14 @@ public sealed class RecordingManager : IDisposable
             _previewMonitorHandle = null;
             _previewWindowHandle = null;
 
+            // Independent of the screen-capture Prepare() below — a no-op if the preview already has the
+            // right camera running, so starting an actual recording doesn't interrupt an already-live PiP
+            // feed. See VideoCaptureService.SetWebcam.
+            _video.SetWebcam(settings.WebcamEnabled, settings.WebcamDeviceId);
+
             // Prepare (but don't start) capture first so we know the real resolution.
             await Task.Run(() => { lock (_videoLock) { _video.Prepare(monitor, window, settings.CaptureCursor, settings.CursorStyle,
-                settings.MouseTrackingZoomEnabled, settings.ZoomFactor, settings.KeystrokeOverlayEnabled,
-                settings.WebcamEnabled, settings.WebcamDeviceId); } });
+                settings.MouseTrackingZoomEnabled, settings.ZoomFactor, settings.KeystrokeOverlayEnabled); } });
 
             var outputPath = settings.BuildOutputFilePath();
             var audioRequested = settings.CaptureSystemAudio || settings.CaptureMicrophone;

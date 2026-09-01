@@ -141,11 +141,16 @@ public sealed class VideoCaptureService : IDisposable
     private GlobalMouseHook? _mouseHook;
     private KeystrokeOverlayRenderer? _keystrokeOverlay;
 
-    // Circular webcam PiP overlay (Phase 3). Started fire-and-forget in Prepare() — MediaCapture
-    // initialization is inherently async (InitializeAsync/CreateFrameReaderAsync/StartAsync are all
-    // WinRT async ops) and Prepare() itself is synchronous, so the overlay simply doesn't appear for the
-    // first moment of a session rather than delaying/failing the screen recording over camera setup.
+    // Circular webcam PiP overlay (Phase 3). Deliberately life-cycled independently of Prepare()/Stop()
+    // (see SetWebcam) — the camera has nothing to do with which monitor/window is being screen-captured,
+    // so switching targets mid-session (which does a Stop()+Prepare() cycle) must not tear down and
+    // re-initialize the whole camera pipeline just because the *screen* target changed. A dedicated lock
+    // (distinct from _wgcCallbackLock/_frameLock) guards _webcam/_webcamDeviceId specifically because
+    // SetWebcam can be called from a different thread than Prepare()/Stop() and needs its own
+    // read-modify-write to stay atomic against a concurrent call.
+    private readonly object _webcamLifecycleLock = new();
     private WebcamCaptureService? _webcam;
+    private string? _webcamDeviceId;
 
     // Raw pointer-shape scratch buffer for GetFramePointerShape(), grown as needed and reused across
     // shape updates; the decoded/converted result is cached separately since the shape only changes
@@ -162,8 +167,7 @@ public sealed class VideoCaptureService : IDisposable
     /// be non-null.
     /// </summary>
     public void Prepare(MonitorInfo? monitor, WindowInfo? window, bool captureCursor, CursorStyle cursorStyle = CursorStyle.Arrow,
-        bool zoomEnabled = false, double zoomFactor = 2.0, bool keystrokeOverlayEnabled = false,
-        bool webcamEnabled = false, string? webcamDeviceId = null)
+        bool zoomEnabled = false, double zoomFactor = 2.0, bool keystrokeOverlayEnabled = false)
     {
         if (_prepared) return;
         if (monitor is null && window is null)
@@ -193,18 +197,8 @@ public sealed class VideoCaptureService : IDisposable
             _keystrokeOverlay = new KeystrokeOverlayRenderer();
         }
 
-        if (webcamEnabled && webcamDeviceId is not null)
-        {
-            var webcam = new WebcamCaptureService();
-            _webcam = webcam;
-            _ = webcam.StartAsync(webcamDeviceId).ContinueWith(t =>
-            {
-                // Best effort: a camera that's unplugged, in use by another app, or permission-denied
-                // shouldn't take down screen recording over it — the overlay just never appears. Not
-                // logged anywhere today; if this turns out to need surfacing to the user, StatusMessage
-                // is the natural place, same as the friendly window-closed/stale-target message.
-            }, TaskContinuationOptions.OnlyOnFaulted);
-        }
+        // Deliberately no webcam start here — see SetWebcam and _webcamLifecycleLock's remarks. The
+        // camera's lifecycle is independent of this method entirely now.
 
         // The keyboard hook doubles as a zoom-activity signal, so it's needed whenever *either* feature
         // wants it; OnKeyboardActivity always marks activity and only forwards to the overlay renderer
@@ -591,7 +585,8 @@ public sealed class VideoCaptureService : IDisposable
 
             ApplyZoom(buffer, width, height);
             ApplyKeystrokeOverlay(buffer, width, height);
-            ApplyWebcamOverlay(buffer, width, height);
+            // Webcam overlay is NOT applied here — see TryGetLatestFrame's remarks on why it's
+            // composited at pull time instead, decoupled from DXGI's own frame-arrival cadence.
 
             lock (_frameLock)
             {
@@ -719,7 +714,8 @@ public sealed class VideoCaptureService : IDisposable
 
             ApplyZoom(canvas, Width, Height);
             ApplyKeystrokeOverlay(canvas, Width, Height);
-            ApplyWebcamOverlay(canvas, Width, Height);
+            // Webcam overlay is NOT applied here — see TryGetLatestFrame's remarks on why it's
+            // composited at pull time instead, decoupled from WGC's own frame-arrival cadence.
 
             lock (_frameLock)
             {
@@ -1081,13 +1077,59 @@ public sealed class VideoCaptureService : IDisposable
     /// </summary>
     private void ApplyWebcamOverlay(byte[] frame, int width, int height)
     {
-        if (_webcam is null) return;
-        if (!_webcam.TryGetOverlay(out var overlay, out var size)) return;
+        // Unguarded read of _webcam (no _webcamLifecycleLock here): if SetWebcam swaps/clears it
+        // concurrently, the worst case is one more call into an instance that's mid-teardown — safe,
+        // since WebcamCaptureService fully protects its own state with its own lock (TryGetOverlay just
+        // sees either its last real frame or "no frame" a beat early). Taking the lifecycle lock on this
+        // hot, every-frame path for that isn't worth it.
+        var webcam = _webcam;
+        if (webcam is null) return;
+        if (!webcam.TryGetOverlay(out var overlay, out var size)) return;
 
         const int margin = 24;
         int originX = width - size - margin;
         int originY = height - size - margin;
         BlendOverlay(frame, width, height, overlay, size, size, originX, originY);
+    }
+
+    /// <summary>
+    /// Starts, stops, or switches the webcam PiP overlay — entirely independent of Prepare()/Stop(),
+    /// which handle the DXGI/WGC screen-capture engine only. Safe to call at any time (idle, previewing,
+    /// or recording), from any thread, any number of times: a no-op if the requested state already
+    /// matches what's running (same enabled flag, same device id), so callers don't need to track
+    /// "did anything actually change" themselves — e.g. RestartPreviewIfIdle can call this unconditionally
+    /// every time any setting changes, the same way it already does for Prepare()'s parameters.
+    /// </summary>
+    public void SetWebcam(bool enabled, string? deviceId)
+    {
+        lock (_webcamLifecycleLock)
+        {
+            if (enabled && deviceId is not null)
+            {
+                if (_webcam is not null && _webcamDeviceId == deviceId) return; // already running this camera
+
+                var old = _webcam;
+                var webcam = new WebcamCaptureService();
+                _webcam = webcam;
+                _webcamDeviceId = deviceId;
+                _ = webcam.StartAsync(deviceId).ContinueWith(_ => { /* best effort: see StartAsync's own remarks */ },
+                    TaskContinuationOptions.OnlyOnFaulted);
+                if (old is not null) _ = old.StopAsync();
+            }
+            else
+            {
+                StopWebcamLocked();
+            }
+        }
+    }
+
+    /// <summary>The only thing that actually tears the camera down — called from SetWebcam(false, ...) and Dispose(). Must be called under <see cref="_webcamLifecycleLock"/>.</summary>
+    private void StopWebcamLocked()
+    {
+        var old = _webcam;
+        _webcam = null;
+        _webcamDeviceId = null;
+        if (old is not null) _ = old.StopAsync();
     }
 
     /// <summary>Straight-alpha blends a small BGRA overlay bitmap onto <paramref name="frame"/> at a fixed position — the keystroke-overlay counterpart to <see cref="BlendCursorIcon"/>, without that method's cursor-specific invert-alpha handling.</summary>
@@ -1125,15 +1167,33 @@ public sealed class VideoCaptureService : IDisposable
         }
     }
 
-    /// <summary>Copies the most recent frame into <paramref name="destination"/>. Returns false if no frame has arrived yet.</summary>
+    /// <summary>
+    /// Copies the most recent frame into <paramref name="destination"/>. Returns false if no frame has
+    /// arrived yet.
+    /// </summary>
+    /// <remarks>
+    /// The webcam overlay is composited here — at pull time, on every pacer tick — rather than baked
+    /// into <see cref="_latestFrame"/> back when CaptureLoop/CopyWgcFrameToBuffer ran (which is where
+    /// ApplyZoom/ApplyKeystrokeOverlay still run). Those two are fine tied to screen-frame-arrival timing
+    /// since they're themselves screen-activity-driven; the webcam isn't — it's an independently-clocked
+    /// live source. DXGI/WGC only produce a *new* frame when the screen actually changes, so on a mostly
+    /// static screen (a presenter talking, mouse idle) CaptureLoop could run rarely while the webcam still
+    /// has fresh frames arriving the whole time — compositing it there left the on-screen circle visibly
+    /// lagging real time. Pulling fresh here, at the pacer's fixed cadence regardless of screen activity,
+    /// fixes that at the root rather than papering over it with a higher DXGI poll rate.
+    /// </remarks>
     public bool TryGetLatestFrame(byte[] destination)
     {
+        int width, height;
         lock (_frameLock)
         {
             if (!_hasFrame || _latestFrame is null) return false;
             Buffer.BlockCopy(_latestFrame, 0, destination, 0, _latestFrame.Length);
-            return true;
+            width = _frameWidth;
+            height = _frameHeight;
         }
+        ApplyWebcamOverlay(destination, width, height);
+        return true;
     }
 
     // Uses Width/Height (known as soon as Prepare() resolves the output's mode), not
@@ -1197,16 +1257,11 @@ public sealed class VideoCaptureService : IDisposable
                 _mouseHook = null;
             }
             _keystrokeOverlay = null;
-            // Fire-and-forget, same reasoning as WebcamCaptureService.StopAsync's own remarks: this
-            // Stop() path is synchronous and frame-critical (the DXGI/WGC teardown above it isn't), so it
-            // shouldn't block on a WinRT camera-teardown call. WebcamCaptureService's own lock still
-            // guarantees no in-flight FrameArrived callback races this disposing its MediaCapture.
-            if (_webcam is not null)
-            {
-                var webcam = _webcam;
-                _webcam = null;
-                _ = webcam.StopAsync();
-            }
+            // Deliberately no webcam teardown here — see SetWebcam's remarks. Stop() tears down the
+            // DXGI/WGC screen-capture engine only; the camera keeps running across a Stop()+Prepare()
+            // cycle (e.g. switching monitors) so the PiP overlay doesn't visibly drop out every time the
+            // screen target changes. StopWebcam() (called from SetWebcam(false, ...) and Dispose()) is
+            // the only thing that actually tears the camera down.
             _typingTargetX = null;
             _typingTargetY = null;
             _zoomCurrentFactor = 1.0;
@@ -1239,5 +1294,9 @@ public sealed class VideoCaptureService : IDisposable
         }
     }
 
-    public void Dispose() => Stop();
+    public void Dispose()
+    {
+        Stop();
+        lock (_webcamLifecycleLock) { StopWebcamLocked(); }
+    }
 }
