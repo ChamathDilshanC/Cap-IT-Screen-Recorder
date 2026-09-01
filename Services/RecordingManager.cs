@@ -29,6 +29,9 @@ public sealed class RecordingManager : IDisposable
     private bool _previewZoomEnabled;
     private double _previewZoomFactor;
     private bool _previewKeystrokeOverlay;
+    private bool _previewSpotlightEnabled;
+    private double _previewSpotlightRadius;
+    private bool _previewClickRipplesEnabled;
 
     /// <summary>Fires if a specific-window recording/preview's target window is closed out from under it (window mode only) — pass-through of <see cref="VideoCaptureService.CaptureTargetLost"/>.</summary>
     public event Action? CaptureTargetLost
@@ -75,7 +78,8 @@ public sealed class RecordingManager : IDisposable
     /// </summary>
     public void StartPreview(MonitorInfo? monitor, WindowInfo? window, bool captureCursor, CursorStyle cursorStyle,
         bool zoomEnabled = false, double zoomFactor = 2.0, bool keystrokeOverlayEnabled = false,
-        bool webcamEnabled = false, string? webcamDeviceId = null)
+        bool webcamEnabled = false, string? webcamDeviceId = null,
+        bool spotlightEnabled = false, double spotlightRadius = 180, bool clickRipplesEnabled = false)
     {
         lock (_videoLock)
         {
@@ -87,15 +91,22 @@ public sealed class RecordingManager : IDisposable
             // setting (monitor, cursor style, zoom...) changed. See VideoCaptureService.SetWebcam.
             _video.SetWebcam(webcamEnabled, webcamDeviceId);
 
+            // Unlike the webcam, spotlight/ripples have no external device to keep alive across a
+            // restart (no camera, no privacy LED) — they're plain Prepare() parameters like zoom/cursor
+            // style, so it's fine (and simpler) for them to be part of the same dedup check and go
+            // through the normal Stop()+Prepare() cycle like everything else here.
             if (_video.IsCapturing && _previewMonitorHandle == monitor?.Handle && _previewWindowHandle == window?.Handle
                 && _previewCursor == captureCursor && _previewCursorStyle == cursorStyle
                 && _previewZoomEnabled == zoomEnabled && _previewZoomFactor == zoomFactor
-                && _previewKeystrokeOverlay == keystrokeOverlayEnabled) return;
+                && _previewKeystrokeOverlay == keystrokeOverlayEnabled
+                && _previewSpotlightEnabled == spotlightEnabled && _previewSpotlightRadius == spotlightRadius
+                && _previewClickRipplesEnabled == clickRipplesEnabled) return;
 
             _video.Stop();
             try
             {
-                _video.Prepare(monitor, window, captureCursor, cursorStyle, zoomEnabled, zoomFactor, keystrokeOverlayEnabled);
+                _video.Prepare(monitor, window, captureCursor, cursorStyle, zoomEnabled, zoomFactor, keystrokeOverlayEnabled,
+                    spotlightEnabled, spotlightRadius, clickRipplesEnabled);
                 _video.BeginCapture();
                 _previewMonitorHandle = monitor?.Handle;
                 _previewWindowHandle = window?.Handle;
@@ -104,6 +115,9 @@ public sealed class RecordingManager : IDisposable
                 _previewZoomEnabled = zoomEnabled;
                 _previewZoomFactor = zoomFactor;
                 _previewKeystrokeOverlay = keystrokeOverlayEnabled;
+                _previewSpotlightEnabled = spotlightEnabled;
+                _previewSpotlightRadius = spotlightRadius;
+                _previewClickRipplesEnabled = clickRipplesEnabled;
             }
             catch
             {
@@ -149,7 +163,8 @@ public sealed class RecordingManager : IDisposable
 
             // Prepare (but don't start) capture first so we know the real resolution.
             await Task.Run(() => { lock (_videoLock) { _video.Prepare(monitor, window, settings.CaptureCursor, settings.CursorStyle,
-                settings.MouseTrackingZoomEnabled, settings.ZoomFactor, settings.KeystrokeOverlayEnabled); } });
+                settings.MouseTrackingZoomEnabled, settings.ZoomFactor, settings.KeystrokeOverlayEnabled,
+                settings.SpotlightEnabled, settings.SpotlightRadius, settings.ClickRipplesEnabled); } });
 
             var outputPath = settings.BuildOutputFilePath();
             var audioRequested = settings.CaptureSystemAudio || settings.CaptureMicrophone;

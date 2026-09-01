@@ -141,6 +141,31 @@ public sealed class VideoCaptureService : IDisposable
     private GlobalMouseHook? _mouseHook;
     private KeystrokeOverlayRenderer? _keystrokeOverlay;
 
+    // Cursor spotlight (Phase 4). Radius is stored in canvas pixels, the same space _cursorX/_cursorY
+    // live in. The falloff table is rebuilt only when the radius actually changes (checked in
+    // ApplySpotlight), not per frame — see BuildSpotlightFalloffTable's remarks for why a squared-distance
+    // -indexed lookup table is what keeps this off the sqrt-per-pixel path entirely.
+    private bool _spotlightEnabled;
+    private int _spotlightRadius = 180;
+    private const int SpotlightFeatherPx = 24; // fixed edge-softness, not user-configurable
+    private const double SpotlightDimAlpha = 0.45;
+    private byte[]? _spotlightFalloffTable;
+    private int _spotlightFalloffTableRadius = -1;
+
+    // Click ripples (Phase 4). OnMouseClickAt (fired from GlobalMouseHook's own thread) appends under
+    // _rippleLock; ApplyRipples (called from the pacer thread via TryGetLatestFrame) prunes expired
+    // entries and snapshots the rest under the same lock, then renders without holding it — a ripple's
+    // whole lifetime is well under a second, so a plain locked List is simpler than anything lock-free
+    // would buy here, and RemoveAll (arbitrary-position removal) is a better fit than a queue anyway.
+    private readonly object _rippleLock = new();
+    private readonly List<ActiveRipple> _activeRipples = [];
+    private bool _clickRipplesEnabled;
+    private const double RippleDurationSeconds = 0.4;
+    private const double RippleMaxRadiusPx = 40;
+    private const double RippleThicknessPx = 3;
+
+    private readonly record struct ActiveRipple(double X, double Y, double StartSeconds);
+
     // Circular webcam PiP overlay (Phase 3). Deliberately life-cycled independently of Prepare()/Stop()
     // (see SetWebcam) — the camera has nothing to do with which monitor/window is being screen-captured,
     // so switching targets mid-session (which does a Stop()+Prepare() cycle) must not tear down and
@@ -167,7 +192,8 @@ public sealed class VideoCaptureService : IDisposable
     /// be non-null.
     /// </summary>
     public void Prepare(MonitorInfo? monitor, WindowInfo? window, bool captureCursor, CursorStyle cursorStyle = CursorStyle.Arrow,
-        bool zoomEnabled = false, double zoomFactor = 2.0, bool keystrokeOverlayEnabled = false)
+        bool zoomEnabled = false, double zoomFactor = 2.0, bool keystrokeOverlayEnabled = false,
+        bool spotlightEnabled = false, double spotlightRadius = 180, bool clickRipplesEnabled = false)
     {
         if (_prepared) return;
         if (monitor is null && window is null)
@@ -197,6 +223,11 @@ public sealed class VideoCaptureService : IDisposable
             _keystrokeOverlay = new KeystrokeOverlayRenderer();
         }
 
+        _spotlightEnabled = spotlightEnabled;
+        _spotlightRadius = Math.Max(1, (int)Math.Round(spotlightRadius));
+        _clickRipplesEnabled = clickRipplesEnabled;
+        lock (_rippleLock) { _activeRipples.Clear(); }
+
         // Deliberately no webcam start here — see SetWebcam and _webcamLifecycleLock's remarks. The
         // camera's lifecycle is independent of this method entirely now.
 
@@ -209,13 +240,18 @@ public sealed class VideoCaptureService : IDisposable
             _keyboardHook.KeyPressed += OnKeyboardActivity;
         }
 
-        // A click needs a real hook in both modes — DXGI reports cursor *position* every frame already
-        // (used for movement-based activity in CaptureLoop), and window mode polls position itself in
-        // OnWgcFrameArrived, but neither ever reports button state on its own.
-        if (zoomEnabled)
+        // A click needs a real hook for both zoom's activity signal and click ripples — DXGI reports
+        // cursor *position* every frame already (used for movement-based activity in CaptureLoop), and
+        // window mode polls position itself in OnWgcFrameArrived, but neither ever reports button state
+        // on its own. ClickAt (screen coordinates) is only subscribed when ripples actually want it.
+        if (zoomEnabled || clickRipplesEnabled)
         {
             _mouseHook = new GlobalMouseHook();
             _mouseHook.Click += OnMouseActivity;
+            if (clickRipplesEnabled)
+            {
+                _mouseHook.ClickAt += OnMouseClickAt;
+            }
         }
 
         if (_captureTarget == CaptureTargetKind.Window)
@@ -225,6 +261,20 @@ public sealed class VideoCaptureService : IDisposable
         else
         {
             PrepareMonitorCapture(monitor!);
+        }
+
+        // _cursorX/_cursorY otherwise stay at their zero-default until DXGI/PollWindowCursor next reports
+        // a position — harmless for cursor-icon rendering (a frame or two before the first real position
+        // is unnoticeable), but the spotlight reads them immediately on the very first frame, so without
+        // this it visibly starts in the top-left corner on a fresh session until the mouse first moves.
+        if (NativeMethods.GetCursorPos(out var initialCursorPt))
+        {
+            MapScreenToCanvas(initialCursorPt.X, initialCursorPt.Y, out var initialCanvasX, out var initialCanvasY, out var initialVisible);
+            if (initialVisible)
+            {
+                _cursorX = (int)initialCanvasX;
+                _cursorY = (int)initialCanvasY;
+            }
         }
 
         _prepared = true;
@@ -421,6 +471,24 @@ public sealed class VideoCaptureService : IDisposable
         _typingTargetY = null;
     }
 
+    /// <summary>
+    /// Click ripple trigger — fires on GlobalMouseHook's own thread, with the click's screen coordinates
+    /// read straight out of the low-level hook (see GlobalMouseHook.ClickAt's remarks). Reuses
+    /// MapScreenToCanvas, the same monitor/window-aware screen-to-canvas transform the caret-follow and
+    /// cursor-polling code already depend on, so a click outside the captured area (e.g. a second
+    /// monitor, when recording just one) is correctly ignored rather than clamped to a wrong edge.
+    /// </summary>
+    private void OnMouseClickAt(int screenX, int screenY)
+    {
+        MapScreenToCanvas(screenX, screenY, out var canvasX, out var canvasY, out var visible);
+        if (!visible) return;
+
+        lock (_rippleLock)
+        {
+            _activeRipples.Add(new ActiveRipple(canvasX, canvasY, _zoomClock.Elapsed.TotalSeconds));
+        }
+    }
+
     /// <summary>Keypress: the pan target follows the text caret instead, when one can be located.</summary>
     private void OnKeyboardActivity(string display)
     {
@@ -584,9 +652,9 @@ public sealed class VideoCaptureService : IDisposable
             }
 
             ApplyZoom(buffer, width, height);
-            ApplyKeystrokeOverlay(buffer, width, height);
-            // Webcam overlay is NOT applied here — see TryGetLatestFrame's remarks on why it's
-            // composited at pull time instead, decoupled from DXGI's own frame-arrival cadence.
+            // Keystroke overlay, webcam, spotlight, and ripples are NOT applied here — see
+            // TryGetLatestFrame's remarks on why the whole effects stack is composited at pull time
+            // instead, decoupled from DXGI's own frame-arrival cadence.
 
             lock (_frameLock)
             {
@@ -713,9 +781,9 @@ public sealed class VideoCaptureService : IDisposable
             PollWindowCursor();
 
             ApplyZoom(canvas, Width, Height);
-            ApplyKeystrokeOverlay(canvas, Width, Height);
-            // Webcam overlay is NOT applied here — see TryGetLatestFrame's remarks on why it's
-            // composited at pull time instead, decoupled from WGC's own frame-arrival cadence.
+            // Keystroke overlay, webcam, spotlight, and ripples are NOT applied here — see
+            // TryGetLatestFrame's remarks on why the whole effects stack is composited at pull time
+            // instead, decoupled from WGC's own frame-arrival cadence.
 
             lock (_frameLock)
             {
@@ -1069,11 +1137,180 @@ public sealed class VideoCaptureService : IDisposable
     }
 
     /// <summary>
+    /// Builds a squared-distance-indexed lookup table mapping distSq → "clear factor" (255 = fully
+    /// original/undimmed at the cursor, 0 = fully dimmed beyond the radius+feather edge). This is the
+    /// answer to "where does the precomputation happen so we aren't rebuilding it every frame": once,
+    /// here, cached in <see cref="_spotlightFalloffTable"/> and only rebuilt if the radius actually
+    /// changes (checked in <see cref="ApplySpotlight"/>) — not per frame, and critically not per pixel.
+    /// Math.Sqrt runs at most (radius+feather)² times total for a table build, never in the per-pixel
+    /// hot path, which only ever does an integer squared-distance compute plus an array index.
+    /// </summary>
+    private static byte[] BuildSpotlightFalloffTable(int radius, int featherPx)
+    {
+        int outerRadius = radius + featherPx;
+        int maxDistSq = outerRadius * outerRadius;
+        var table = new byte[maxDistSq + 1];
+
+        for (int distSq = 0; distSq <= maxDistSq; distSq++)
+        {
+            double dist = Math.Sqrt(distSq);
+            double clear;
+            if (dist <= radius) clear = 1.0;
+            else if (dist >= outerRadius) clear = 0.0;
+            else clear = (outerRadius - dist) / featherPx; // linear falloff across the feather band
+
+            table[distSq] = (byte)Math.Clamp(clear * 255.0 + 0.5, 0, 255);
+        }
+        return table;
+    }
+
+    /// <summary>
+    /// Dims the whole frame except a sharp circle around the cursor — bottom layer of the effects stack
+    /// (drawn under the webcam/keystroke overlays, over the base frame and any ripples already on it).
+    /// One full pass over the frame, unsafe/pointer-based per <c>fixed</c> below: rows entirely outside
+    /// the spotlight (the common case once the cursor isn't near that row) take a cheap flat-dim
+    /// fast path with no per-pixel distance math at all; only rows within reach of the radius do the
+    /// per-pixel squared-distance lookup.
+    /// </summary>
+    private unsafe void ApplySpotlight(byte[] canvas, int width, int height, int cursorX, int cursorY, int radius)
+    {
+        if (radius <= 0) return;
+
+        if (_spotlightFalloffTable is null || _spotlightFalloffTableRadius != radius)
+        {
+            _spotlightFalloffTable = BuildSpotlightFalloffTable(radius, SpotlightFeatherPx);
+            _spotlightFalloffTableRadius = radius;
+        }
+        var table = _spotlightFalloffTable;
+        int outerRadius = radius + SpotlightFeatherPx;
+        int maxDistSq = outerRadius * outerRadius;
+        const double dimAlpha = SpotlightDimAlpha;
+        const double dimmedMul = 1.0 - dimAlpha;
+
+        fixed (byte* basePtr = canvas)
+        {
+            byte* baseP = basePtr;
+            Parallel.For(0, height, y =>
+            {
+                byte* row = baseP + (long)y * width * 4;
+                int dy = y - cursorY;
+                int dySq = dy * dy;
+
+                if (dySq > maxDistSq)
+                {
+                    // Entire row is beyond the spotlight — flat-dim it in one pass, no per-pixel distance
+                    // math needed at all.
+                    for (int x = 0; x < width; x++)
+                    {
+                        byte* px = row + x * 4;
+                        px[0] = (byte)(px[0] * dimmedMul);
+                        px[1] = (byte)(px[1] * dimmedMul);
+                        px[2] = (byte)(px[2] * dimmedMul);
+                    }
+                    return;
+                }
+
+                for (int x = 0; x < width; x++)
+                {
+                    int dx = x - cursorX;
+                    int distSq = dx * dx + dySq;
+                    byte* px = row + x * 4;
+
+                    if (distSq > maxDistSq)
+                    {
+                        px[0] = (byte)(px[0] * dimmedMul);
+                        px[1] = (byte)(px[1] * dimmedMul);
+                        px[2] = (byte)(px[2] * dimmedMul);
+                        continue;
+                    }
+
+                    byte clear = table[distSq];
+                    if (clear == 255) continue; // fully inside the sharp circle — untouched
+
+                    double mul = dimmedMul + dimAlpha * (clear / 255.0);
+                    px[0] = (byte)(px[0] * mul);
+                    px[1] = (byte)(px[1] * mul);
+                    px[2] = (byte)(px[2] * mul);
+                }
+            });
+        }
+    }
+
+    /// <summary>
+    /// Renders every active ripple, pruning expired ones first — drawn under the spotlight (so a ripple
+    /// outside the spotlight's clear circle gets dimmed along with everything else, matching where a
+    /// click far from the current cursor position should visually recede) but over the base frame.
+    /// Snapshots the ripple list under <see cref="_rippleLock"/> and renders without holding it, so
+    /// OnMouseClickAt (a different thread) never blocks on this.
+    /// </summary>
+    private unsafe void ApplyRipples(byte[] canvas, int width, int height)
+    {
+        double now = _zoomClock.Elapsed.TotalSeconds;
+        List<ActiveRipple>? snapshot = null;
+        lock (_rippleLock)
+        {
+            _activeRipples.RemoveAll(r => now - r.StartSeconds > RippleDurationSeconds);
+            if (_activeRipples.Count > 0) snapshot = [.. _activeRipples];
+        }
+        if (snapshot is null) return;
+
+        fixed (byte* basePtr = canvas)
+        {
+            foreach (var ripple in snapshot)
+            {
+                double t = (now - ripple.StartSeconds) / RippleDurationSeconds;
+                if (t is < 0 or > 1) continue;
+
+                double radius = RippleMaxRadiusPx * t;
+                double opacity = 1.0 - t;
+                DrawRippleRing(basePtr, width, height, ripple.X, ripple.Y, radius, opacity);
+            }
+        }
+    }
+
+    /// <summary>Draws one ripple's ring, iterating only its own bounding box — never the full frame, regardless of how many ripples are active or how big the canvas is.</summary>
+    private static unsafe void DrawRippleRing(byte* basePtr, int width, int height, double centerX, double centerY, double radius, double opacity)
+    {
+        // A cyan-ish accent reads clearly against most desktop/app content without looking like an error
+        // indicator the way a red ring might.
+        const byte colorB = 255, colorG = 220, colorR = 60;
+
+        double outer = radius + RippleThicknessPx / 2.0;
+        double inner = Math.Max(0, radius - RippleThicknessPx / 2.0);
+        double outerSq = outer * outer;
+        double innerSq = inner * inner;
+
+        int boxLeft = Math.Max(0, (int)(centerX - outer) - 1);
+        int boxTop = Math.Max(0, (int)(centerY - outer) - 1);
+        int boxRight = Math.Min(width - 1, (int)(centerX + outer) + 1);
+        int boxBottom = Math.Min(height - 1, (int)(centerY + outer) + 1);
+
+        for (int y = boxTop; y <= boxBottom; y++)
+        {
+            double dy = y - centerY;
+            double dySq = dy * dy;
+            byte* row = basePtr + (long)y * width * 4;
+
+            for (int x = boxLeft; x <= boxRight; x++)
+            {
+                double dx = x - centerX;
+                double distSq = dx * dx + dySq;
+                if (distSq < innerSq || distSq > outerSq) continue;
+
+                byte* px = row + x * 4;
+                px[0] = (byte)(colorB * opacity + px[0] * (1 - opacity));
+                px[1] = (byte)(colorG * opacity + px[1] * (1 - opacity));
+                px[2] = (byte)(colorR * opacity + px[2] * (1 - opacity));
+            }
+        }
+    }
+
+    /// <summary>
     /// Bottom-right picture-in-picture placement — deliberately a different corner from the keystroke
-    /// overlay's bottom-center toast so the two never fight for the same screen space. Drawn last (after
-    /// zoom and keystroke overlay), the same reasoning as the keystroke overlay itself: a PiP webcam
-    /// should stay a fixed size/position on screen regardless of zoom level, not get caught up in the
-    /// zoom crop like the underlying capture content does.
+    /// overlay's bottom-center toast so the two never fight for the same screen space. Drawn above the
+    /// spotlight (see TryGetLatestFrame's compositing order) so the presenter's own face is never dimmed
+    /// by it, and — like the keystroke overlay — stays a fixed size/position on screen regardless of zoom
+    /// level rather than getting caught up in the zoom crop like the underlying capture content does.
     /// </summary>
     private void ApplyWebcamOverlay(byte[] frame, int width, int height)
     {
@@ -1172,15 +1409,20 @@ public sealed class VideoCaptureService : IDisposable
     /// arrived yet.
     /// </summary>
     /// <remarks>
-    /// The webcam overlay is composited here — at pull time, on every pacer tick — rather than baked
-    /// into <see cref="_latestFrame"/> back when CaptureLoop/CopyWgcFrameToBuffer ran (which is where
-    /// ApplyZoom/ApplyKeystrokeOverlay still run). Those two are fine tied to screen-frame-arrival timing
-    /// since they're themselves screen-activity-driven; the webcam isn't — it's an independently-clocked
-    /// live source. DXGI/WGC only produce a *new* frame when the screen actually changes, so on a mostly
-    /// static screen (a presenter talking, mouse idle) CaptureLoop could run rarely while the webcam still
-    /// has fresh frames arriving the whole time — compositing it there left the on-screen circle visibly
-    /// lagging real time. Pulling fresh here, at the pacer's fixed cadence regardless of screen activity,
-    /// fixes that at the root rather than papering over it with a higher DXGI poll rate.
+    /// The full effects stack — ripples, spotlight, webcam, keystroke overlay — is composited here, at
+    /// pull time, on every pacer tick, rather than baked into <see cref="_latestFrame"/> back when
+    /// CaptureLoop/CopyWgcFrameToBuffer ran (which is where ApplyZoom still runs — that one's fine tied
+    /// to screen-frame-arrival timing since it's itself screen-activity-driven). The others aren't:
+    /// DXGI/WGC only produce a *new* frame when the screen actually changes, so on a mostly static screen
+    /// (a presenter talking, mouse idle) CaptureLoop could run rarely while the webcam has fresh frames
+    /// arriving, a click ripple is mid-animation, or the spotlight needs to track cursor movement, the
+    /// whole time — compositing any of those back at screen-frame-arrival time left them visibly lagging
+    /// real time (the bug this restructuring actually fixed for the webcam first). Pulling everything
+    /// fresh here, at the pacer's fixed cadence regardless of screen activity, fixes that at the root.
+    ///
+    /// Z-order (bottom to top): base frame → ripples → spotlight (dims everything below it, including
+    /// any ripple outside its clear circle) → webcam (always full brightness, never dimmed) → keystroke
+    /// overlay (topmost, same reasoning — a toast dimmed by the spotlight would be nonsensical).
     /// </remarks>
     public bool TryGetLatestFrame(byte[] destination)
     {
@@ -1192,7 +1434,11 @@ public sealed class VideoCaptureService : IDisposable
             width = _frameWidth;
             height = _frameHeight;
         }
+
+        if (_clickRipplesEnabled) ApplyRipples(destination, width, height);
+        if (_spotlightEnabled) ApplySpotlight(destination, width, height, _cursorX, _cursorY, _spotlightRadius);
         ApplyWebcamOverlay(destination, width, height);
+        ApplyKeystrokeOverlay(destination, width, height);
         return true;
     }
 

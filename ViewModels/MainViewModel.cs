@@ -368,17 +368,30 @@ public partial class MainViewModel : BaseViewModel
         QueueSaveSettings();
     }
 
-    // No RestartPreviewIfIdle() here yet — same reasoning as the webcam properties above: nothing renders
-    // these onto frames until the byte-array compositing step lands.
-    partial void OnSpotlightEnabledChanged(bool value) => QueueSaveSettings();
+    partial void OnSpotlightEnabledChanged(bool value)
+    {
+        RestartPreviewIfIdle();
+        QueueSaveSettings();
+    }
 
+    // Deliberately no RestartPreviewIfIdle() here, unlike every other On<X>Changed in this file: a
+    // Slider fires this on every value change during a drag (up to ~32 times crossing the full range),
+    // and radius is a Prepare()-time parameter — restarting the whole DXGI/WGC pipeline that often would
+    // flicker the preview and burn CPU for no benefit. The new radius takes effect on the next restart
+    // for any other reason (toggling the effect itself, switching capture target, ...) or immediately for
+    // an actual recording, which reads RecordingSettings.SpotlightRadius fresh regardless. Same
+    // "continuously-dragged value doesn't restart anything live" precedent VideoBitrateKbps already sets.
     partial void OnSpotlightRadiusChanged(double value)
     {
         OnPropertyChanged(nameof(SpotlightRadiusLabel));
         QueueSaveSettings();
     }
 
-    partial void OnClickRipplesEnabledChanged(bool value) => QueueSaveSettings();
+    partial void OnClickRipplesEnabledChanged(bool value)
+    {
+        RestartPreviewIfIdle();
+        QueueSaveSettings();
+    }
 
     partial void OnSelectedEncoderChanged(HardwareEncoder value)
     {
@@ -430,9 +443,16 @@ public partial class MainViewModel : BaseViewModel
         var keystrokeOverlay = KeystrokeOverlayEnabled;
         var webcamEnabled = WebcamEnabled;
         var webcamDeviceId = SelectedWebcam?.Id;
+        var spotlightEnabled = SpotlightEnabled;
+        var spotlightRadius = SpotlightRadius;
+        var clickRipplesEnabled = ClickRipplesEnabled;
         _ = Task.Run(() =>
         {
-            try { _manager.StartPreview(monitor, window, cursor, cursorStyle, zoomEnabled, zoomFactor, keystrokeOverlay, webcamEnabled, webcamDeviceId); }
+            try
+            {
+                _manager.StartPreview(monitor, window, cursor, cursorStyle, zoomEnabled, zoomFactor, keystrokeOverlay,
+                    webcamEnabled, webcamDeviceId, spotlightEnabled, spotlightRadius, clickRipplesEnabled);
+            }
             catch { /* best effort: live preview is a convenience, not required to record */ }
         });
     }
