@@ -10,7 +10,8 @@ public sealed partial class MainWindow : Window
 {
     // Below this, the fixed-width settings column starts squeezing the preview column into a sliver and
     // the settings panel runs out of vertical room, which is what makes scrollbars/overlap show up.
-    private const int MinWindowWidth = 900;
+    // Accounts for the NavigationView pane (~220px) added alongside the original settings/preview split.
+    private const int MinWindowWidth = 1100;
     private const int MinWindowHeight = 600;
 
     public MainWindow()
@@ -18,7 +19,7 @@ public sealed partial class MainWindow : Window
         InitializeComponent();
 
         Title = "Cap-IT Screen Recorder";
-        RootFrame.Navigate(typeof(MainPage));
+        RootFrame.Navigate(typeof(ShellPage));
 
         try
         {
@@ -27,7 +28,7 @@ public sealed partial class MainWindow : Window
             var appWindow = AppWindow.GetFromWindowId(windowId);
             if (appWindow is not null)
             {
-                appWindow.Resize(new SizeInt32(1040, 700));
+                appWindow.Resize(new SizeInt32(1260, 720));
                 if (appWindow.Presenter is OverlappedPresenter presenter)
                 {
                     presenter.IsResizable = true;

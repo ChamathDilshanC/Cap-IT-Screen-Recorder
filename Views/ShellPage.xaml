@@ -1,0 +1,42 @@
+<Page
+    x:Class="ScreenRecorderApp.Views.ShellPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+
+    <NavigationView x:Name="RootNavigationView"
+                     PaneDisplayMode="Left"
+                     IsBackButtonVisible="Collapsed"
+                     IsSettingsVisible="False"
+                     OpenPaneLength="220"
+                     SelectionChanged="OnSelectionChanged"
+                     Loaded="OnNavigationViewLoaded">
+
+        <NavigationView.MenuItems>
+            <NavigationViewItem Content="Home" Tag="Home" IsSelected="True">
+                <NavigationViewItem.Icon>
+                    <FontIcon Glyph="&#xE80F;" />
+                </NavigationViewItem.Icon>
+            </NavigationViewItem>
+            <NavigationViewItem Content="Smart Tracking" Tag="Tracking">
+                <NavigationViewItem.Icon>
+                    <FontIcon Glyph="&#xE721;" />
+                </NavigationViewItem.Icon>
+            </NavigationViewItem>
+            <NavigationViewItem Content="Settings" Tag="Settings">
+                <NavigationViewItem.Icon>
+                    <FontIcon Glyph="&#xE713;" />
+                </NavigationViewItem.Icon>
+            </NavigationViewItem>
+        </NavigationView.MenuItems>
+
+        <NavigationView.PaneHeader>
+            <StackPanel Orientation="Horizontal" Spacing="8" Margin="4,4,0,4">
+                <Image Source="ms-appx:///assets/Logo-CapIT.png" Width="24" Height="24" />
+                <TextBlock Text="Cap-IT" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
+            </StackPanel>
+        </NavigationView.PaneHeader>
+
+        <Frame x:Name="ContentFrame" />
+    </NavigationView>
+</Page>
