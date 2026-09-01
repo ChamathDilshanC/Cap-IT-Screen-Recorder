@@ -4,8 +4,8 @@
 
 # Cap-IT Screen Recorder
 
-A fast, modern Windows screen recorder — GPU-accelerated capture, live preview, selectable cursor
-overlays, and quality up to 4K, wrapped in a clean WinUI 3 interface.
+A fast, modern Windows screen recorder — GPU-accelerated capture, an interaction-aware smart zoom,
+a live keystroke overlay, and ultra-sharp text quality, wrapped in a clean 3-tab WinUI 3 interface.
 
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-0078D6?logo=windows&logoColor=white)](#)
 [![.NET](https://img.shields.io/badge/.NET-8-512BD4?logo=dotnet&logoColor=white)](#)
@@ -16,21 +16,47 @@ overlays, and quality up to 4K, wrapped in a clean WinUI 3 interface.
 
 <br/>
 
-<img src="assets/Install-Steps/image.png" alt="Cap-IT Screen Recorder main window" width="820" />
+<img src="assets/Screenshots/Home.png" alt="Cap-IT Screen Recorder — Home dashboard with live preview" width="820" />
 
 </div>
 
 ## Features
 
+### Capture
 - **GPU-accelerated capture** of any connected monitor via the DXGI Desktop Duplication API (no screen-scraping, no WinRT interop)
-- **Live preview** of exactly what's being captured, shown in the main panel as soon as a display is selected — not just while recording
+- **Live preview** of exactly what's being captured, shown as soon as a display is selected — not just while recording
 - **Selectable output quality**, 360p up to 4K, scaled independently of the native capture resolution
 - **Selectable cursor overlay** — the real system cursor shape (decoded live from DXGI, whatever cursor theme is active), or a stylized Arrow / Circle highlight / Dot / Crosshair
 - **Frame rate** (15/24/30/60) and **H.264 encoder** choice (Auto / NVIDIA NVENC / AMD AMF / Intel QSV / software x264, with automatic fallback)
 - **System audio** (WASAPI loopback) and/or **microphone**, mixed to one AAC track
 - **Pause / Resume** — freezes the frame and mutes audio without ending the file
 - **MP4 or MKV** output, to a configurable folder
-- Clean, card-based, modern settings layout
+
+### Smart Tracking
+- **Interaction-triggered smart zoom** — eases into your chosen zoom level only while you're actively moving the mouse, clicking, or typing, then eases back out to the full desktop automatically ~1.5s after you stop. Motion is a proper time-based ease, not a snap.
+- **Caret-follow while typing** — while typing, the zoom pans to the actual text caret (via the same technique Magnifier's "follow text cursor" mode uses) instead of a stale mouse position, so it follows what's actually happening even if the mouse hasn't moved
+- **Keystroke overlay** — recent keystrokes fade in/out on screen as you type, great for tutorials and demos
+- **ffmpeg auto-setup** — if `ffmpeg.exe` isn't found, Start Recording offers to download and install it automatically, with a live progress bar, instead of failing with an error
+
+### Quality
+- **"Maximize text clarity" mode** — 4:4:4 chroma (`yuv444p`) + a higher-quality x264 profile, eliminating the color bleed/blur 4:2:0 chroma subsampling causes around anti-aliased text edges
+- **Content-adaptive (CRF/CQ) encoding** by default on every encoder — bits go where the frame actually needs them (e.g. text) instead of a flat average that wastes bits on static regions, with your bitrate setting kept as a hard ceiling
+- **Bilinear-resampled zoom** — smooth, non-blocky zoomed text instead of nearest-neighbor aliasing
+
+### UI
+- **3-tab NavigationView shell** — a minimal Home dashboard, a Smart Tracking tab, and a Settings tab
+- Clean, card-based Fluent Design settings (`SettingsCard`/`SettingsExpander`) throughout
+
+## Screenshots
+
+<div align="center">
+<table>
+<tr>
+<td align="center" width="50%"><img src="assets/Screenshots/Smart-Tracking.png" width="420"/><br/><sub>Smart Tracking — interaction-triggered zoom & keystroke overlay</sub></td>
+<td align="center" width="50%"><img src="assets/Screenshots/Settings.png" width="420"/><br/><sub>Settings — grouped Capture / Audio / Output cards</sub></td>
+</tr>
+</table>
+</div>
 
 ## Installation
 
@@ -60,20 +86,26 @@ uninstall later), with an optional desktop shortcut.
 - **C# / .NET 8**, **WinUI 3** (Windows App SDK), MVVM (CommunityToolkit.Mvvm)
 - **DXGI Desktop Duplication API** (`Vortice.Direct3D11` / `Vortice.DXGI`) for GPU-accelerated monitor capture (BGRA frames) and live cursor shape/position tracking
 - **NAudio** (WASAPI loopback + microphone capture, mixed to one PCM stream)
-- **FFmpeg** (bundled `ffmpeg.exe`) for H.264/AAC encoding and MP4/MKV muxing, fed over named pipes
+- **FFmpeg** (bundled `ffmpeg.exe`, auto-downloadable on first run) for H.264/AAC encoding and MP4/MKV muxing, fed over named pipes
+- **CommunityToolkit.WinUI.Controls.SettingsControls** (`SettingsCard`/`SettingsExpander`) for the Settings tab
 - Unpackaged, self-contained deployment (no separate Windows App SDK runtime install needed); an [Inno Setup](https://jrsoftware.org/isinfo.php) script builds a normal Windows installer on top of that
 
 ## Project layout
 
 ```
-Views/                  MainWindow, MainPage (XAML UI)
+Views/                  MainWindow, ShellPage (3-tab NavigationView shell), HomePage (dashboard),
+                        TrackingPage (Smart Tracking), SettingsPage (Capture/Audio/Output)
 ViewModels/             BaseViewModel, MainViewModel (CommunityToolkit.Mvvm)
 Models/                 RecordingSettings, MonitorInfo, RecordingState, enums
 Services/
-├── Capture/            VideoCaptureService (DXGI Desktop Duplication + cursor rendering),
-│                       AudioCaptureService, Monitor/AudioDevice enumerators, CursorIcons
+├── Capture/            VideoCaptureService (DXGI Desktop Duplication + cursor rendering,
+│                       interaction-triggered smart zoom, keystroke overlay compositing),
+│                       AudioCaptureService, Monitor/AudioDevice enumerators, CursorIcons,
+│                       KeystrokeOverlayRenderer
 │   └── Interop/        Win32 monitor-enumeration P/Invokes
-├── Encoding/            FFmpegEncoderService (process + named pipes), FFmpegLocator
+├── Encoding/            FFmpegEncoderService (process + named pipes), FFmpegLocator, FFmpegDownloader
+├── Tracking/            GlobalKeyboardHook, GlobalMouseHook (WH_KEYBOARD_LL/WH_MOUSE_LL — keystroke
+│                       overlay + zoom activity signal)
 └── RecordingManager.cs  Orchestrates capture + encoder into record/pause/stop
 ffmpeg/                 Bundled encoder binary goes here (see ffmpeg/README.md)
 Installer/CapIT.iss     Inno Setup script that packages the published output into a Windows installer
@@ -123,6 +155,31 @@ The resulting installer is written to `Installer\Output\CapIT-Screen-Recorder-Se
 4. Once real frame bytes are flowing, `FFmpegEncoderService.WaitForAudioConnectionAsync()` connects the **audio** pipe (FFmpeg won't probe a second input until the first one has data — connecting both pipes before any writer exists deadlocks).
 5. `AudioCaptureService` mixes WASAPI loopback + microphone into 48kHz stereo PCM16 and pumps it into the audio pipe.
 6. On Stop, the pipes are closed and `q` is sent to FFmpeg's stdin so it finalizes the MP4/MKV cleanly. Output uses fragmented MP4 rather than `+faststart`, so there's no expensive rewrite-the-whole-file step on stop — large/high-bitrate recordings finalize quickly and stay valid even under a forced shutdown.
+
+## How the smart zoom & text clarity work
+
+The zoom and the "sharp text" work are both done frame-by-frame in `VideoCaptureService`, on the same
+raw BGRA buffer the cursor overlay is already composited into — not with FFmpeg filters, since a live
+`zoompan` can't practically be steered by an external, constantly-changing cursor/caret signal.
+
+- **Activity tracking**: mouse movement comes from DXGI's own per-frame pointer position (no extra
+  hook needed); clicks come from a `WH_MOUSE_LL` hook (`GlobalMouseHook`); typing comes from the
+  existing `WH_KEYBOARD_LL` hook (`GlobalKeyboardHook`, shared with the keystroke overlay). Whichever
+  fired most recently decides the pan target — typing looks up the real text caret via
+  `GetGUIThreadInfo` (`CaretLocator`), not just the last mouse position.
+- **Easing**: both the zoom factor and the pan position are eased toward their targets using
+  `1 - e^(-dt/τ)` — a proper time-constant-based exponential ease driven by real elapsed time, so
+  motion stays smooth regardless of the capture thread's actual (variable) frame timing, not a fixed
+  per-frame blend that assumes a constant FPS.
+- **Resampling**: the zoomed crop is resampled back to full frame size with 4-tap bilinear
+  interpolation (parallelized per row), not nearest-neighbor — at the fractional zoom ratios this
+  feature uses (1.5x/2x/3x), nearest-neighbor visibly blocks/aliases text edges.
+- **Encoding**: every encoder uses content-adaptive rate control (CRF for libx264, quality-target VBR
+  for NVENC) capped by your bitrate setting as `-maxrate`/`-bufsize`, instead of a flat average bitrate
+  — detailed regions (text) get more bits automatically, static regions don't waste them. The optional
+  "Maximize text clarity" mode additionally switches to `yuv444p`/`high444` for libx264, removing the
+  chroma-subsampling blur/fringing 4:2:0 causes around colored text — opt-in since it costs meaningfully
+  more bitrate and isn't reliably supported by consumer NVENC/AMF/QSV.
 
 ## Notable fixes along the way
 
