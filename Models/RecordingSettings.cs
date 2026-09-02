@@ -101,6 +101,24 @@ public sealed record ZoomLevelOption(double Factor, string Label)
     ];
 }
 
+/// <summary>Pairs a preset pen color for annotation drawing with a friendly label for display in a ComboBox. Presets rather than a full color picker, since a tutorial annotation needs to read clearly against arbitrary desktop content, not match a brand palette.</summary>
+public sealed record AnnotationColorOption(Windows.UI.Color Value, string Label)
+{
+    public override string ToString() => Label;
+
+    public Microsoft.UI.Xaml.Media.SolidColorBrush Brush { get; } = new(Value);
+
+    public static readonly IReadOnlyList<AnnotationColorOption> All =
+    [
+        new(Windows.UI.Color.FromArgb(255, 57, 255, 20), "Neon Green"),
+        new(Windows.UI.Color.FromArgb(255, 255, 32, 32), "Bright Red"),
+        new(Windows.UI.Color.FromArgb(255, 255, 221, 0), "Yellow"),
+        new(Windows.UI.Color.FromArgb(255, 255, 0, 220), "Magenta"),
+        new(Windows.UI.Color.FromArgb(255, 0, 220, 255), "Cyan"),
+        new(Windows.UI.Color.FromArgb(255, 255, 255, 255), "White"),
+    ];
+}
+
 /// <summary>All user-configurable options for a recording session.</summary>
 public sealed class RecordingSettings
 {
@@ -121,6 +139,11 @@ public sealed class RecordingSettings
     public bool CaptureSystemAudio { get; set; } = true;
     public bool CaptureMicrophone { get; set; } = false;
     public string? MicrophoneDeviceId { get; set; }
+
+    // Studio Mic noise suppression (Phase 5): highpass + afftdn (+ adeclick) applied to the mic signal
+    // only. When both system audio and the mic are being captured, FFmpegEncoderService keeps them on
+    // separate pipes/inputs so the filter never touches system audio — see BuildArguments there.
+    public bool EnableMicNoiseSuppression { get; set; } = false;
 
     public bool CaptureCursor { get; set; } = true;
     public CursorStyle CursorStyle { get; set; } = CursorStyle.SystemDefault;

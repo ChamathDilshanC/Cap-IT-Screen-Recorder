@@ -32,6 +32,10 @@ public sealed class AppSettings
     public bool CaptureMicrophone { get; set; } = false;
     public string? MicrophoneDeviceId { get; set; }
 
+    // Studio Mic noise suppression (Phase 5). Only ever touches the microphone signal — see
+    // FFmpegEncoderService.BuildArguments for how it stays isolated from system audio.
+    public bool EnableMicNoiseSuppression { get; set; } = false;
+
     public bool MouseTrackingZoomEnabled { get; set; } = false;
     public double ZoomFactor { get; set; } = 2.0;
     public bool KeystrokeOverlayEnabled { get; set; } = false;
@@ -42,6 +46,13 @@ public sealed class AppSettings
     public bool SpotlightEnabled { get; set; } = false;
     public double SpotlightRadius { get; set; } = 180;
     public bool ClickRipplesEnabled { get; set; } = false;
+
+    // Live screen annotations (Phase 6). Driven directly by MainViewModel via AnnotationOverlayService
+    // (using SelectedMonitor at record start), not through RecordingManager/RecordingSettings, so unlike
+    // most other capture-affecting toggles this only needs to persist here, not in RecordingSettings too.
+    public bool AnnotationsEnabled { get; set; } = false;
+    public string AnnotationColorLabel { get; set; } = "Neon Green";
+    public double AnnotationStrokeThickness { get; set; } = 6;
 
     public bool MaximizeTextClarity { get; set; } = false;
 
