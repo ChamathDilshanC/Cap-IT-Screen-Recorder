@@ -9,6 +9,8 @@ using ScreenRecorderApp.Models;
 using ScreenRecorderApp.Services;
 using ScreenRecorderApp.Services.Capture;
 using ScreenRecorderApp.Services.Encoding;
+using ScreenRecorderApp.Services.Overlay;
+using ScreenRecorderApp.Views;
 
 namespace ScreenRecorderApp.ViewModels;
 
@@ -17,6 +19,7 @@ public partial class MainViewModel : BaseViewModel
     private readonly RecordingManager _manager = new();
     private readonly SettingsService _settingsService = new();
     private readonly DispatcherQueue _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
+    private readonly AnnotationOverlayService _annotations;
     private readonly DispatcherQueueTimer _uiTimer;
 
     // Guards the load-and-apply pass in the constructor so setting ~15 properties from disk doesn't
@@ -47,6 +50,12 @@ public partial class MainViewModel : BaseViewModel
 
     [ObservableProperty] private bool _captureSystemAudio = true;
     [ObservableProperty] private bool _captureMicrophone;
+
+    // Studio Mic noise suppression (Phase 5 — ffmpeg afftdn/highpass/adeclick on the mic leg only).
+    // Settings-only like CaptureMicrophone/CaptureSystemAudio above: it changes what RecordingManager
+    // hands to ffmpeg at record start, not the live preview, so no RestartPreviewIfIdle().
+    [ObservableProperty] private bool _enableMicNoiseSuppression;
+
     [ObservableProperty] private bool _captureCursor = true;
     [ObservableProperty] private CursorStyleOption _selectedCursorStyle = CursorStyleOption.All[0];
 
@@ -67,6 +76,32 @@ public partial class MainViewModel : BaseViewModel
     [ObservableProperty] private double _spotlightRadius = 180;
     public string SpotlightRadiusLabel => $"{SpotlightRadius:0}px";
     [ObservableProperty] private bool _clickRipplesEnabled;
+
+    // Live screen annotations (Phase 6 Step 1 — overlay window + click-through toggle + global hotkey
+    // only; no InkCanvas/drawing surface yet, that's Step 2). Settings-only like WebcamEnabled:
+    // AnnotationOverlayService is driven directly by Start/StopRecordingAsync using SelectedMonitor, not
+    // through RecordingManager/RecordingSettings, so no RestartPreviewIfIdle() and no RecordingSettings
+    // mapping is needed, just persistence.
+    [ObservableProperty] private bool _annotationsEnabled;
+
+    // Windows Graphics Capture for a specific window only captures that window's own surface, not other
+    // windows layered on top of it — so the overlay is invisible to a window-mode recording no matter
+    // what. Gated off entirely rather than silently no-op'd, so the UI is honest about the limitation.
+    public bool CanEnableAnnotations => IsMonitorCaptureMode;
+
+    // Combines the capture-mode gate above with the usual "can't change settings mid-recording" rule
+    // every other toggle already follows — a single bindable property since x:Bind can't AND two
+    // properties together without a converter.
+    public bool CanToggleAnnotations => IsIdle && CanEnableAnnotations;
+
+    // Pen color/thickness (Phase 6 Step 2). Unlike every other recording setting, these are deliberately
+    // live-updatable mid-recording (see On*Changed below) — a presenter switching color between arrows
+    // shouldn't have to stop recording to do it — so their IsEnabled in XAML is gated only by
+    // AnnotationsEnabled, not IsIdle.
+    public IReadOnlyList<AnnotationColorOption> AnnotationColorOptions { get; } = AnnotationColorOption.All;
+    [ObservableProperty] private AnnotationColorOption _selectedAnnotationColor = AnnotationColorOption.All[0];
+    [ObservableProperty] private double _annotationStrokeThickness = 6;
+    public string AnnotationStrokeThicknessLabel => $"{AnnotationStrokeThickness:0}px";
 
     [ObservableProperty] private int _fps = 30;
     [ObservableProperty] private double _videoBitrateKbps = 12000;
@@ -111,6 +146,7 @@ public partial class MainViewModel : BaseViewModel
 
     public MainViewModel()
     {
+        _annotations = new AnnotationOverlayService(_dispatcherQueue);
         _uiTimer = DispatcherQueue.GetForCurrentThread().CreateTimer();
         _uiTimer.Interval = TimeSpan.FromMilliseconds(150);
         _uiTimer.Tick += (_, _) =>
@@ -213,12 +249,16 @@ public partial class MainViewModel : BaseViewModel
             SelectedCursorStyle = CursorStyleOptions.FirstOrDefault(c => c.Value == s.CursorStyle) ?? SelectedCursorStyle;
             CaptureSystemAudio = s.CaptureSystemAudio;
             CaptureMicrophone = s.CaptureMicrophone;
+            EnableMicNoiseSuppression = s.EnableMicNoiseSuppression;
             MouseTrackingZoomEnabled = s.MouseTrackingZoomEnabled;
             SelectedZoomLevel = ZoomLevelOptions.FirstOrDefault(z => z.Factor == s.ZoomFactor) ?? SelectedZoomLevel;
             KeystrokeOverlayEnabled = s.KeystrokeOverlayEnabled;
             SpotlightEnabled = s.SpotlightEnabled;
             SpotlightRadius = s.SpotlightRadius;
             ClickRipplesEnabled = s.ClickRipplesEnabled;
+            AnnotationsEnabled = s.AnnotationsEnabled;
+            SelectedAnnotationColor = AnnotationColorOptions.FirstOrDefault(c => c.Label == s.AnnotationColorLabel) ?? SelectedAnnotationColor;
+            AnnotationStrokeThickness = s.AnnotationStrokeThickness > 0 ? s.AnnotationStrokeThickness : AnnotationStrokeThickness;
             MaximizeTextClarity = s.MaximizeTextClarity;
             if (!string.IsNullOrWhiteSpace(s.OutputDirectory)) OutputDirectory = s.OutputDirectory;
         }
@@ -244,6 +284,7 @@ public partial class MainViewModel : BaseViewModel
         CaptureSystemAudio = CaptureSystemAudio,
         CaptureMicrophone = CaptureMicrophone,
         MicrophoneDeviceId = SelectedMicrophone?.Id,
+        EnableMicNoiseSuppression = EnableMicNoiseSuppression,
         MouseTrackingZoomEnabled = MouseTrackingZoomEnabled,
         ZoomFactor = SelectedZoomLevel.Factor,
         KeystrokeOverlayEnabled = KeystrokeOverlayEnabled,
@@ -252,6 +293,9 @@ public partial class MainViewModel : BaseViewModel
         SpotlightEnabled = SpotlightEnabled,
         SpotlightRadius = SpotlightRadius,
         ClickRipplesEnabled = ClickRipplesEnabled,
+        AnnotationsEnabled = AnnotationsEnabled,
+        AnnotationColorLabel = SelectedAnnotationColor.Label,
+        AnnotationStrokeThickness = AnnotationStrokeThickness,
         MaximizeTextClarity = MaximizeTextClarity,
         OutputDirectory = OutputDirectory,
     };
@@ -296,6 +340,7 @@ public partial class MainViewModel : BaseViewModel
         OnPropertyChanged(nameof(IsRecording));
         OnPropertyChanged(nameof(IsPaused));
         OnPropertyChanged(nameof(PauseResumeButtonText));
+        OnPropertyChanged(nameof(CanToggleAnnotations));
         StartRecordingCommand.NotifyCanExecuteChanged();
         StopRecordingCommand.NotifyCanExecuteChanged();
         PauseResumeCommand.NotifyCanExecuteChanged();
@@ -321,6 +366,8 @@ public partial class MainViewModel : BaseViewModel
     {
         OnPropertyChanged(nameof(IsWindowCaptureMode));
         OnPropertyChanged(nameof(IsMonitorCaptureMode));
+        OnPropertyChanged(nameof(CanEnableAnnotations));
+        OnPropertyChanged(nameof(CanToggleAnnotations));
         StartRecordingCommand.NotifyCanExecuteChanged();
         RestartPreviewIfIdle();
         QueueSaveSettings();
@@ -393,6 +440,21 @@ public partial class MainViewModel : BaseViewModel
         QueueSaveSettings();
     }
 
+    partial void OnAnnotationsEnabledChanged(bool value) => QueueSaveSettings();
+
+    partial void OnSelectedAnnotationColorChanged(AnnotationColorOption value)
+    {
+        _annotations.UpdateDrawingAttributes(value.Value, AnnotationStrokeThickness);
+        QueueSaveSettings();
+    }
+
+    partial void OnAnnotationStrokeThicknessChanged(double value)
+    {
+        OnPropertyChanged(nameof(AnnotationStrokeThicknessLabel));
+        _annotations.UpdateDrawingAttributes(SelectedAnnotationColor.Value, value);
+        QueueSaveSettings();
+    }
+
     partial void OnSelectedEncoderChanged(HardwareEncoder value)
     {
         OnPropertyChanged(nameof(CanMaximizeTextClarity));
@@ -422,6 +484,8 @@ public partial class MainViewModel : BaseViewModel
     partial void OnCaptureSystemAudioChanged(bool value) => QueueSaveSettings();
 
     partial void OnCaptureMicrophoneChanged(bool value) => QueueSaveSettings();
+
+    partial void OnEnableMicNoiseSuppressionChanged(bool value) => QueueSaveSettings();
 
     partial void OnMaximizeTextClarityChanged(bool value) => QueueSaveSettings();
 
@@ -570,6 +634,7 @@ public partial class MainViewModel : BaseViewModel
             CaptureSystemAudio = CaptureSystemAudio,
             CaptureMicrophone = CaptureMicrophone,
             MicrophoneDeviceId = SelectedMicrophone?.Id,
+            EnableMicNoiseSuppression = EnableMicNoiseSuppression,
             CaptureCursor = CaptureCursor,
             CursorStyle = SelectedCursorStyle.Value,
             MouseTrackingZoomEnabled = MouseTrackingZoomEnabled,
@@ -592,11 +657,20 @@ public partial class MainViewModel : BaseViewModel
             StatusMessage = "Starting…";
             await _manager.StartAsync(settings, SelectedMonitor, SelectedWindow);
             State = _manager.State;
+
+            // Monitor-capture only — see CanEnableAnnotations. SelectedMonitor is guaranteed non-null
+            // here since isWindowMode is false whenever this branch can run (checked at the top).
+            if (AnnotationsEnabled && !isWindowMode)
+            {
+                _annotations.Arm(SelectedMonitor!, SelectedAnnotationColor.Value, AnnotationStrokeThickness);
+            }
+
             var targetLabel = isWindowMode ? SelectedWindow!.Title : SelectedMonitor!.FriendlyName;
             StatusMessage = $"Recording {targetLabel} @ {Fps} FPS ({SelectedResolution.Label})";
         }
         catch (Exception ex)
         {
+            _annotations.Disarm(); // in case Arm() succeeded but a later step in the try block failed
             State = RecordingState.Idle;
             StatusMessage = $"Failed to start: {ex.Message}";
         }
@@ -608,10 +682,19 @@ public partial class MainViewModel : BaseViewModel
     private async Task StopRecordingAsync()
     {
         StatusMessage = "Finalizing…";
+        _annotations.Disarm();
         var path = await _manager.StopAsync();
         LastOutputPath = path;
         State = _manager.State; // triggers OnStateChanged, which restarts the live preview since we're idle again
         StatusMessage = path is not null ? $"Saved: {path}" : "Recording stopped.";
+
+        // Phase 7: offer trim/GIF-export/discard right after a successful recording, instead of just
+        // silently saving. A separate Window (not modal to MainWindow) — see TrimExportWindow's remarks
+        // for why — so the user can keep using the app (e.g. start another recording) while reviewing.
+        if (path is not null)
+        {
+            new TrimExportWindow(path).Activate();
+        }
     }
 
     [RelayCommand(CanExecute = nameof(CanStop))]
