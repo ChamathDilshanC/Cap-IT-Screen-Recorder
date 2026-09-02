@@ -33,6 +33,8 @@ internal static class MonitorEnumerator
                     FriendlyName = friendlyName,
                     Width = rect.Right - rect.Left,
                     Height = rect.Bottom - rect.Top,
+                    X = rect.Left,
+                    Y = rect.Top,
                     IsPrimary = isPrimary
                 });
             }
