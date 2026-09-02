@@ -20,6 +20,8 @@ public partial class MainViewModel : BaseViewModel
     private readonly SettingsService _settingsService = new();
     private readonly DispatcherQueue _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
     private readonly AnnotationOverlayService _annotations;
+    private readonly MicLevelMonitorService _micLevelMonitor = new();
+    private readonly SpeakerLevelMonitorService _speakerLevelMonitor = new();
     private readonly DispatcherQueueTimer _uiTimer;
 
     // Guards the load-and-apply pass in the constructor so setting ~15 properties from disk doesn't
@@ -50,6 +52,41 @@ public partial class MainViewModel : BaseViewModel
 
     [ObservableProperty] private bool _captureSystemAudio = true;
     [ObservableProperty] private bool _captureMicrophone;
+
+    // Live microphone level meter, shown on the Home tab so the user can confirm the mic is actually
+    // picking up sound before (not just during) recording — see MicLevelMonitorService. 0..1, smoothed
+    // with a fast attack / slow release (like a real VU meter) in UpdateMicLevel() below rather than
+    // shown raw, since the raw per-150ms-tick RMS reads as jittery rather than a level.
+    [ObservableProperty] private double _micLevel;
+    public bool ShowMicMeter => CaptureMicrophone;
+    public bool IsMicSignalPresent => MicLevel > 0.03;
+    // Distinguishes "the monitor couldn't even open the device" (wrong/disconnected mic, or Windows'
+    // system-wide "Let desktop apps access your microphone" privacy toggle is off — WASAPI capture can
+    // silently deliver empty buffers rather than failing outright in that case) from "it opened fine but
+    // nobody's talking right now" — otherwise both look identical as a permanently-empty meter with no
+    // way to tell which one you're looking at.
+    public string MicStatusText => !_micLevelMonitor.IsActive ? "Mic unavailable" : IsMicSignalPresent ? "Mic active" : "No signal";
+    // global:: needed because this class already has a member named "Windows" (the window-picker list),
+    // which would otherwise shadow the Windows namespace here.
+    public Microsoft.UI.Xaml.Media.SolidColorBrush MicMeterBrush => new(!_micLevelMonitor.IsActive ? global::Windows.UI.Color.FromArgb(255, 130, 130, 60) : MicLevel switch
+    {
+        > 0.85 => global::Windows.UI.Color.FromArgb(255, 232, 17, 35),  // near clipping
+        > 0.03 => global::Windows.UI.Color.FromArgb(255, 16, 185, 90),  // picking up sound
+        _ => global::Windows.UI.Color.FromArgb(255, 90, 90, 100),       // silence
+    });
+
+    // Live system/speaker output level meter — mirrors the mic meter above exactly, on the render
+    // (playback) device instead of the capture device. See SpeakerLevelMonitorService.
+    [ObservableProperty] private double _speakerLevel;
+    public bool ShowSpeakerMeter => CaptureSystemAudio;
+    public bool IsSpeakerSignalPresent => SpeakerLevel > 0.03;
+    public string SpeakerStatusText => !_speakerLevelMonitor.IsActive ? "Speaker unavailable" : IsSpeakerSignalPresent ? "Playing" : "Silent";
+    public Microsoft.UI.Xaml.Media.SolidColorBrush SpeakerMeterBrush => new(!_speakerLevelMonitor.IsActive ? global::Windows.UI.Color.FromArgb(255, 130, 130, 60) : SpeakerLevel switch
+    {
+        > 0.85 => global::Windows.UI.Color.FromArgb(255, 232, 17, 35),
+        > 0.03 => global::Windows.UI.Color.FromArgb(255, 16, 185, 90),
+        _ => global::Windows.UI.Color.FromArgb(255, 90, 90, 100),
+    });
 
     // Studio Mic noise suppression (Phase 5 — ffmpeg afftdn/highpass/adeclick on the mic leg only).
     // Settings-only like CaptureMicrophone/CaptureSystemAudio above: it changes what RecordingManager
@@ -152,6 +189,8 @@ public partial class MainViewModel : BaseViewModel
         _uiTimer.Tick += (_, _) =>
         {
             UpdateElapsed();
+            UpdateMicLevel();
+            UpdateSpeakerLevel();
             UpdatePreview();
         };
         // Runs continuously (not just while recording) so the live preview can update as soon as a
@@ -172,6 +211,15 @@ public partial class MainViewModel : BaseViewModel
         RefreshWindows();
         LoadAndApplySettings();
         _ = InitializeWebcamAsync();
+
+        // Not folded into OnCaptureMicrophoneChanged/OnCaptureSystemAudioChanged: CommunityToolkit.Mvvm's
+        // generated property setters skip the On*Changed call entirely when the incoming value equals
+        // the field-initializer default — which for CaptureSystemAudio (defaults to true both as a field
+        // initializer and in AppSettings) means the common "always been on, nothing to load" case would
+        // silently never start the speaker monitor at all. Explicitly syncing both monitors to whatever
+        // LoadAndApplySettings actually landed on, unconditionally, sidesteps that no-op entirely.
+        if (CaptureMicrophone) _micLevelMonitor.Start(SelectedMicrophone?.Id);
+        if (CaptureSystemAudio) _speakerLevelMonitor.Start();
     }
 
     /// <summary>
@@ -473,7 +521,20 @@ public partial class MainViewModel : BaseViewModel
 
     partial void OnFfmpegDownloadProgressChanged(double value) => OnPropertyChanged(nameof(FFmpegDownloadProgressText));
 
-    partial void OnSelectedMicrophoneChanged(AudioDeviceOption? value) => QueueSaveSettings();
+    partial void OnSelectedMicrophoneChanged(AudioDeviceOption? value)
+    {
+        QueueSaveSettings();
+        if (CaptureMicrophone) _micLevelMonitor.Start(value?.Id);
+        OnPropertyChanged(nameof(MicStatusText));
+        OnPropertyChanged(nameof(MicMeterBrush));
+    }
+
+    partial void OnMicLevelChanged(double value)
+    {
+        OnPropertyChanged(nameof(IsMicSignalPresent));
+        OnPropertyChanged(nameof(MicStatusText));
+        OnPropertyChanged(nameof(MicMeterBrush));
+    }
 
     partial void OnFpsChanged(int value) => QueueSaveSettings();
 
@@ -481,9 +542,37 @@ public partial class MainViewModel : BaseViewModel
 
     partial void OnSelectedResolutionChanged(ResolutionOption value) => QueueSaveSettings();
 
-    partial void OnCaptureSystemAudioChanged(bool value) => QueueSaveSettings();
+    partial void OnCaptureSystemAudioChanged(bool value)
+    {
+        QueueSaveSettings();
+        OnPropertyChanged(nameof(ShowSpeakerMeter));
+        if (value) _speakerLevelMonitor.Start();
+        else _speakerLevelMonitor.Stop();
+        // IsActive can flip without SpeakerLevel itself changing (e.g. it's already 0 and Start() just
+        // failed, or it's still 0 right after a successful Start() before the first callback arrives) —
+        // OnSpeakerLevelChanged wouldn't fire in either case, so these need an explicit nudge here too.
+        OnPropertyChanged(nameof(SpeakerStatusText));
+        OnPropertyChanged(nameof(SpeakerMeterBrush));
+    }
 
-    partial void OnCaptureMicrophoneChanged(bool value) => QueueSaveSettings();
+    partial void OnSpeakerLevelChanged(double value)
+    {
+        OnPropertyChanged(nameof(IsSpeakerSignalPresent));
+        OnPropertyChanged(nameof(SpeakerStatusText));
+        OnPropertyChanged(nameof(SpeakerMeterBrush));
+    }
+
+    partial void OnCaptureMicrophoneChanged(bool value)
+    {
+        QueueSaveSettings();
+        OnPropertyChanged(nameof(ShowMicMeter));
+        if (value) _micLevelMonitor.Start(SelectedMicrophone?.Id);
+        else _micLevelMonitor.Stop();
+        // See the matching comment in OnCaptureSystemAudioChanged — IsActive can change independently of
+        // MicLevel, so OnMicLevelChanged alone can't be relied on to refresh these.
+        OnPropertyChanged(nameof(MicStatusText));
+        OnPropertyChanged(nameof(MicMeterBrush));
+    }
 
     partial void OnEnableMicNoiseSuppressionChanged(bool value) => QueueSaveSettings();
 
@@ -727,6 +816,34 @@ public partial class MainViewModel : BaseViewModel
     {
         var e = _manager.Elapsed;
         ElapsedText = e.ToString(e.TotalHours >= 1 ? @"hh\:mm\:ss" : @"mm\:ss");
+    }
+
+    private void UpdateMicLevel()
+    {
+        if (!_micLevelMonitor.IsActive)
+        {
+            MicLevel = 0;
+            return;
+        }
+
+        // Raw RMS of normalized PCM for typical speech sits well under 1.0, so it's scaled up before
+        // clamping to actually use the meter's visual range. Fast attack (snap straight to a louder
+        // reading) / slow release (decay gradually otherwise) reads as a real VU meter instead of
+        // jittering with every 150ms sample.
+        var raw = Math.Clamp(_micLevelMonitor.CurrentLevel * 4, 0, 1);
+        MicLevel = raw > MicLevel ? raw : MicLevel * 0.7;
+    }
+
+    private void UpdateSpeakerLevel()
+    {
+        if (!_speakerLevelMonitor.IsActive)
+        {
+            SpeakerLevel = 0;
+            return;
+        }
+
+        var raw = Math.Clamp(_speakerLevelMonitor.CurrentLevel * 4, 0, 1);
+        SpeakerLevel = raw > SpeakerLevel ? raw : SpeakerLevel * 0.7;
     }
 
     private void UpdatePreview()
