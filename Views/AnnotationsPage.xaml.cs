@@ -4,9 +4,10 @@ using ScreenRecorderApp.ViewModels;
 
 namespace ScreenRecorderApp.Views;
 
-/// <summary>Stub page — Master Plan item 3 (live screen annotations via an invisible InkCanvas overlay
-/// window). No backend logic yet; wired into the shared MainViewModel now so a later phase is a pure
-/// addition.</summary>
+/// <summary>Live screen annotations (Phase 6) — enable toggle, hotkey reference, monitor-capture-only
+/// gate, and pen color/thickness (live-updatable mid-recording). The actual overlay window/hook/drawing
+/// surface live in AnnotationOverlayService and AnnotationOverlayWindow, armed from MainViewModel at
+/// record start/stop.</summary>
 public sealed partial class AnnotationsPage : Page
 {
     public MainViewModel ViewModel { get; private set; } = null!;

@@ -3,6 +3,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:ctcontrols="using:CommunityToolkit.WinUI.Controls"
+    xmlns:models="using:ScreenRecorderApp.Models"
     Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
 
     <Page.Resources>
@@ -21,13 +22,65 @@
                            Style="{StaticResource SectionDescriptionText}" />
             </StackPanel>
 
-            <ctcontrols:SettingsCard Header="Coming soon"
-                                      Description="Arrows, rectangles, and highlights, drawn live over the desktop via a transparent full-screen overlay window and baked directly into the recording as you draw.">
+            <ctcontrols:SettingsCard Header="Enable annotations"
+                                      Description="A transparent overlay window sits over your recorded display. Toggle Drawing Mode with the hotkey below to draw; whatever you draw is part of the desktop itself, so it's captured in the recording automatically — no extra setup needed.">
                 <ctcontrols:SettingsCard.HeaderIcon>
                     <FontIcon Glyph="&#xE70F;" />
                 </ctcontrols:SettingsCard.HeaderIcon>
-                <FontIcon Glyph="&#xE916;" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                <ToggleSwitch OnContent="On" OffContent="Off"
+                              IsOn="{x:Bind ViewModel.AnnotationsEnabled, Mode=TwoWay}"
+                              IsEnabled="{x:Bind ViewModel.CanToggleAnnotations, Mode=OneWay}" />
             </ctcontrols:SettingsCard>
+
+            <TextBlock Text="Only available when recording the entire display — window capture only sees that one window's own contents, not the overlay drawn on top of it."
+                       Style="{StaticResource SectionDescriptionText}"
+                       Visibility="{x:Bind ViewModel.IsWindowCaptureMode, Mode=OneWay}" />
+
+            <ctcontrols:SettingsCard Header="Hotkeys"
+                                      Description="Active for the whole desktop while a recording with annotations enabled is running — you don't need this app focused."
+                                      Visibility="{x:Bind ViewModel.AnnotationsEnabled, Mode=OneWay}">
+                <ctcontrols:SettingsCard.HeaderIcon>
+                    <FontIcon Glyph="&#xE765;" />
+                </ctcontrols:SettingsCard.HeaderIcon>
+                <StackPanel Orientation="Vertical" Spacing="2" HorizontalAlignment="Right">
+                    <TextBlock Text="Ctrl + Shift + D  —  toggle Drawing Mode" FontSize="13" />
+                    <TextBlock Text="Esc  —  clear drawings" FontSize="13" />
+                </StackPanel>
+            </ctcontrols:SettingsCard>
+
+            <ctcontrols:SettingsCard Header="Pen color"
+                                      Description="Applies immediately, even mid-recording — switch colors without losing anything already drawn."
+                                      Visibility="{x:Bind ViewModel.AnnotationsEnabled, Mode=OneWay}">
+                <ctcontrols:SettingsCard.HeaderIcon>
+                    <FontIcon Glyph="&#xE790;" />
+                </ctcontrols:SettingsCard.HeaderIcon>
+                <ComboBox MinWidth="180"
+                    ItemsSource="{x:Bind ViewModel.AnnotationColorOptions}"
+                    SelectedItem="{x:Bind ViewModel.SelectedAnnotationColor, Mode=TwoWay}">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="models:AnnotationColorOption">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Border Width="14" Height="14" CornerRadius="3"
+                                        Background="{x:Bind Brush}"
+                                        BorderBrush="{ThemeResource TextFillColorTertiaryBrush}"
+                                        BorderThickness="1" />
+                                <TextBlock Text="{x:Bind Label}" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+            </ctcontrols:SettingsCard>
+
+            <ctcontrols:SettingsCard Header="Stroke thickness"
+                                      Description="{x:Bind ViewModel.AnnotationStrokeThicknessLabel, Mode=OneWay}"
+                                      Visibility="{x:Bind ViewModel.AnnotationsEnabled, Mode=OneWay}">
+                <Slider MinWidth="220" Minimum="2" Maximum="20" StepFrequency="1"
+                        Value="{x:Bind ViewModel.AnnotationStrokeThickness, Mode=TwoWay}" />
+            </ctcontrols:SettingsCard>
+
+            <TextBlock Text="Freehand drawing only for now — arrow and rectangle shape tools are a future addition."
+                       Style="{StaticResource SectionDescriptionText}"
+                       Visibility="{x:Bind ViewModel.AnnotationsEnabled, Mode=OneWay}" />
         </StackPanel>
     </ScrollViewer>
 </Page>
