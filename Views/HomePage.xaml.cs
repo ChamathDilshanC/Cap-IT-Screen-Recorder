@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
 using ScreenRecorderApp.ViewModels;
@@ -30,6 +31,23 @@ public sealed partial class HomePage : Page
     {
         base.OnNavigatedFrom(e);
         ViewModel.PropertyChanged -= OnViewModelPropertyChanged;
+    }
+
+    /// <summary>
+    /// Opens the visual source picker. The recording, if the user asked for one, is started here rather
+    /// than inside the dialog: ShowAsync only returns once the dialog has fully closed, and starting a
+    /// recording behind a modal that is still on screen would capture the modal's own dimming layer in
+    /// the opening frames.
+    /// </summary>
+    private async void OnChooseSourceClick(object sender, RoutedEventArgs e)
+    {
+        var dialog = new SourcePickerDialog(ViewModel) { XamlRoot = XamlRoot };
+        await dialog.ShowAsync();
+
+        if (dialog.StartRequested && ViewModel.StartRecordingCommand.CanExecute(null))
+        {
+            await ViewModel.StartRecordingCommand.ExecuteAsync(null);
+        }
     }
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)

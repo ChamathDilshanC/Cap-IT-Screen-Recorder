@@ -75,26 +75,6 @@ internal static class NativeMethods
     public const int WsExToolWindow = 0x00000080;
     public const int WsExAppWindow = 0x00040000;
 
-    // --- Used by Phase 6's annotation overlay window (click-through toggling) ---
-
-    /// <summary>Tells DWM to alpha-composite the window instead of treating it as opaque — required for a WinUI Window's Transparent-background XAML content to actually show the desktop through it.</summary>
-    public const int WsExLayered = 0x00080000;
-
-    /// <summary>Makes the window invisible to hit-testing: mouse input passes through to whatever is behind it. Toggled at runtime to switch the overlay between "click-through" and "capturing clicks for drawing".</summary>
-    public const int WsExTransparent = 0x00000020;
-
-    /// <summary>Stops the window from ever taking keyboard focus/activation, even when it's topmost — so bringing up the overlay never steals focus from the app the user is demoing.</summary>
-    public const int WsExNoActivate = 0x08000000;
-
-    [DllImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    public static extern bool SetWindowPos(nint hWnd, nint hWndInsertAfter, int x, int y, int cx, int cy, uint uFlags);
-
-    public static readonly nint HwndTopmost = new(-1);
-    public const uint SwpNoMove = 0x0002;
-    public const uint SwpNoSize = 0x0001;
-    public const uint SwpNoActivate = 0x0010;
-
     [DllImport("user32.dll")]
     public static extern bool GetWindowRect(nint hWnd, out Rect lpRect);
 

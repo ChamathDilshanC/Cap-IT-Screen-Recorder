@@ -3,8 +3,8 @@ using System.Runtime.InteropServices;
 namespace ScreenRecorderApp.Services.Tracking;
 
 /// <summary>
-/// Dedicated system-wide WH_KEYBOARD_LL hook for Phase 6's annotation hotkeys (Ctrl+Shift+D to toggle
-/// drawing mode, Esc to clear). Deliberately a separate instance from <see cref="GlobalKeyboardHook"/>
+/// Dedicated system-wide WH_KEYBOARD_LL hook for the annotation hotkeys (Ctrl+Shift+D to toggle drawing
+/// mode, Ctrl+Shift+Z to undo the last stroke, Esc to clear). Deliberately a separate instance from <see cref="GlobalKeyboardHook"/>
 /// rather than sharing it: that hook is scoped to VideoCaptureService's capture session and only exists
 /// at all when zoom or the keystroke overlay is enabled, whereas this one must exist whenever the
 /// annotation overlay is armed, independent of those other features. Mirrors
@@ -28,6 +28,7 @@ public sealed class GlobalHotkeyHook : IDisposable
     private const int VK_CONTROL = 0x11;
     private const int VK_SHIFT = 0x10;
     private const int VK_D = 0x44;
+    private const int VK_Z = 0x5A;
     private const int VK_ESCAPE = 0x1B;
 
     private delegate nint LowLevelKeyboardProc(int nCode, nint wParam, nint lParam);
@@ -45,8 +46,19 @@ public sealed class GlobalHotkeyHook : IDisposable
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
     private static extern nint GetModuleHandle(string? lpModuleName);
 
+    [DllImport("kernel32.dll")]
+    private static extern uint GetCurrentThreadId();
+
+    /// <summary>
+    /// GetAsyncKeyState, not GetKeyState. GetKeyState reports the key state as of the last input message
+    /// the *calling thread* processed — and a low-level hook thread has no keyboard focus and pumps no
+    /// keyboard input at all, so it reports every modifier as permanently up. That is why Ctrl+Shift+D
+    /// never fired: the D keydown arrived correctly, but the Ctrl and Shift checks guarding it always
+    /// read false. GetAsyncKeyState queries real, current physical key state instead, which is what the
+    /// low-level-hook documentation calls for.
+    /// </summary>
     [DllImport("user32.dll")]
-    private static extern short GetKeyState(int nVirtKey);
+    private static extern short GetAsyncKeyState(int nVirtKey);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct MSG
@@ -84,6 +96,7 @@ public sealed class GlobalHotkeyHook : IDisposable
     // De-dupes the low-level hook's key-repeat: a key held down fires WM_KEYDOWN repeatedly, but a
     // hotkey toggle should fire exactly once per physical press.
     private bool _dKeyLatched;
+    private bool _zKeyLatched;
     private bool _escLatched;
 
     /// <summary>Ctrl+Shift+D was pressed. Fires on the hook's own background thread — subscribers touching UI/WinUI state must marshal back via DispatcherQueue.</summary>
@@ -91,6 +104,9 @@ public sealed class GlobalHotkeyHook : IDisposable
 
     /// <summary>Esc was pressed. Same threading caveat as <see cref="ToggleDrawingModeRequested"/>.</summary>
     public event Action? ClearRequested;
+
+    /// <summary>Ctrl+Shift+Z was pressed — undo the last stroke. Same threading caveat as <see cref="ToggleDrawingModeRequested"/>.</summary>
+    public event Action? UndoRequested;
 
     public void Start()
     {
@@ -103,7 +119,12 @@ public sealed class GlobalHotkeyHook : IDisposable
 
     private void RunMessageLoop()
     {
-        _threadId = (uint)Environment.CurrentManagedThreadId;
+        // GetCurrentThreadId (the Win32 thread id), NOT Environment.CurrentManagedThreadId — those are
+        // unrelated numbering schemes, and PostThreadMessage in Stop() takes the Win32 one. Posting the
+        // managed id addressed some arbitrary thread that almost never exists, so WM_QUIT never arrived,
+        // the pump never exited, Join(1000) always timed out and the low-level hook stayed installed for
+        // the rest of the process's life.
+        _threadId = GetCurrentThreadId();
         _proc = HookCallback;
 
         using var curModule = System.Diagnostics.Process.GetCurrentProcess().MainModule;
@@ -138,6 +159,11 @@ public sealed class GlobalHotkeyHook : IDisposable
                         _dKeyLatched = true;
                         ToggleDrawingModeRequested?.Invoke();
                     }
+                    else if (vkCode == VK_Z && IsDown(VK_CONTROL) && IsDown(VK_SHIFT) && !_zKeyLatched)
+                    {
+                        _zKeyLatched = true;
+                        UndoRequested?.Invoke();
+                    }
                     else if (vkCode == VK_ESCAPE && !_escLatched)
                     {
                         _escLatched = true;
@@ -147,6 +173,7 @@ public sealed class GlobalHotkeyHook : IDisposable
                 else if (wParam == WM_KEYUP || wParam == WM_SYSKEYUP)
                 {
                     if (vkCode == VK_D) _dKeyLatched = false;
+                    else if (vkCode == VK_Z) _zKeyLatched = false;
                     else if (vkCode == VK_ESCAPE) _escLatched = false;
                 }
             }
@@ -159,7 +186,7 @@ public sealed class GlobalHotkeyHook : IDisposable
         return CallNextHookEx(_hookHandle, nCode, wParam, lParam);
     }
 
-    private static bool IsDown(int vk) => (GetKeyState(vk) & 0x8000) != 0;
+    private static bool IsDown(int vk) => (GetAsyncKeyState(vk) & 0x8000) != 0;
 
     public void Stop()
     {

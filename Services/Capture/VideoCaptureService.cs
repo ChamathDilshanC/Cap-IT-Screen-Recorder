@@ -200,6 +200,14 @@ public sealed class VideoCaptureService : IDisposable
         {
             throw new ArgumentException("Either a monitor or a window must be specified.");
         }
+        // Enforced rather than silently resolved: the capture path below is chosen purely by which of
+        // these is non-null, so a caller passing both used to mean "window wins" — which is exactly how
+        // an "Entire display" recording ended up capturing an arbitrary window instead. Callers
+        // (RecordingManager.StartAsync/StartPreview) normalize to the user's chosen target kind first.
+        if (monitor is not null && window is not null)
+        {
+            throw new ArgumentException("Specify either a monitor or a window to capture, not both.");
+        }
 
         _captureTarget = window is not null ? CaptureTargetKind.Window : CaptureTargetKind.Monitor;
 
@@ -436,6 +444,24 @@ public sealed class VideoCaptureService : IDisposable
         {
             if (!NativeMethods.IsWindow(_targetWindowHandle)) SignalCaptureTargetLostOnce();
         }, null, TimeSpan.FromMilliseconds(500), TimeSpan.FromMilliseconds(500));
+    }
+
+    /// <summary>
+    /// Updates the cursor spotlight live, without a Prepare()/BeginCapture() restart — it's a pure
+    /// compositing parameter read per frame by <see cref="ApplySpotlight"/> (via
+    /// <see cref="TryGetLatestFrame"/>), with no device or hook to re-create, so it can change at any
+    /// time including mid-recording. Radius used to be a Prepare()-time-only argument, which meant
+    /// dragging the radius slider changed the saved setting but had no visible effect on the running
+    /// preview at all — it only took hold on the next restart for some unrelated reason.
+    ///
+    /// The falloff lookup table isn't rebuilt here: ApplySpotlight already rebuilds it whenever the
+    /// radius it's handed differs from the cached one, so a drag that crosses 30 values only pays for
+    /// the radii that a frame is actually rendered at.
+    /// </summary>
+    public void UpdateSpotlight(bool enabled, double radius)
+    {
+        _spotlightRadius = Math.Max(1, (int)Math.Round(radius));
+        _spotlightEnabled = enabled;
     }
 
     private void OnCaptureItemClosed(GraphicsCaptureItem sender, object args) => SignalCaptureTargetLostOnce();

@@ -62,6 +62,46 @@
             </StackPanel>
         </NavigationView.PaneHeader>
 
-        <Frame x:Name="ContentFrame" />
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <!-- Auto-update banner (GitHub Releases). Shown app-wide, not per-tab, so it's visible
+                 wherever the user happens to be. See MainViewModel.CheckForUpdatesAsync / UpdateService. -->
+            <InfoBar Grid.Row="0" Margin="12,12,12,0"
+                     Severity="Success"
+                     Title="Update available"
+                     IsClosable="True"
+                     IsOpen="{x:Bind ViewModel.UpdateAvailable, Mode=TwoWay}"
+                     Message="{x:Bind ViewModel.UpdateBannerMessage, Mode=OneWay}">
+                <InfoBar.Content>
+                    <Grid Margin="0,4,0,12">
+                        <StackPanel Orientation="Horizontal" Spacing="8"
+                                    Visibility="{x:Bind ViewModel.IsNotDownloadingUpdate, Mode=OneWay}">
+                            <Button Content="Update now" Style="{StaticResource AccentButtonStyle}"
+                                    Command="{x:Bind ViewModel.UpdateNowCommand}" />
+                            <Button Content="Release notes"
+                                    Command="{x:Bind ViewModel.ViewReleaseNotesCommand}" />
+                        </StackPanel>
+
+                        <StackPanel Spacing="6"
+                                    Visibility="{x:Bind ViewModel.IsDownloadingUpdate, Mode=OneWay}">
+                            <TextBlock Text="Downloading update…" FontSize="12" />
+                            <ProgressBar Width="280" Minimum="0" Maximum="100"
+                                         Value="{x:Bind ViewModel.UpdateDownloadProgress, Mode=OneWay}" />
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBlock Text="{x:Bind ViewModel.UpdateDownloadProgressText, Mode=OneWay}"
+                                           FontSize="12" VerticalAlignment="Center" />
+                                <Button Content="Cancel" Command="{x:Bind ViewModel.CancelUpdateDownloadCommand}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Grid>
+                </InfoBar.Content>
+            </InfoBar>
+
+            <Frame x:Name="ContentFrame" Grid.Row="1" />
+        </Grid>
     </NavigationView>
 </Page>

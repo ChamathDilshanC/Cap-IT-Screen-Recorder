@@ -36,8 +36,19 @@ public sealed class GlobalKeyboardHook : IDisposable
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
     private static extern nint GetModuleHandle(string? lpModuleName);
 
+    [DllImport("kernel32.dll")]
+    private static extern uint GetCurrentThreadId();
+
+    /// <summary>
+    /// GetAsyncKeyState, not GetKeyState. GetKeyState reports the key state as of the last input message
+    /// the *calling thread* processed — and a low-level hook thread has no keyboard focus and pumps no
+    /// keyboard input at all, so it reports every modifier as permanently up. That is why Ctrl+Shift+D
+    /// never fired: the D keydown arrived correctly, but the Ctrl and Shift checks guarding it always
+    /// read false. GetAsyncKeyState queries real, current physical key state instead, which is what the
+    /// low-level-hook documentation calls for.
+    /// </summary>
     [DllImport("user32.dll")]
-    private static extern short GetKeyState(int nVirtKey);
+    private static extern short GetAsyncKeyState(int nVirtKey);
 
     [DllImport("user32.dll")]
     private static extern uint MapVirtualKey(uint uCode, uint uMapType);
@@ -94,7 +105,12 @@ public sealed class GlobalKeyboardHook : IDisposable
 
     private void RunMessageLoop()
     {
-        _threadId = (uint)Environment.CurrentManagedThreadId;
+        // GetCurrentThreadId (the Win32 thread id), NOT Environment.CurrentManagedThreadId — those are
+        // unrelated numbering schemes, and PostThreadMessage in Stop() takes the Win32 one. Posting the
+        // managed id addressed some arbitrary thread that almost never exists, so WM_QUIT never arrived,
+        // the pump never exited, Join(1000) always timed out and the low-level hook stayed installed for
+        // the rest of the process's life.
+        _threadId = GetCurrentThreadId();
         _proc = HookCallback;
 
         using var curModule = System.Diagnostics.Process.GetCurrentProcess().MainModule;
@@ -133,7 +149,7 @@ public sealed class GlobalKeyboardHook : IDisposable
         return CallNextHookEx(_hookHandle, nCode, wParam, lParam);
     }
 
-    private static bool IsDown(int vk) => (GetKeyState(vk) & 0x8000) != 0;
+    private static bool IsDown(int vk) => (GetAsyncKeyState(vk) & 0x8000) != 0;
 
     private static string? DescribeKey(int vkCode)
     {

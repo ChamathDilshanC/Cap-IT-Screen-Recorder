@@ -51,11 +51,12 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    // Best-effort clean save on shutdown so a change made just before closing isn't lost to the ~400ms
-    // debounce in MainViewModel.QueueSaveSettings.
+    // Best-effort clean shutdown: flushes the pending settings save (a change made just before closing
+    // would otherwise be lost to the ~400ms debounce in MainViewModel.QueueSaveSettings) and tears down
+    // the live audio/preview capture threads so the process actually exits.
     private void OnClosed(object sender, WindowEventArgs args)
     {
-        (RootFrame.Content as ShellPage)?.ViewModel.FlushSettings();
+        (RootFrame.Content as ShellPage)?.ViewModel.Shutdown();
     }
 
     private void OnAppWindowChanged(AppWindow sender, AppWindowChangedEventArgs args)

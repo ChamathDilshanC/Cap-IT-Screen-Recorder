@@ -21,6 +21,11 @@
     <PublishReadyToRun>false</PublishReadyToRun>
     <AssemblyName>ScreenRecorderApp</AssemblyName>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+
+    <!-- Single source of truth for the app version. UpdateService reads this back at runtime
+         (Assembly version) and compares it against the latest GitHub release tag; the Inno Setup
+         script's MyAppVersion must be kept in lockstep with it for each release. -->
+    <Version>2.2.0</Version>
   </PropertyGroup>
 
   <ItemGroup>

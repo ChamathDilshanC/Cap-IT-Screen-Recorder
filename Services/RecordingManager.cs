@@ -76,11 +76,17 @@ public sealed class RecordingManager : IDisposable
     /// one of <paramref name="monitor"/>/<paramref name="window"/> should be non-null. No-op once a real
     /// recording is underway — call from a background thread, this blocks on device creation.
     /// </summary>
-    public void StartPreview(MonitorInfo? monitor, WindowInfo? window, bool captureCursor, CursorStyle cursorStyle,
+    public void StartPreview(CaptureTargetKind targetKind, MonitorInfo? monitor, WindowInfo? window,
+        bool captureCursor, CursorStyle cursorStyle,
         bool zoomEnabled = false, double zoomFactor = 2.0, bool keystrokeOverlayEnabled = false,
         bool webcamEnabled = false, string? webcamDeviceId = null,
         bool spotlightEnabled = false, double spotlightRadius = 180, bool clickRipplesEnabled = false)
     {
+        // Same single-authority rule StartAsync applies — the chosen target kind decides, so the preview
+        // can never end up showing a different source than a recording started from the same selection.
+        if (targetKind == CaptureTargetKind.Window) monitor = null;
+        else window = null;
+
         lock (_videoLock)
         {
             if (State != RecordingState.Idle) return;
@@ -129,6 +135,19 @@ public sealed class RecordingManager : IDisposable
         }
     }
 
+    /// <summary>
+    /// Applies a spotlight enable/radius change to the live capture immediately — preview or recording,
+    /// either one. Also refreshes the dedup snapshot <see cref="StartPreview"/> compares against, so a
+    /// later preview restart doesn't tear the pipeline down purely because these two values look
+    /// "changed" when the running capture already has them.
+    /// </summary>
+    public void UpdateSpotlight(bool enabled, double radius)
+    {
+        _previewSpotlightEnabled = enabled;
+        _previewSpotlightRadius = radius;
+        _video.UpdateSpotlight(enabled, radius);
+    }
+
     /// <summary>Stops preview-only capture. No-op while actually recording.</summary>
     public void StopPreview()
     {
@@ -144,6 +163,22 @@ public sealed class RecordingManager : IDisposable
     public async Task StartAsync(RecordingSettings settings, MonitorInfo? monitor, WindowInfo? window)
     {
         if (State != RecordingState.Idle) return;
+
+        // Belt-and-braces normalization against the "recorded the wrong thing" class of bug:
+        // VideoCaptureService.Prepare picks its acquisition path from whichever of these is non-null, so
+        // the *settings'* declared target kind — the thing the user actually chose in the UI — is the
+        // single authority for which one survives, no matter what the caller happened to pass.
+        if (settings.CaptureTargetKind == CaptureTargetKind.Window) monitor = null;
+        else window = null;
+
+        if (settings.CaptureTargetKind == CaptureTargetKind.Window && window is null)
+        {
+            throw new InvalidOperationException("Window capture was requested but no window is selected.");
+        }
+        if (settings.CaptureTargetKind == CaptureTargetKind.Monitor && monitor is null)
+        {
+            throw new InvalidOperationException("Display capture was requested but no display is selected.");
+        }
 
         State = RecordingState.Starting;
         LastError = null;

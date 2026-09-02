@@ -25,15 +25,17 @@
                 <ctcontrols:SettingsExpander.HeaderIcon>
                     <FontIcon Glyph="&#xE81E;" />
                 </ctcontrols:SettingsExpander.HeaderIcon>
+                <!-- Not gated on IsIdle like most capture settings: the spotlight is applied per frame
+                     at composite time, so both of these now take effect on the live preview and on an
+                     in-progress recording the moment they change. -->
                 <ToggleSwitch OnContent="On" OffContent="Off"
-                              IsOn="{x:Bind ViewModel.SpotlightEnabled, Mode=TwoWay}"
-                              IsEnabled="{x:Bind ViewModel.IsIdle, Mode=OneWay}" />
+                              IsOn="{x:Bind ViewModel.SpotlightEnabled, Mode=TwoWay}" />
                 <ctcontrols:SettingsExpander.Items>
-                    <ctcontrols:SettingsCard Header="Spotlight radius" Description="{x:Bind ViewModel.SpotlightRadiusLabel, Mode=OneWay}">
+                    <ctcontrols:SettingsCard Header="Spotlight radius"
+                                              Description="{x:Bind ViewModel.SpotlightRadiusLabel, Mode=OneWay}">
                         <Slider MinWidth="220"
-                            Minimum="80" Maximum="400" StepFrequency="10"
-                            Value="{x:Bind ViewModel.SpotlightRadius, Mode=TwoWay}"
-                            IsEnabled="{x:Bind ViewModel.IsIdle, Mode=OneWay}" />
+                            Minimum="80" Maximum="600" StepFrequency="10"
+                            Value="{x:Bind ViewModel.SpotlightRadius, Mode=TwoWay}" />
                     </ctcontrols:SettingsCard>
                 </ctcontrols:SettingsExpander.Items>
             </ctcontrols:SettingsExpander>

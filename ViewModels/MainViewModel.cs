@@ -22,12 +22,20 @@ public partial class MainViewModel : BaseViewModel
     private readonly AnnotationOverlayService _annotations;
     private readonly MicLevelMonitorService _micLevelMonitor = new();
     private readonly SpeakerLevelMonitorService _speakerLevelMonitor = new();
+    private readonly UpdateService _updateService = new();
     private readonly DispatcherQueueTimer _uiTimer;
 
     // Guards the load-and-apply pass in the constructor so setting ~15 properties from disk doesn't
     // immediately queue ~15 redundant saves of the values it just read.
     private bool _isLoadingSettings;
     private CancellationTokenSource? _saveDebounceCts;
+
+    // The live audio monitors wrap NAudio WasapiCapture, which MUST be started/stopped off the UI thread
+    // (see MicLevelMonitorService's remarks — doing it inline on the UI thread is what froze the whole
+    // app when the mic device was changed). These coalesce the rapid changes made clicking through the
+    // device combo / toggles into one background apply.
+    private CancellationTokenSource? _micMonitorCts;
+    private CancellationTokenSource? _speakerMonitorCts;
 
     public ObservableCollection<MonitorInfo> Monitors { get; } = [];
     public ObservableCollection<AudioDeviceOption> Microphones { get; } = [];
@@ -46,6 +54,11 @@ public partial class MainViewModel : BaseViewModel
     public bool IsWindowCaptureMode => SelectedCaptureTargetKind.Value == CaptureTargetKind.Window;
     public bool IsMonitorCaptureMode => !IsWindowCaptureMode;
 
+    /// <summary>What the app will record right now, in one line — shown next to the source picker button so the current target is readable without opening a dropdown.</summary>
+    public string CurrentTargetSummary => IsWindowCaptureMode
+        ? SelectedWindow is null ? "No window selected" : $"Window · {SelectedWindow.Title}"
+        : SelectedMonitor is null ? "No display selected" : $"Display · {SelectedMonitor}";
+
     [ObservableProperty] private MonitorInfo? _selectedMonitor;
     [ObservableProperty] private WindowInfo? _selectedWindow;
     [ObservableProperty] private AudioDeviceOption? _selectedMicrophone;
@@ -59,7 +72,12 @@ public partial class MainViewModel : BaseViewModel
     // shown raw, since the raw per-150ms-tick RMS reads as jittery rather than a level.
     [ObservableProperty] private double _micLevel;
     public bool ShowMicMeter => CaptureMicrophone;
-    public bool IsMicSignalPresent => MicLevel > 0.03;
+    // Threshold sits on the dBFS meter scale (see ToMeterScale), not on raw RMS: 0.18 is about -49 dBFS,
+    // comfortably above a quiet room's noise floor but well below any actual speech, so the label tracks
+    // "someone is talking" rather than "the room exists".
+    public bool IsMicSignalPresent => MicLevel > 0.18;
+    /// <summary>Whether the level monitor could open the device at all — drives the meter's muted "unavailable" look.</summary>
+    public bool IsMicMonitorAvailable => _micLevelMonitor.IsActive;
     // Distinguishes "the monitor couldn't even open the device" (wrong/disconnected mic, or Windows'
     // system-wide "Let desktop apps access your microphone" privacy toggle is off — WASAPI capture can
     // silently deliver empty buffers rather than failing outright in that case) from "it opened fine but
@@ -79,7 +97,8 @@ public partial class MainViewModel : BaseViewModel
     // (playback) device instead of the capture device. See SpeakerLevelMonitorService.
     [ObservableProperty] private double _speakerLevel;
     public bool ShowSpeakerMeter => CaptureSystemAudio;
-    public bool IsSpeakerSignalPresent => SpeakerLevel > 0.03;
+    public bool IsSpeakerSignalPresent => SpeakerLevel > 0.18;
+    public bool IsSpeakerMonitorAvailable => _speakerLevelMonitor.IsActive;
     public string SpeakerStatusText => !_speakerLevelMonitor.IsActive ? "Speaker unavailable" : IsSpeakerSignalPresent ? "Playing" : "Silent";
     public Microsoft.UI.Xaml.Media.SolidColorBrush SpeakerMeterBrush => new(!_speakerLevelMonitor.IsActive ? global::Windows.UI.Color.FromArgb(255, 130, 130, 60) : SpeakerLevel switch
     {
@@ -169,6 +188,21 @@ public partial class MainViewModel : BaseViewModel
     private TaskCompletionSource<bool>? _ffmpegDecisionTcs;
     private CancellationTokenSource? _ffmpegDownloadCts;
 
+    // Auto-update (GitHub Releases). The check runs once, in the background, at startup; the banner only
+    // appears if a strictly-newer release exists. See UpdateService.
+    private UpdateInfo? _pendingUpdate;
+    private CancellationTokenSource? _updateDownloadCts;
+
+    [ObservableProperty] private bool _updateAvailable;
+    [ObservableProperty] private string _updateBannerMessage = "";
+    [ObservableProperty] private bool _isDownloadingUpdate;
+    [ObservableProperty] private double _updateDownloadProgress;
+    public bool IsNotDownloadingUpdate => !IsDownloadingUpdate;
+    public string UpdateDownloadProgressText => $"{UpdateDownloadProgress:0}%";
+
+    partial void OnIsDownloadingUpdateChanged(bool value) => OnPropertyChanged(nameof(IsNotDownloadingUpdate));
+    partial void OnUpdateDownloadProgressChanged(double value) => OnPropertyChanged(nameof(UpdateDownloadProgressText));
+
     private byte[]? _previewBuffer;
 
     public bool HasPreview => PreviewSource is not null;
@@ -218,8 +252,101 @@ public partial class MainViewModel : BaseViewModel
         // initializer and in AppSettings) means the common "always been on, nothing to load" case would
         // silently never start the speaker monitor at all. Explicitly syncing both monitors to whatever
         // LoadAndApplySettings actually landed on, unconditionally, sidesteps that no-op entirely.
-        if (CaptureMicrophone) _micLevelMonitor.Start(SelectedMicrophone?.Id);
-        if (CaptureSystemAudio) _speakerLevelMonitor.Start();
+        RestartMicMonitor();
+        RestartSpeakerMonitor();
+
+        _ = CheckForUpdatesAsync();
+
+        // Posted rather than called inline: LoadAndApplySettings can turn AnnotationsEnabled on, and
+        // arming creates a second WinUI Window — not something to do partway through building the one
+        // that owns this view model. By the time this runs the shell is up and it's an ordinary call.
+        _dispatcherQueue.TryEnqueue(SyncAnnotationOverlay);
+    }
+
+    /// <summary>One-shot background update check on startup. Silent unless a newer GitHub release exists.</summary>
+    private async Task CheckForUpdatesAsync()
+    {
+        UpdateInfo? info;
+        try { info = await _updateService.CheckForUpdateAsync(); }
+        catch { return; }
+        if (info is null) return;
+
+        _pendingUpdate = info;
+        _dispatcherQueue.TryEnqueue(() =>
+        {
+            var current = UpdateService.CurrentVersion.ToString(3);
+            UpdateBannerMessage = info.InstallerUrl is not null
+                ? $"Version {info.VersionTag} is available (you have v{current}). It installs to your current location and restarts the app."
+                : $"Version {info.VersionTag} is available (you have v{current}). Open the releases page to download it.";
+            UpdateAvailable = true;
+        });
+    }
+
+    /// <summary>(Re)applies the live mic level monitor to the current CaptureMicrophone / SelectedMicrophone
+    /// state on a background thread — off the UI thread is mandatory, see MicLevelMonitorService's
+    /// remarks. A short debounce coalesces the burst of changes a user makes clicking through the device
+    /// combo so only the final selection actually opens a capture.</summary>
+    private void RestartMicMonitor()
+    {
+        _micMonitorCts?.Cancel();
+        var cts = _micMonitorCts = new CancellationTokenSource();
+        var enabled = CaptureMicrophone;
+        var deviceId = SelectedMicrophone?.Id;
+
+        _ = Task.Run(async () =>
+        {
+            try { await Task.Delay(200, cts.Token); }
+            catch (OperationCanceledException) { return; }
+
+            if (enabled) _micLevelMonitor.Start(deviceId);
+            else _micLevelMonitor.Stop();
+
+            _dispatcherQueue.TryEnqueue(() =>
+            {
+                OnPropertyChanged(nameof(MicStatusText));
+                OnPropertyChanged(nameof(MicMeterBrush));
+                OnPropertyChanged(nameof(IsMicMonitorAvailable));
+            });
+        });
+    }
+
+    /// <summary>Speaker/loopback equivalent of <see cref="RestartMicMonitor"/>.</summary>
+    private void RestartSpeakerMonitor()
+    {
+        _speakerMonitorCts?.Cancel();
+        var cts = _speakerMonitorCts = new CancellationTokenSource();
+        var enabled = CaptureSystemAudio;
+
+        _ = Task.Run(async () =>
+        {
+            try { await Task.Delay(200, cts.Token); }
+            catch (OperationCanceledException) { return; }
+
+            if (enabled) _speakerLevelMonitor.Start();
+            else _speakerLevelMonitor.Stop();
+
+            _dispatcherQueue.TryEnqueue(() =>
+            {
+                OnPropertyChanged(nameof(SpeakerStatusText));
+                OnPropertyChanged(nameof(SpeakerMeterBrush));
+                OnPropertyChanged(nameof(IsSpeakerMonitorAvailable));
+            });
+        });
+    }
+
+    /// <summary>Called from MainWindow.OnClosed. Tears down the live monitors, preview and any recording
+    /// so no foreground WASAPI/WGC capture thread keeps ScreenRecorderApp.exe alive after the window is
+    /// gone — a lingering process was what the next launch couldn't get past ("won't reopen").</summary>
+    public void Shutdown()
+    {
+        FlushSettings();
+        _uiTimer.Stop();
+        _micMonitorCts?.Cancel();
+        _speakerMonitorCts?.Cancel();
+        try { _micLevelMonitor.Dispose(); } catch { /* best effort */ }
+        try { _speakerLevelMonitor.Dispose(); } catch { /* best effort */ }
+        try { _annotations.Disarm(); } catch { /* best effort */ }
+        try { _manager.Dispose(); } catch { /* best effort */ }
     }
 
     /// <summary>
@@ -398,13 +525,16 @@ public partial class MainViewModel : BaseViewModel
 
     partial void OnSelectedMonitorChanged(MonitorInfo? value)
     {
+        OnPropertyChanged(nameof(CurrentTargetSummary));
         StartRecordingCommand.NotifyCanExecuteChanged();
         RestartPreviewIfIdle();
+        SyncAnnotationOverlay(); // the overlay has to follow the display it's annotating
         QueueSaveSettings();
     }
 
     partial void OnSelectedWindowChanged(WindowInfo? value)
     {
+        OnPropertyChanged(nameof(CurrentTargetSummary));
         StartRecordingCommand.NotifyCanExecuteChanged();
         RestartPreviewIfIdle();
         QueueSaveSettings();
@@ -414,10 +544,12 @@ public partial class MainViewModel : BaseViewModel
     {
         OnPropertyChanged(nameof(IsWindowCaptureMode));
         OnPropertyChanged(nameof(IsMonitorCaptureMode));
+        OnPropertyChanged(nameof(CurrentTargetSummary));
         OnPropertyChanged(nameof(CanEnableAnnotations));
         OnPropertyChanged(nameof(CanToggleAnnotations));
         StartRecordingCommand.NotifyCanExecuteChanged();
         RestartPreviewIfIdle();
+        SyncAnnotationOverlay(); // window capture can't see the overlay at all — see CanEnableAnnotations
         QueueSaveSettings();
     }
 
@@ -463,22 +595,22 @@ public partial class MainViewModel : BaseViewModel
         QueueSaveSettings();
     }
 
+    // Both of these are pushed straight into the running capture rather than restarting it. The
+    // spotlight is a pure per-frame compositing parameter (no device, no hook), so a restart was never
+    // needed — and for the radius it was actively wrong: it used to be a Prepare()-time-only value with
+    // no restart wired up at all, so dragging the slider saved a new number that nothing on screen ever
+    // reflected. Going live also means the radius can be adjusted mid-recording, while you can actually
+    // see the result, instead of being frozen for the whole session.
     partial void OnSpotlightEnabledChanged(bool value)
     {
-        RestartPreviewIfIdle();
+        _manager.UpdateSpotlight(value, SpotlightRadius);
         QueueSaveSettings();
     }
 
-    // Deliberately no RestartPreviewIfIdle() here, unlike every other On<X>Changed in this file: a
-    // Slider fires this on every value change during a drag (up to ~32 times crossing the full range),
-    // and radius is a Prepare()-time parameter — restarting the whole DXGI/WGC pipeline that often would
-    // flicker the preview and burn CPU for no benefit. The new radius takes effect on the next restart
-    // for any other reason (toggling the effect itself, switching capture target, ...) or immediately for
-    // an actual recording, which reads RecordingSettings.SpotlightRadius fresh regardless. Same
-    // "continuously-dragged value doesn't restart anything live" precedent VideoBitrateKbps already sets.
     partial void OnSpotlightRadiusChanged(double value)
     {
         OnPropertyChanged(nameof(SpotlightRadiusLabel));
+        _manager.UpdateSpotlight(SpotlightEnabled, value);
         QueueSaveSettings();
     }
 
@@ -488,7 +620,12 @@ public partial class MainViewModel : BaseViewModel
         QueueSaveSettings();
     }
 
-    partial void OnAnnotationsEnabledChanged(bool value) => QueueSaveSettings();
+    partial void OnAnnotationsEnabledChanged(bool value)
+    {
+        SyncAnnotationOverlay();
+        if (value) StatusMessage = "Annotations ready — press Ctrl+Shift+D anywhere to start drawing.";
+        QueueSaveSettings();
+    }
 
     partial void OnSelectedAnnotationColorChanged(AnnotationColorOption value)
     {
@@ -524,9 +661,10 @@ public partial class MainViewModel : BaseViewModel
     partial void OnSelectedMicrophoneChanged(AudioDeviceOption? value)
     {
         QueueSaveSettings();
-        if (CaptureMicrophone) _micLevelMonitor.Start(value?.Id);
+        RestartMicMonitor();
         OnPropertyChanged(nameof(MicStatusText));
         OnPropertyChanged(nameof(MicMeterBrush));
+        OnPropertyChanged(nameof(IsMicMonitorAvailable));
     }
 
     partial void OnMicLevelChanged(double value)
@@ -534,6 +672,7 @@ public partial class MainViewModel : BaseViewModel
         OnPropertyChanged(nameof(IsMicSignalPresent));
         OnPropertyChanged(nameof(MicStatusText));
         OnPropertyChanged(nameof(MicMeterBrush));
+        OnPropertyChanged(nameof(IsMicMonitorAvailable));
     }
 
     partial void OnFpsChanged(int value) => QueueSaveSettings();
@@ -546,13 +685,13 @@ public partial class MainViewModel : BaseViewModel
     {
         QueueSaveSettings();
         OnPropertyChanged(nameof(ShowSpeakerMeter));
-        if (value) _speakerLevelMonitor.Start();
-        else _speakerLevelMonitor.Stop();
+        RestartSpeakerMonitor();
         // IsActive can flip without SpeakerLevel itself changing (e.g. it's already 0 and Start() just
         // failed, or it's still 0 right after a successful Start() before the first callback arrives) —
         // OnSpeakerLevelChanged wouldn't fire in either case, so these need an explicit nudge here too.
         OnPropertyChanged(nameof(SpeakerStatusText));
         OnPropertyChanged(nameof(SpeakerMeterBrush));
+        OnPropertyChanged(nameof(IsSpeakerMonitorAvailable));
     }
 
     partial void OnSpeakerLevelChanged(double value)
@@ -560,18 +699,19 @@ public partial class MainViewModel : BaseViewModel
         OnPropertyChanged(nameof(IsSpeakerSignalPresent));
         OnPropertyChanged(nameof(SpeakerStatusText));
         OnPropertyChanged(nameof(SpeakerMeterBrush));
+        OnPropertyChanged(nameof(IsSpeakerMonitorAvailable));
     }
 
     partial void OnCaptureMicrophoneChanged(bool value)
     {
         QueueSaveSettings();
         OnPropertyChanged(nameof(ShowMicMeter));
-        if (value) _micLevelMonitor.Start(SelectedMicrophone?.Id);
-        else _micLevelMonitor.Stop();
+        RestartMicMonitor();
         // See the matching comment in OnCaptureSystemAudioChanged — IsActive can change independently of
         // MicLevel, so OnMicLevelChanged alone can't be relied on to refresh these.
         OnPropertyChanged(nameof(MicStatusText));
         OnPropertyChanged(nameof(MicMeterBrush));
+        OnPropertyChanged(nameof(IsMicMonitorAvailable));
     }
 
     partial void OnEnableMicNoiseSuppressionChanged(bool value) => QueueSaveSettings();
@@ -580,6 +720,34 @@ public partial class MainViewModel : BaseViewModel
 
     partial void OnOutputDirectoryChanged(string value) => QueueSaveSettings();
 
+    /// <summary>
+    /// Brings the annotation overlay in line with the current settings — armed (and positioned over the
+    /// selected display) whenever Annotations is on and a display is the capture target, torn down
+    /// otherwise. Called on every input to that decision rather than only at record start, which is what
+    /// the overlay used to be tied to: with it armed only while recording, switching Annotations on and
+    /// pressing Ctrl+Shift+D did nothing at all, because neither the overlay nor its hotkey hook existed
+    /// yet. Must run on the UI thread — it creates/destroys a WinUI Window.
+    /// </summary>
+    private void SyncAnnotationOverlay()
+    {
+        // Suppressed during the startup load. This is reached from the SelectedMonitor / capture-kind /
+        // AnnotationsEnabled setters, all of which fire while LoadAndApplySettings runs — which is
+        // inside this view model's constructor, itself inside MainWindow's. Creating a second WinUI
+        // Window from there is asking for trouble; the constructor posts one deliberate sync via the
+        // DispatcherQueue once the shell is actually up, and that is the only startup arming there is.
+        if (_isLoadingSettings) return;
+
+        if (AnnotationsEnabled && IsMonitorCaptureMode && SelectedMonitor is { } monitor)
+        {
+            try { _annotations.Arm(monitor, SelectedAnnotationColor.Value, AnnotationStrokeThickness); }
+            catch { /* best effort: annotations are an add-on, never worth failing a recording over */ }
+        }
+        else
+        {
+            _annotations.Disarm();
+        }
+    }
+
     /// <summary>(Re)starts the before-recording live preview on a background thread. Safe to call any
     /// time a relevant setting changes; it's a no-op unless idle and a capture target is selected.</summary>
     private void RestartPreviewIfIdle()
@@ -587,6 +755,7 @@ public partial class MainViewModel : BaseViewModel
         var isWindowMode = IsWindowCaptureMode;
         if (!IsIdle || (isWindowMode ? SelectedWindow is null : SelectedMonitor is null)) return;
 
+        var targetKind = SelectedCaptureTargetKind.Value;
         var monitor = isWindowMode ? null : SelectedMonitor;
         var window = isWindowMode ? SelectedWindow : null;
         var cursor = CaptureCursor;
@@ -603,7 +772,7 @@ public partial class MainViewModel : BaseViewModel
         {
             try
             {
-                _manager.StartPreview(monitor, window, cursor, cursorStyle, zoomEnabled, zoomFactor, keystrokeOverlay,
+                _manager.StartPreview(targetKind, monitor, window, cursor, cursorStyle, zoomEnabled, zoomFactor, keystrokeOverlay,
                     webcamEnabled, webcamDeviceId, spotlightEnabled, spotlightRadius, clickRipplesEnabled);
             }
             catch { /* best effort: live preview is a convenience, not required to record */ }
@@ -637,6 +806,46 @@ public partial class MainViewModel : BaseViewModel
         Windows.Clear();
         foreach (var w in _manager.GetWindows()) Windows.Add(w);
         SelectedWindow = Windows.FirstOrDefault(w => w.Handle == current) ?? Windows.FirstOrDefault();
+    }
+
+    /// <summary>Fresh enumeration for the visual source picker, which builds its own tile list and must
+    /// not disturb the current selection the way <see cref="RefreshMonitorsCommand"/> does.</summary>
+    public IReadOnlyList<MonitorInfo> EnumerateMonitors() => _manager.GetMonitors();
+
+    /// <inheritdoc cref="EnumerateMonitors"/>
+    public IReadOnlyList<WindowInfo> EnumerateWindows() => _manager.GetWindows();
+
+    /// <summary>
+    /// Applies a choice made in the visual source picker. Exactly one of the two is non-null — the same
+    /// single-target rule the whole capture path now enforces (see RecordingManager.StartAsync).
+    /// </summary>
+    public void ApplyCaptureSource(MonitorInfo? monitor, WindowInfo? window)
+    {
+        if (window is not null)
+        {
+            // The picker enumerates independently, so this window may not be in the dropdown's list yet
+            // (opened since the last refresh). Adding it keeps the dropdown showing the real selection
+            // instead of falling back to a blank ComboBox.
+            var existing = Windows.FirstOrDefault(w => w.Handle == window.Handle);
+            if (existing is null)
+            {
+                Windows.Add(window);
+                existing = window;
+            }
+            SelectedWindow = existing;
+            SelectedCaptureTargetKind = CaptureTargetKindOptions.First(k => k.Value == CaptureTargetKind.Window);
+        }
+        else if (monitor is not null)
+        {
+            var match = Monitors.FirstOrDefault(m => m.DeviceName == monitor.DeviceName);
+            if (match is null)
+            {
+                RefreshMonitors(); // display connected since startup
+                match = Monitors.FirstOrDefault(m => m.DeviceName == monitor.DeviceName);
+            }
+            if (match is not null) SelectedMonitor = match;
+            SelectedCaptureTargetKind = CaptureTargetKindOptions.First(k => k.Value == CaptureTargetKind.Monitor);
+        }
     }
 
     [RelayCommand]
@@ -701,6 +910,56 @@ public partial class MainViewModel : BaseViewModel
     [RelayCommand]
     private void CancelFFmpegDownload() => _ffmpegDownloadCts?.Cancel();
 
+    [RelayCommand]
+    private void DismissUpdate() => UpdateAvailable = false;
+
+    [RelayCommand]
+    private void ViewReleaseNotes()
+    {
+        try { UpdateService.OpenReleasesPage(_pendingUpdate?.ReleaseNotesUrl); }
+        catch { /* browser refused to open — nothing more we can do */ }
+    }
+
+    [RelayCommand]
+    private void CancelUpdateDownload() => _updateDownloadCts?.Cancel();
+
+    /// <summary>Downloads the update installer and hands off to it. On success the app exits so the
+    /// installer can overwrite it in place; the installer relaunches it afterwards.</summary>
+    [RelayCommand]
+    private async Task UpdateNowAsync()
+    {
+        if (_pendingUpdate is null) return;
+        if (_pendingUpdate.InstallerUrl is null) { ViewReleaseNotes(); return; }
+
+        IsDownloadingUpdate = true;
+        _updateDownloadCts = new CancellationTokenSource();
+        try
+        {
+            var progress = new Progress<double>(p => UpdateDownloadProgress = p);
+            var installerPath = await _updateService.DownloadInstallerAsync(_pendingUpdate, progress, _updateDownloadCts.Token);
+
+            FlushSettings();
+            _updateService.LaunchInstaller(installerPath, () =>
+                _dispatcherQueue.TryEnqueue(() => Microsoft.UI.Xaml.Application.Current.Exit()));
+        }
+        catch (OperationCanceledException)
+        {
+            StatusMessage = "Update download cancelled.";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Update failed: {ex.Message}";
+            UpdateBannerMessage = "Couldn't download the update automatically — use “Release notes” to get it from GitHub.";
+        }
+        finally
+        {
+            IsDownloadingUpdate = false;
+            UpdateDownloadProgress = 0;
+            _updateDownloadCts?.Dispose();
+            _updateDownloadCts = null;
+        }
+    }
+
     private bool CanStart() => IsIdle && (IsWindowCaptureMode ? SelectedWindow is not null : SelectedMonitor is not null);
 
     [RelayCommand(CanExecute = nameof(CanStart))]
@@ -711,13 +970,22 @@ public partial class MainViewModel : BaseViewModel
 
         if (!await EnsureFFmpegAvailableAsync()) return;
 
+        // Only the *active* target is carried into the session. Both used to be filled in
+        // unconditionally, and since a window is essentially always selected (RefreshWindows auto-picks
+        // the first one), VideoCaptureService.Prepare — which infers its mode from whichever argument is
+        // non-null — took the window branch even in "Entire display" mode, so a display recording
+        // silently captured some arbitrary window instead. The live preview never showed it because
+        // RestartPreviewIfIdle already nulled out the inactive one.
+        var monitorTarget = isWindowMode ? null : SelectedMonitor;
+        var windowTarget = isWindowMode ? SelectedWindow : null;
+
         var settings = new RecordingSettings
         {
             CaptureTargetKind = SelectedCaptureTargetKind.Value,
-            MonitorHandle = SelectedMonitor?.Handle ?? 0,
-            MonitorFriendlyName = SelectedMonitor?.FriendlyName ?? "",
-            TargetWindowHandle = SelectedWindow?.Handle ?? 0,
-            TargetWindowTitle = SelectedWindow?.Title,
+            MonitorHandle = monitorTarget?.Handle ?? 0,
+            MonitorFriendlyName = monitorTarget?.FriendlyName ?? "",
+            TargetWindowHandle = windowTarget?.Handle ?? 0,
+            TargetWindowTitle = windowTarget?.Title,
             Fps = Fps,
             VideoBitrateKbps = (int)VideoBitrateKbps,
             CaptureSystemAudio = CaptureSystemAudio,
@@ -744,22 +1012,18 @@ public partial class MainViewModel : BaseViewModel
         try
         {
             StatusMessage = "Starting…";
-            await _manager.StartAsync(settings, SelectedMonitor, SelectedWindow);
+            await _manager.StartAsync(settings, monitorTarget, windowTarget);
             State = _manager.State;
 
-            // Monitor-capture only — see CanEnableAnnotations. SelectedMonitor is guaranteed non-null
-            // here since isWindowMode is false whenever this branch can run (checked at the top).
-            if (AnnotationsEnabled && !isWindowMode)
-            {
-                _annotations.Arm(SelectedMonitor!, SelectedAnnotationColor.Value, AnnotationStrokeThickness);
-            }
+            // Idempotent — the overlay is normally already armed from when Annotations was switched on.
+            // This just guarantees it before the recording that will capture it actually starts.
+            SyncAnnotationOverlay();
 
             var targetLabel = isWindowMode ? SelectedWindow!.Title : SelectedMonitor!.FriendlyName;
             StatusMessage = $"Recording {targetLabel} @ {Fps} FPS ({SelectedResolution.Label})";
         }
         catch (Exception ex)
         {
-            _annotations.Disarm(); // in case Arm() succeeded but a later step in the try block failed
             State = RecordingState.Idle;
             StatusMessage = $"Failed to start: {ex.Message}";
         }
@@ -771,7 +1035,6 @@ public partial class MainViewModel : BaseViewModel
     private async Task StopRecordingAsync()
     {
         StatusMessage = "Finalizing…";
-        _annotations.Disarm();
         var path = await _manager.StopAsync();
         LastOutputPath = path;
         State = _manager.State; // triggers OnStateChanged, which restarts the live preview since we're idle again
@@ -818,6 +1081,20 @@ public partial class MainViewModel : BaseViewModel
         ElapsedText = e.ToString(e.TotalHours >= 1 ? @"hh\:mm\:ss" : @"mm\:ss");
     }
 
+    // Meter floor in dBFS. Linear RMS is a poor thing to drive a meter with — normal speech sits around
+    // 0.02-0.1 RMS, so a linear bar barely leaves the left edge and reads as "nothing is happening" even
+    // while audio is clearly being captured. Mapping dB (which is how loudness is actually perceived)
+    // across this range is what makes the meter visibly track the voice.
+    private const double MeterFloorDb = -60.0;
+
+    /// <summary>Converts a raw 0..1 RMS reading to a 0..1 meter position on a dBFS scale.</summary>
+    private static double ToMeterScale(float rms)
+    {
+        if (rms <= 0.0000001f) return 0;
+        var db = 20.0 * Math.Log10(rms);
+        return Math.Clamp((db - MeterFloorDb) / -MeterFloorDb, 0, 1);
+    }
+
     private void UpdateMicLevel()
     {
         if (!_micLevelMonitor.IsActive)
@@ -826,12 +1103,10 @@ public partial class MainViewModel : BaseViewModel
             return;
         }
 
-        // Raw RMS of normalized PCM for typical speech sits well under 1.0, so it's scaled up before
-        // clamping to actually use the meter's visual range. Fast attack (snap straight to a louder
-        // reading) / slow release (decay gradually otherwise) reads as a real VU meter instead of
-        // jittering with every 150ms sample.
-        var raw = Math.Clamp(_micLevelMonitor.CurrentLevel * 4, 0, 1);
-        MicLevel = raw > MicLevel ? raw : MicLevel * 0.7;
+        // Fast attack (snap straight to a louder reading) / slow release (decay gradually otherwise)
+        // reads as a real VU meter instead of jittering with every 150ms sample.
+        var raw = ToMeterScale(_micLevelMonitor.CurrentLevel);
+        MicLevel = raw > MicLevel ? raw : MicLevel * 0.72;
     }
 
     private void UpdateSpeakerLevel()
@@ -842,8 +1117,8 @@ public partial class MainViewModel : BaseViewModel
             return;
         }
 
-        var raw = Math.Clamp(_speakerLevelMonitor.CurrentLevel * 4, 0, 1);
-        SpeakerLevel = raw > SpeakerLevel ? raw : SpeakerLevel * 0.7;
+        var raw = ToMeterScale(_speakerLevelMonitor.CurrentLevel);
+        SpeakerLevel = raw > SpeakerLevel ? raw : SpeakerLevel * 0.72;
     }
 
     private void UpdatePreview()

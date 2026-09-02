@@ -2,6 +2,7 @@
     x:Class="ScreenRecorderApp.Views.HomePage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:ScreenRecorderApp.Views.Controls"
     Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
 
     <Page.Resources>
@@ -61,9 +62,9 @@
                                 Visibility="{x:Bind ViewModel.ShowMicMeter, Mode=OneWay}">
                         <FontIcon Glyph="&#xE720;" FontSize="14"
                                   Foreground="{x:Bind ViewModel.MicMeterBrush, Mode=OneWay}" />
-                        <ProgressBar Width="60" Height="6" Minimum="0" Maximum="1" VerticalAlignment="Center"
-                                     Value="{x:Bind ViewModel.MicLevel, Mode=OneWay}"
-                                     Foreground="{x:Bind ViewModel.MicMeterBrush, Mode=OneWay}" />
+                        <controls:LevelMeter VerticalAlignment="Center"
+                                             Level="{x:Bind ViewModel.MicLevel, Mode=OneWay}"
+                                             IsAvailable="{x:Bind ViewModel.IsMicMonitorAvailable, Mode=OneWay}" />
                         <TextBlock Text="{x:Bind ViewModel.MicStatusText, Mode=OneWay}" FontSize="12"
                                    VerticalAlignment="Center"
                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
@@ -73,9 +74,9 @@
                                 Visibility="{x:Bind ViewModel.ShowSpeakerMeter, Mode=OneWay}">
                         <FontIcon Glyph="&#xE767;" FontSize="14"
                                   Foreground="{x:Bind ViewModel.SpeakerMeterBrush, Mode=OneWay}" />
-                        <ProgressBar Width="60" Height="6" Minimum="0" Maximum="1" VerticalAlignment="Center"
-                                     Value="{x:Bind ViewModel.SpeakerLevel, Mode=OneWay}"
-                                     Foreground="{x:Bind ViewModel.SpeakerMeterBrush, Mode=OneWay}" />
+                        <controls:LevelMeter VerticalAlignment="Center"
+                                             Level="{x:Bind ViewModel.SpeakerLevel, Mode=OneWay}"
+                                             IsAvailable="{x:Bind ViewModel.IsSpeakerMonitorAvailable, Mode=OneWay}" />
                         <TextBlock Text="{x:Bind ViewModel.SpeakerStatusText, Mode=OneWay}" FontSize="12"
                                    VerticalAlignment="Center"
                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
@@ -97,6 +98,29 @@
              already do, so the preview updates immediately — hence disabled (not hidden) while
              recording/paused, matching every other capture-target control in the app. -->
         <Border Grid.Row="1" Style="{StaticResource CardStyle}" Padding="12" Margin="0,0,0,16">
+            <StackPanel Spacing="10">
+                <!-- The visual picker: live thumbnails of every display and window, so you can see what
+                     you're about to record instead of guessing from a window title. The dropdowns below
+                     stay as the fast path once you already know which source you want. -->
+                <Grid ColumnSpacing="12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Button Grid.Column="0" Click="OnChooseSourceClick"
+                            Style="{StaticResource AccentButtonStyle}"
+                            IsEnabled="{x:Bind ViewModel.IsIdle, Mode=OneWay}">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon Glyph="&#xE7F4;" FontSize="14" />
+                            <TextBlock Text="Choose source" />
+                        </StackPanel>
+                    </Button>
+                    <TextBlock Grid.Column="1" VerticalAlignment="Center"
+                               Text="{x:Bind ViewModel.CurrentTargetSummary, Mode=OneWay}"
+                               TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                </Grid>
+
             <StackPanel Orientation="Horizontal" Spacing="10">
                 <ComboBox MinWidth="150"
                     ItemsSource="{x:Bind ViewModel.CaptureTargetKindOptions}"
@@ -124,6 +148,7 @@
                         ToolTipService.ToolTip="Refresh windows">
                     <FontIcon Glyph="&#xE72C;" FontSize="14" />
                 </Button>
+            </StackPanel>
             </StackPanel>
         </Border>
 

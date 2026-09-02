@@ -23,7 +23,7 @@
             </StackPanel>
 
             <ctcontrols:SettingsCard Header="Enable annotations"
-                                      Description="A transparent overlay window sits over your recorded display. Toggle Drawing Mode with the hotkey below to draw; whatever you draw is part of the desktop itself, so it's captured in the recording automatically — no extra setup needed.">
+                                      Description="Puts a transparent overlay over the selected display right away — you don't have to be recording. Toggle Drawing Mode with the hotkey below to draw; whatever you draw is part of the desktop itself, so it's captured in the recording automatically — no extra setup needed.">
                 <ctcontrols:SettingsCard.HeaderIcon>
                     <FontIcon Glyph="&#xE70F;" />
                 </ctcontrols:SettingsCard.HeaderIcon>
@@ -37,13 +37,14 @@
                        Visibility="{x:Bind ViewModel.IsWindowCaptureMode, Mode=OneWay}" />
 
             <ctcontrols:SettingsCard Header="Hotkeys"
-                                      Description="Active for the whole desktop while a recording with annotations enabled is running — you don't need this app focused."
+                                      Description="Active across the whole desktop the moment annotations are switched on — you don't need this app focused, or a recording running."
                                       Visibility="{x:Bind ViewModel.AnnotationsEnabled, Mode=OneWay}">
                 <ctcontrols:SettingsCard.HeaderIcon>
                     <FontIcon Glyph="&#xE765;" />
                 </ctcontrols:SettingsCard.HeaderIcon>
                 <StackPanel Orientation="Vertical" Spacing="2" HorizontalAlignment="Right">
                     <TextBlock Text="Ctrl + Shift + D  —  toggle Drawing Mode" FontSize="13" />
+                    <TextBlock Text="Ctrl + Shift + Z  —  undo last stroke" FontSize="13" />
                     <TextBlock Text="Esc  —  clear drawings" FontSize="13" />
                 </StackPanel>
             </ctcontrols:SettingsCard>
@@ -78,7 +79,7 @@
                         Value="{x:Bind ViewModel.AnnotationStrokeThickness, Mode=TwoWay}" />
             </ctcontrols:SettingsCard>
 
-            <TextBlock Text="Freehand drawing only for now — arrow and rectangle shape tools are a future addition."
+            <TextBlock Text="While Drawing Mode is on, the overlay captures your clicks — toggle it back off with Ctrl+Shift+D to interact with the apps underneath. Freehand drawing only for now; arrow and rectangle shape tools are a future addition."
                        Style="{StaticResource SectionDescriptionText}"
                        Visibility="{x:Bind ViewModel.AnnotationsEnabled, Mode=OneWay}" />
         </StackPanel>

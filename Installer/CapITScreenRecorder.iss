@@ -5,17 +5,18 @@
 ; notes. Requires Inno Setup 6.x (uses the {autopf}/{autodesktop} constants introduced in Inno 6).
 
 #define MyAppName "Cap-IT Screen Recorder"
-#define MyAppVersion "2.1.0"
-#define MyAppPublisher "Your Company Name"           ; TODO: replace with your real publisher name
-#define MyAppURL "https://github.com/yourusername/Cap-IT-Screen-Recorder"  ; TODO: replace with your real URL
+#define MyAppVersion "2.2.0"
+#define MyAppPublisher "Chamath Dilshan"
+#define MyAppURL "https://github.com/ChamathDilshanC/Cap-IT-Screen-Recorder"
 #define MyAppExeName "ScreenRecorderApp.exe"
 #define MyPublishDir "..\publish"
 #define MySettingsFolderName "Cap-IT Screen Recorder"  ; must match SettingsService's %LocalAppData% folder name exactly
 
 [Setup]
-; Generate your own GUID in the Inno Setup IDE via Tools > Generate GUID and paste it here — this one
-; is a placeholder and must not be reused across real, unrelated products (it's what Windows uses to
-; recognize "this is the same product" across versions for upgrade/uninstall purposes).
+; This is the product's established AppId — Windows uses it to recognize "this is the same product"
+; across versions for upgrade/uninstall. It must NEVER change: altering it would make every existing
+; install look like a different product, breaking in-place upgrades and leaving orphaned entries in
+; Add/Remove Programs for everyone already on an earlier version.
 AppId={{4F2B7B1A-9C3E-4B7A-8E1D-2A6C7F5E9D01}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
@@ -26,6 +27,15 @@ AppUpdatesURL={#MyAppURL}
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
+; On an upgrade, reinstall into wherever the previous version was installed rather than resetting to
+; DefaultDirName — this is what makes the in-app auto-updater land the new build in the same location
+; the user originally chose. (UsePreviousAppDir defaults to yes; set explicitly so it's not lost.)
+UsePreviousAppDir=yes
+; Lets Setup detect the app running (matches SingleInstanceMutexName in App.xaml.cs) and, together with
+; CloseApplications=yes, shut it down cleanly before overwriting files during an auto-update.
+AppMutex=CapITScreenRecorderSingleInstanceMutex
+CloseApplications=yes
+RestartApplications=no
 OutputDir=Output
 OutputBaseFilename=CapIT-Screen-Recorder-Setup-{#MyAppVersion}
 SetupIconFile=..\assets\AppIcon.ico
@@ -59,7 +69,10 @@ Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+; No "skipifsilent": the in-app auto-updater runs Setup with /SILENT, and we still want the app to
+; relaunch itself once the update is in place. In a normal interactive install this is still just the
+; usual optional "launch now" checkbox.
+Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall
 
 [UninstallDelete]
 ; Belt-and-suspenders: removes the whole install directory even if some file inside it wasn't tracked

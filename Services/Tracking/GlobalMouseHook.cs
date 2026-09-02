@@ -49,6 +49,9 @@ public sealed class GlobalMouseHook : IDisposable
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
     private static extern nint GetModuleHandle(string? lpModuleName);
 
+    [DllImport("kernel32.dll")]
+    private static extern uint GetCurrentThreadId();
+
     [StructLayout(LayoutKind.Sequential)]
     private struct MSG
     {
@@ -100,7 +103,12 @@ public sealed class GlobalMouseHook : IDisposable
 
     private void RunMessageLoop()
     {
-        _threadId = (uint)Environment.CurrentManagedThreadId;
+        // GetCurrentThreadId (the Win32 thread id), NOT Environment.CurrentManagedThreadId — those are
+        // unrelated numbering schemes, and PostThreadMessage in Stop() takes the Win32 one. Posting the
+        // managed id addressed some arbitrary thread that almost never exists, so WM_QUIT never arrived,
+        // the pump never exited, Join(1000) always timed out and the low-level hook stayed installed for
+        // the rest of the process's life.
+        _threadId = GetCurrentThreadId();
         _proc = HookCallback;
 
         using var curModule = System.Diagnostics.Process.GetCurrentProcess().MainModule;
