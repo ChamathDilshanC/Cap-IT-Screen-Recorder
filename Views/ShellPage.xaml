@@ -18,6 +18,11 @@
                     <FontIcon Glyph="&#xE80F;" />
                 </NavigationViewItem.Icon>
             </NavigationViewItem>
+            <NavigationViewItem Content="Capture" Tag="Capture">
+                <NavigationViewItem.Icon>
+                    <FontIcon Glyph="&#xE7F4;" />
+                </NavigationViewItem.Icon>
+            </NavigationViewItem>
             <NavigationViewItem Content="Smart Tracking" Tag="Tracking">
                 <NavigationViewItem.Icon>
                     <FontIcon Glyph="&#xE721;" />

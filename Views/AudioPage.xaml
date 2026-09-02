@@ -16,10 +16,36 @@
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <StackPanel Padding="32,28" Spacing="18" HorizontalAlignment="Stretch">
             <StackPanel Spacing="4">
-                <TextBlock Text="Audio Enhancement" Style="{StaticResource TitleTextBlockStyle}" />
-                <TextBlock Text="AI-assisted microphone cleanup. (Basic system audio/microphone toggles stay on the Settings tab — this is about improving mic quality, not choosing sources.)"
+                <TextBlock Text="Audio" Style="{StaticResource TitleTextBlockStyle}" />
+                <TextBlock Text="Which audio sources to record, and AI-assisted microphone cleanup."
                            Style="{StaticResource SectionDescriptionText}" />
             </StackPanel>
+
+            <ctcontrols:SettingsExpander Header="Sources" Description="System sound and microphone" IsExpanded="True">
+                <ctcontrols:SettingsExpander.HeaderIcon>
+                    <FontIcon Glyph="&#xE767;" />
+                </ctcontrols:SettingsExpander.HeaderIcon>
+                <ctcontrols:SettingsExpander.Items>
+                    <ctcontrols:SettingsCard Header="Record system audio">
+                        <ToggleSwitch OnContent="On" OffContent="Off"
+                                      IsOn="{x:Bind ViewModel.CaptureSystemAudio, Mode=TwoWay}"
+                                      IsEnabled="{x:Bind ViewModel.IsIdle, Mode=OneWay}" />
+                    </ctcontrols:SettingsCard>
+
+                    <ctcontrols:SettingsCard Header="Record microphone">
+                        <ToggleSwitch OnContent="On" OffContent="Off"
+                                      IsOn="{x:Bind ViewModel.CaptureMicrophone, Mode=TwoWay}"
+                                      IsEnabled="{x:Bind ViewModel.IsIdle, Mode=OneWay}" />
+                    </ctcontrols:SettingsCard>
+
+                    <ctcontrols:SettingsCard Header="Microphone device">
+                        <ComboBox MinWidth="260"
+                            ItemsSource="{x:Bind ViewModel.Microphones}"
+                            SelectedItem="{x:Bind ViewModel.SelectedMicrophone, Mode=TwoWay}"
+                            IsEnabled="{x:Bind ViewModel.IsIdle, Mode=OneWay}" />
+                    </ctcontrols:SettingsCard>
+                </ctcontrols:SettingsExpander.Items>
+            </ctcontrols:SettingsExpander>
 
             <ctcontrols:SettingsCard Header="Studio Mic (Noise Suppression)"
                                       Description="Removes background hum, fan noise, and keyboard clicks from your microphone via FFmpeg's afftdn/highpass filters. Only ever applied to the mic — system/game audio is left untouched."

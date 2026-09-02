@@ -25,6 +25,7 @@ public sealed partial class ShellPage : Page
 
         var pageType = item.Tag switch
         {
+            "Capture" => typeof(CapturePage),
             "Tracking" => typeof(TrackingPage),
             "Webcam" => typeof(WebcamPage),
             "Annotations" => typeof(AnnotationsPage),
