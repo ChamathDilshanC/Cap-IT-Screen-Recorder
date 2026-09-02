@@ -4,8 +4,7 @@ using ScreenRecorderApp.ViewModels;
 
 namespace ScreenRecorderApp.Views;
 
-/// <summary>Stub page — Master Plan item 6 (AI mic noise suppression via ffmpeg afftdn/arnndn). No
-/// backend logic yet; wired into the shared MainViewModel now so a later phase is a pure addition.</summary>
+/// <summary>Studio Mic noise suppression (Phase 5) — ffmpeg afftdn/highpass/adeclick applied to the microphone leg only.</summary>
 public sealed partial class AudioPage : Page
 {
     public MainViewModel ViewModel { get; private set; } = null!;

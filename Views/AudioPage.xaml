@@ -21,12 +21,15 @@
                            Style="{StaticResource SectionDescriptionText}" />
             </StackPanel>
 
-            <ctcontrols:SettingsCard Header="Coming soon"
-                                      Description="AI microphone noise suppression via FFmpeg's afftdn/arnndn audio filters, cleaning up background hum and hiss before encoding.">
+            <ctcontrols:SettingsCard Header="Studio Mic (Noise Suppression)"
+                                      Description="Removes background hum, fan noise, and keyboard clicks from your microphone via FFmpeg's afftdn/highpass filters. Only ever applied to the mic — system/game audio is left untouched."
+                                      Visibility="{x:Bind ViewModel.CaptureMicrophone, Mode=OneWay}">
                 <ctcontrols:SettingsCard.HeaderIcon>
                     <FontIcon Glyph="&#xE767;" />
                 </ctcontrols:SettingsCard.HeaderIcon>
-                <FontIcon Glyph="&#xE916;" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                <ToggleSwitch OnContent="On" OffContent="Off"
+                              IsOn="{x:Bind ViewModel.EnableMicNoiseSuppression, Mode=TwoWay}"
+                              IsEnabled="{x:Bind ViewModel.IsIdle, Mode=OneWay}" />
             </ctcontrols:SettingsCard>
         </StackPanel>
     </ScrollViewer>

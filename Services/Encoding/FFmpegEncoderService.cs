@@ -17,16 +17,27 @@ namespace ScreenRecorderApp.Services.Encoding;
 /// then await <see cref="WaitForAudioConnectionAsync"/>. Connecting both pipes up front before any
 /// writer exists is a deadlock: ffmpeg won't open input #2 until input #1's probe is satisfied, which
 /// never happens without a writer.
+///
+/// The same rule cascades to a third input: when Studio Mic noise suppression (Phase 5) is active with
+/// both system audio and the mic enabled, <see cref="MicAudioPipe"/> is a *third* ffmpeg input, and
+/// ffmpeg won't open it until input #2's (the system-audio pipe's) probe is satisfied either. So the
+/// caller must start writing to <see cref="AudioPipe"/> immediately after
+/// <see cref="WaitForAudioConnectionAsync"/> returns, and only then await
+/// <see cref="WaitForMicConnectionAsync"/> before writing to <see cref="MicAudioPipe"/>.
 /// </remarks>
 public sealed class FFmpegEncoderService : IDisposable
 {
     private Process? _process;
     private NamedPipeServerStream? _videoPipeServer;
     private NamedPipeServerStream? _audioPipeServer;
+    private NamedPipeServerStream? _micPipeServer;
     private readonly StringBuilder _log = new();
 
     public Stream? VideoPipe => _videoPipeServer;
     public Stream? AudioPipe => _audioPipeServer;
+
+    /// <summary>Non-null only in the dual-leg noise-suppression case (see class remarks) — the microphone's own, separate input pipe, kept apart from <see cref="AudioPipe"/> (system audio) so ffmpeg's afftdn/highpass filter chain only ever touches the mic signal.</summary>
+    public Stream? MicAudioPipe => _micPipeServer;
     public string LastLog => _log.ToString();
 
     public async Task StartAsync(RecordingSettings settings, int videoWidth, int videoHeight, bool audioEnabled, string outputPath, CancellationToken ct = default)
@@ -36,11 +47,14 @@ public sealed class FFmpegEncoderService : IDisposable
                 "ffmpeg.exe was not found. Place it in an 'ffmpeg' subfolder next to the app, or install it and add it to PATH.");
 
         var encoder = ResolveEncoderName(settings.Encoder);
-        var args = BuildArguments(settings, videoWidth, videoHeight, encoder, outputPath, out var videoPipeName, out var audioPipeName, audioEnabled);
+        var args = BuildArguments(settings, videoWidth, videoHeight, encoder, outputPath, out var videoPipeName, out var audioPipeName, out var micPipeName, audioEnabled);
 
         _videoPipeServer = new NamedPipeServerStream(videoPipeName, PipeDirection.Out, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
         _audioPipeServer = audioEnabled
             ? new NamedPipeServerStream(audioPipeName!, PipeDirection.Out, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous)
+            : null;
+        _micPipeServer = micPipeName is not null
+            ? new NamedPipeServerStream(micPipeName, PipeDirection.Out, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous)
             : null;
 
         var psi = new ProcessStartInfo
@@ -106,6 +120,31 @@ public sealed class FFmpegEncoderService : IDisposable
         await connectTask.ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Waits for ffmpeg to connect to the microphone pipe (dual-leg noise-suppression case only). Must
+    /// be called only after the caller has begun writing to <see cref="AudioPipe"/> — see class remarks.
+    /// </summary>
+    public async Task WaitForMicConnectionAsync(CancellationToken ct = default)
+    {
+        if (_micPipeServer is null) return;
+
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cts.CancelAfter(TimeSpan.FromSeconds(10));
+
+        var connectTask = _micPipeServer.WaitForConnectionAsync(cts.Token);
+        var exitTask = _process!.WaitForExitAsync(cts.Token);
+        var completed = await Task.WhenAny(connectTask, exitTask).ConfigureAwait(false);
+
+        if (completed == exitTask || _process.HasExited)
+        {
+            var log = LastLog;
+            Cleanup();
+            throw new InvalidOperationException("ffmpeg exited before the microphone pipe connected. ffmpeg output:\n" + log);
+        }
+
+        await connectTask.ConfigureAwait(false);
+    }
+
     private static int? TargetHeight(OutputResolution resolution) => resolution switch
     {
         OutputResolution.P360 => 360,
@@ -130,6 +169,7 @@ public sealed class FFmpegEncoderService : IDisposable
     {
         try { _videoPipeServer?.Dispose(); } catch { /* best effort */ }
         try { _audioPipeServer?.Dispose(); } catch { /* best effort */ }
+        try { _micPipeServer?.Dispose(); } catch { /* best effort */ }
         try
         {
             if (_process is { HasExited: false }) _process.Kill(entireProcessTree: true);
@@ -138,13 +178,32 @@ public sealed class FFmpegEncoderService : IDisposable
         _process?.Dispose();
         _videoPipeServer = null;
         _audioPipeServer = null;
+        _micPipeServer = null;
         _process = null;
     }
 
-    private static string BuildArguments(RecordingSettings settings, int videoWidth, int videoHeight, string encoder, string outputPath, out string videoPipeName, out string? audioPipeName, bool audioEnabled)
+    /// <summary>
+    /// Studio Mic noise suppression filter chain (Phase 5), applied to the microphone leg only:
+    /// <c>highpass</c> knocks out sub-80Hz rumble (desk thumps, AC hum fundamentals), <c>adeclick</c>
+    /// repairs short transient clicks (keyboard/mouse clicks — afftdn alone is a stationary-noise
+    /// denoiser and does little for those), and <c>afftdn</c> with <c>tn=1</c> (adaptive noise-floor
+    /// tracking) handles the steady hiss/hum/fan noise without requiring a separate noise-profile step.
+    /// </summary>
+    private const string MicNoiseSuppressionFilterChain = "highpass=f=80,adeclick,afftdn=nr=12:nf=-25:tn=1";
+
+    private static string BuildArguments(RecordingSettings settings, int videoWidth, int videoHeight, string encoder, string outputPath, out string videoPipeName, out string? audioPipeName, out string? micPipeName, bool audioEnabled)
     {
         videoPipeName = $"capit_video_{Guid.NewGuid():N}";
         audioPipeName = audioEnabled ? $"capit_audio_{Guid.NewGuid():N}" : null;
+
+        // Dual-leg mode: both sources are active, suppression is requested, and each needs to reach
+        // ffmpeg unmixed so afftdn/highpass can be scoped to the mic alone (see AudioCaptureService
+        // remarks). Single-source cases stay on the one-pipe path below: a mic-only recording still
+        // gets suppression, just via a plain -af since there's nothing else to keep it isolated from.
+        var suppressionRequested = audioEnabled && settings.EnableMicNoiseSuppression && settings.CaptureMicrophone;
+        var dualLegMode = suppressionRequested && settings.CaptureSystemAudio;
+        var micOnlySuppression = suppressionRequested && !settings.CaptureSystemAudio;
+        micPipeName = dualLegMode ? $"capit_mic_{Guid.NewGuid():N}" : null;
 
         var sb = new StringBuilder();
         sb.Append("-y -hide_banner -loglevel warning ");
@@ -159,8 +218,23 @@ public sealed class FFmpegEncoderService : IDisposable
             sb.Append($"-probesize 32 -analyzeduration 0 -thread_queue_size 1024 -f s16le -ar {Capture.AudioCaptureService.SampleRate} -ac {Capture.AudioCaptureService.Channels} -i \\\\.\\pipe\\{audioPipeName} ");
         }
 
+        if (micPipeName is not null)
+        {
+            sb.Append($"-probesize 32 -analyzeduration 0 -thread_queue_size 1024 -f s16le -ar {Capture.AudioCaptureService.SampleRate} -ac {Capture.AudioCaptureService.Channels} -i \\\\.\\pipe\\{micPipeName} ");
+        }
+
         sb.Append("-map 0:v ");
-        if (audioPipeName is not null) sb.Append("-map 1:a ");
+        if (dualLegMode)
+        {
+            // Input #1 = system audio (untouched), input #2 = mic. Filter the mic leg in isolation,
+            // then amix it back with the clean system audio — system audio never enters the filter chain.
+            sb.Append($"-filter_complex \"[2:a]{MicNoiseSuppressionFilterChain}[micf];[1:a][micf]amix=inputs=2:duration=longest:dropout_transition=0[aout]\" -map \"[aout]\" ");
+        }
+        else if (audioPipeName is not null)
+        {
+            sb.Append("-map 1:a ");
+            if (micOnlySuppression) sb.Append($"-af \"{MicNoiseSuppressionFilterChain}\" ");
+        }
 
         // Capture always happens at the monitor's native resolution (VideoCaptureService/live preview are
         // unaffected); scaling to the user-selected output quality is left entirely to ffmpeg's own
@@ -234,9 +308,11 @@ public sealed class FFmpegEncoderService : IDisposable
     {
         try { _videoPipeServer?.Disconnect(); } catch { /* already gone */ }
         try { _audioPipeServer?.Disconnect(); } catch { /* already gone */ }
+        try { _micPipeServer?.Disconnect(); } catch { /* already gone */ }
 
         _videoPipeServer?.Dispose();
         _audioPipeServer?.Dispose();
+        _micPipeServer?.Dispose();
 
         if (_process is null) return;
 
@@ -272,6 +348,7 @@ public sealed class FFmpegEncoderService : IDisposable
     {
         _videoPipeServer?.Dispose();
         _audioPipeServer?.Dispose();
+        _micPipeServer?.Dispose();
         if (_process is { HasExited: false })
         {
             try { _process.Kill(entireProcessTree: true); } catch { /* best effort */ }

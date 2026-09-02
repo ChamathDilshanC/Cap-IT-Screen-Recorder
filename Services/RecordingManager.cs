@@ -186,7 +186,21 @@ public sealed class RecordingManager : IDisposable
             if (audioRequested)
             {
                 await _ffmpeg.WaitForAudioConnectionAsync();
-                _audio.Start(settings.CaptureSystemAudio, settings.CaptureMicrophone, settings.MicrophoneDeviceId, _ffmpeg.AudioPipe!);
+
+                // Dual-leg noise suppression: FFmpegEncoderService only opens the mic pipe once this
+                // (system-audio) pipe's probe is satisfied, which needs real bytes flowing on it — so
+                // the system leg must start pumping before we can wait for the mic pipe to connect.
+                // See FFmpegEncoderService's class remarks for the full chain of why.
+                if (settings.EnableMicNoiseSuppression && settings.CaptureSystemAudio && settings.CaptureMicrophone && _ffmpeg.MicAudioPipe is not null)
+                {
+                    _audio.StartDualSystemLeg(_ffmpeg.AudioPipe!);
+                    await _ffmpeg.WaitForMicConnectionAsync();
+                    _audio.StartDualMicLeg(settings.MicrophoneDeviceId, _ffmpeg.MicAudioPipe);
+                }
+                else
+                {
+                    _audio.Start(settings.CaptureSystemAudio, settings.CaptureMicrophone, settings.MicrophoneDeviceId, _ffmpeg.AudioPipe!);
+                }
             }
 
             LastOutputPath = outputPath;
