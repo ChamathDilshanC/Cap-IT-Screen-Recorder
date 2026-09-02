@@ -5,7 +5,7 @@
 ; notes. Requires Inno Setup 6.x (uses the {autopf}/{autodesktop} constants introduced in Inno 6).
 
 #define MyAppName "Cap-IT Screen Recorder"
-#define MyAppVersion "2.0.0"
+#define MyAppVersion "2.1.0"
 #define MyAppPublisher "Your Company Name"           ; TODO: replace with your real publisher name
 #define MyAppURL "https://github.com/yourusername/Cap-IT-Screen-Recorder"  ; TODO: replace with your real URL
 #define MyAppExeName "ScreenRecorderApp.exe"

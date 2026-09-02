@@ -8,7 +8,7 @@
 tutorial for you** — smart zoom that follows what you're actually doing, live on-screen annotations,
 studio-grade mic cleanup, and a one-click GIF export, all wrapped in a clean, modern WinUI 3 app.
 
-[![Release](https://img.shields.io/badge/release-v2.0.0-success?logo=github)](../../releases/latest)
+[![Release](https://img.shields.io/badge/release-v2.1.0-success?logo=github)](../../releases/latest)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-0078D6?logo=windows&logoColor=white)](#)
 [![.NET](https://img.shields.io/badge/.NET-8-512BD4?logo=dotnet&logoColor=white)](#)
 [![WinUI](https://img.shields.io/badge/UI-WinUI%203-5C2D91)](#)
