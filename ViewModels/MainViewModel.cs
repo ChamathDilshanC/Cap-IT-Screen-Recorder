@@ -212,7 +212,22 @@ public partial class MainViewModel : BaseViewModel
     public bool IsBusy => !IsIdle;
     public bool IsRecording => State == RecordingState.Recording;
     public bool IsPaused => State == RecordingState.Paused;
-    public string PauseResumeButtonText => IsPaused ? "Resume" : "Pause";
+
+    // "Pause Screen": freezes the recorded image only — audio and the elapsed timer keep running.
+    // See RecordingManager.IsScreenFrozen. Mirrored from the manager whenever a command reads State
+    // back; not gated by IsIdle since it's a mid-recording control.
+    [ObservableProperty] private bool _isScreenFrozen;
+    public string ScreenPauseButtonText => IsScreenFrozen ? "Resume Screen" : "Pause Screen";
+    public string ScreenPauseGlyph => IsScreenFrozen ? "" : "";
+
+    partial void OnIsScreenFrozenChanged(bool value)
+    {
+        OnPropertyChanged(nameof(ScreenPauseButtonText));
+        OnPropertyChanged(nameof(ScreenPauseGlyph));
+        ToggleScreenPauseCommand.NotifyCanExecuteChanged();
+    }
+
+    public string PauseResumeButtonText => IsPaused ? "Resume Video" : "Pause Video";
     public string PauseResumeGlyph => IsPaused ? "" : "";
 
     public MainViewModel()
@@ -519,6 +534,11 @@ public partial class MainViewModel : BaseViewModel
         StartRecordingCommand.NotifyCanExecuteChanged();
         StopRecordingCommand.NotifyCanExecuteChanged();
         PauseResumeCommand.NotifyCanExecuteChanged();
+
+        // Screen-freeze is cleared by the manager on stop / full-pause transitions — keep the mirror
+        // and the button's enablement in step with whatever State just became.
+        IsScreenFrozen = _manager.IsScreenFrozen;
+        ToggleScreenPauseCommand.NotifyCanExecuteChanged();
 
         if (IsIdle) RestartPreviewIfIdle();
     }
@@ -1034,7 +1054,7 @@ public partial class MainViewModel : BaseViewModel
     [RelayCommand(CanExecute = nameof(CanStop))]
     private async Task StopRecordingAsync()
     {
-        StatusMessage = "Finalizing…";
+        StatusMessage = "Finalizing… (optimizing for playback)";
         var path = await _manager.StopAsync();
         LastOutputPath = path;
         State = _manager.State; // triggers OnStateChanged, which restarts the live preview since we're idle again
@@ -1063,6 +1083,26 @@ public partial class MainViewModel : BaseViewModel
             StatusMessage = "Recording…";
         }
         State = _manager.State;
+    }
+
+    // Screen-freeze is meaningless while fully paused (nothing is being recorded then) — so it stays
+    // enabled only while actively recording, or while already frozen so the user can un-freeze.
+    private bool CanScreenPause() => IsRecording || IsScreenFrozen;
+
+    [RelayCommand(CanExecute = nameof(CanScreenPause))]
+    private void ToggleScreenPause()
+    {
+        if (IsScreenFrozen)
+        {
+            _manager.UnfreezeScreen();
+            StatusMessage = "Recording…";
+        }
+        else
+        {
+            _manager.FreezeScreen();
+            StatusMessage = "Screen paused — audio and timer still recording";
+        }
+        IsScreenFrozen = _manager.IsScreenFrozen;
     }
 
     [RelayCommand]

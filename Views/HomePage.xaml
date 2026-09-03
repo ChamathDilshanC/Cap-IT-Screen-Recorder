@@ -203,6 +203,20 @@
                         </StackPanel>
                     </StackPanel>
                 </Border>
+
+                <!-- Screen-paused badge: the app's own preview keeps showing the live screen (so the
+                     presenter can see what they're about to reveal), so this is the only cue that the
+                     recording's image is currently frozen. -->
+                <Border Visibility="{x:Bind ViewModel.IsScreenFrozen, Mode=OneWay}"
+                        Background="{ThemeResource SystemFillColorCautionBackgroundBrush}"
+                        BorderBrush="{ThemeResource SystemFillColorCautionBrush}" BorderThickness="1"
+                        CornerRadius="8" Padding="12,7" Margin="16"
+                        HorizontalAlignment="Center" VerticalAlignment="Top">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <FontIcon Glyph="&#xE769;" FontSize="13" Foreground="{ThemeResource SystemFillColorCautionBrush}" />
+                        <TextBlock Text="Screen paused — audio and timer still recording" FontSize="13" />
+                    </StackPanel>
+                </Border>
             </Grid>
         </Border>
 
@@ -224,6 +238,18 @@
                 <StackPanel Orientation="Horizontal" Spacing="8">
                     <FontIcon Glyph="{x:Bind ViewModel.PauseResumeGlyph, Mode=OneWay}" FontSize="14" />
                     <TextBlock Text="{x:Bind ViewModel.PauseResumeButtonText, Mode=OneWay}" FontSize="15" />
+                </StackPanel>
+            </Button>
+
+            <!-- Freezes the recorded image only — audio and the elapsed timer keep running.
+                 The Button disables itself via the command's CanExecute (false while fully paused). -->
+            <Button Command="{x:Bind ViewModel.ToggleScreenPauseCommand}"
+                    Padding="22,12" CornerRadius="20"
+                    Visibility="{x:Bind ViewModel.IsBusy, Mode=OneWay}"
+                    ToolTipService.ToolTip="Freeze the screen image; audio and timer keep recording">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <FontIcon Glyph="{x:Bind ViewModel.ScreenPauseGlyph, Mode=OneWay}" FontSize="14" />
+                    <TextBlock Text="{x:Bind ViewModel.ScreenPauseButtonText, Mode=OneWay}" FontSize="15" />
                 </StackPanel>
             </Button>
 

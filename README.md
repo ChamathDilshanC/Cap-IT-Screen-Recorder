@@ -9,7 +9,7 @@ tutorial for you** — pick what to record from live thumbnails, let smart zoom 
 actually doing, draw on your screen while you talk, clean up your mic, and export a trimmed GIF, all
 without leaving the app.
 
-[![Release](https://img.shields.io/badge/release-v2.2.0-success?logo=github)](../../releases/latest)
+[![Release](https://img.shields.io/badge/release-v2.3.0-success?logo=github)](../../releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/ChamathDilshanC/Cap-IT-Screen-Recorder/total?color=blue&logo=github)](../../releases)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-0078D6?logo=windows&logoColor=white)](#-installation)
 [![.NET](https://img.shields.io/badge/.NET-8-512BD4?logo=dotnet&logoColor=white)](#%EF%B8%8F-tech-stack)
@@ -18,7 +18,7 @@ without leaving the app.
 
 ### [**⬇ Download for Windows**](../../releases/latest)
 
-[What's new](#-whats-new-in-v220) · [Features](#-features) · [Screenshots](#-screenshots) · [Install](#-installation) · [Shortcuts](#%EF%B8%8F-keyboard-shortcuts) · [Build from source](#-building-from-source)
+[What's new](#-whats-new-in-v230) · [Features](#-features) · [Screenshots](#-screenshots) · [Install](#-installation) · [Shortcuts](#%EF%B8%8F-keyboard-shortcuts) · [Build from source](#-building-from-source)
 
 <br/>
 
@@ -28,62 +28,35 @@ without leaving the app.
 
 ---
 
-## 🆕 What's new in v2.2.0
+## 🆕 What's new in v2.3.0
 
-This release is about making the app tell you the truth — about what it's recording, what it's
-hearing, and what it's about to save.
+Two things this release: a second way to pause, and every recording plays back in the review window
+again.
 
 | | |
 |---|---|
-| 🖼️ **Visual source picker** | A new **Choose source** gallery shows a *live* thumbnail of every display and every open window, so you pick what to record by looking at it. Windows are thumbnailed with `PrintWindow`, so even a window buried behind three others previews correctly. |
-| 🎚️ **Audio meters that actually move** | The mic and system-audio meters are now segmented, dBFS-scaled level meters that track your voice in real time — and they appear on both the Home and Audio tabs. |
-| 🖊️ **Annotations that actually work** | The on-screen drawing overlay was rebuilt from the ground up. It's armed the moment you enable it (no recording required), the hotkeys fire reliably, and **Ctrl+Shift+Z** undo was added. |
-| 🔦 **Live spotlight control** | The spotlight toggle and radius now apply instantly — to the live preview *and* to a recording already in progress. |
-| ✂️ **Trim & GIF export, fixed** | The post-recording review window now opens reliably, knows the real length of your clip, and closes without taking the app with it. |
+| ⏸️ **Pause the screen without pausing the recording** | The old Pause froze the picture, the timer, and the audio all together. There's now a separate **Pause Screen** that holds the last frame on screen while your voice and the clip's timeline keep recording — switch a tab, open something you'd rather not have on camera, keep narrating, then hit **Resume Screen**. The original all-stop pause is still there as **Pause Video**. |
+| ▶️ **Recordings play in the review window again** | "Error: Video could not be decoded" in the post-recording Review & Export window is fixed. |
 
 <details>
-<summary><strong>The bugs behind those five lines</strong> (click to expand — they're more interesting than the summary)</summary>
+<summary><strong>Why the review window couldn't play its own recordings</strong></summary>
 
 <br/>
 
-**Every "Entire display" recording was secretly recording a window.** The record path handed the
-capture engine both the selected monitor *and* the selected window, and the engine picks its
-acquisition path by whichever argument isn't null — so the window always won. The live preview looked
-correct because it already nulled out the inactive target, which is exactly why this survived so long.
-The chosen capture-target kind is now the single authority, enforced in three places.
+Cap-IT records to *fragmented* MP4 on purpose — an empty `moov` up front plus a `moof`/`mdat` pair
+flushed per GOP, so a crash or a forced kill mid-recording still leaves a file that's valid up to the
+last flushed fragment, with none of the multi-second rewrite-on-stop that `+faststart` forces on a
+large file. The cost is that Windows Media Foundation — which backs the `MediaPlayer` in the review
+window — can't reliably decode an `empty_moov` fragmented MP4. It already couldn't read the duration
+(that's why the trim range is probed with FFmpeg), and on many setups it fails the video track
+outright.
 
-**The audio meters were frozen because of a one-word default.** `BufferedWaveProvider.ReadFully`
-defaults to `true`, which makes `Read()` zero-pad and *never* return 0 — so the drain loop reading mic
-and speaker samples never terminated. It spun a CPU core at 100% forever and reported an RMS of zero
-from the padding on every iteration after the first. Two stale instances of the app were found holding
-**17,763 s and 4,674 s** of CPU time doing precisely this.
-
-**Annotations produced black video.** The overlay was a WinUI 3 `Window` with a transparent background
-and `WS_EX_LAYERED`, which does not make a XAML window transparent — its swapchain is composited as
-opaque, so a full-screen "transparent" overlay landed on the desktop as a **solid black sheet**. Since
-this app captures the desktop, everything downstream captured the sheet: preview, thumbnails, and the
-recording itself. Measured on a sampled grid, the display went from 165/176 non-black pixels to 0/176
-the moment the overlay appeared. Neither documented DWM escape hatch fixed it, so the overlay is now a
-real Win32 layered window rendered with `UpdateLayeredWindow` — back to 165/176, identical to no
-overlay at all.
-
-**Ctrl+Shift+D could never have worked.** The hotkey hook tested its modifiers with `GetKeyState`,
-which reports key state as of the last input message *the calling thread* processed — and a low-level
-hook thread pumps no keyboard input, so Ctrl and Shift always read as up. Now `GetAsyncKeyState`.
-(All three global hooks also leaked their thread, because they posted `WM_QUIT` to a .NET *managed*
-thread id instead of the Win32 one.)
-
-**The spotlight radius went nowhere.** It was a `Prepare()`-time-only parameter with no restart wired
-up, so dragging the slider saved a new number that nothing on screen ever reflected.
-
-**Trim & GIF export never opened, then couldn't measure, then killed the app.** Three stacked bugs:
-the review window subscribed to `MediaPlayerElement.MediaPlayer` one line *before* assigning a
-`Source`, and that property is null until you do — so the constructor threw and the window silently
-never appeared. Once it opened, its trim slider read 0:00, because recordings are written as
-*fragmented* MP4 (deliberately, to avoid an expensive rewrite-on-stop) and Media Foundation reports no
-duration for those; duration is now probed with FFmpeg instead. And finally, "Keep MP4" called
-`Window.Close()` re-entrantly from its own click handler, which throws `E_ABORT` and took the whole
-process down with it.
+So once recording actually stops, the fragmented file is now remuxed into a normal indexed MP4:
+`-c copy` makes it an I/O-bound container rewrite — seconds, even for a multi-GB file — and a kill
+mid-remux just leaves the already-valid fragmented source untouched, which is strictly safer than
+writing `+faststart` during capture. If the remux can't run for any reason, the fragmented file is
+kept under the final name; it still opens in VLC and every editor, only the in-app preview struggled
+with it.
 
 </details>
 
@@ -184,7 +157,7 @@ process down with it.
 
 ## 📦 Installation
 
-Grab **`CapIT-Screen-Recorder-Setup-2.2.0.exe`** from
+Grab **`CapIT-Screen-Recorder-Setup-2.3.0.exe`** from
 **[Releases](../../releases/latest)** and run it. It's a normal Windows installer (built with Inno
 Setup) and it's fully self-contained — no separate .NET runtime, no Windows App SDK runtime, and no
 manual FFmpeg download.
@@ -423,10 +396,9 @@ by decoupling webcam lifecycle from video-capture lifecycle entirely.
 256-color palette. Fixed with the standard two-pass approach — `palettegen` builds an optimal palette
 for the exact trimmed clip, then `paletteuse` dithers onto it.
 
-**And the six fixed in v2.2.0** — display recordings silently capturing a window, frozen audio meters
-spinning a CPU core, an annotation overlay that blacked out the entire screen, a hotkey that could
-never fire, a spotlight radius wired to nothing, and a review window that didn't open, couldn't
-measure, and crashed the app on close. [Full write-up above.](#-whats-new-in-v220)
+**And "Video could not be decoded" in v2.3.0** — every recording opened in the review window failed
+to play, because Media Foundation can't decode the fragmented MP4 the app records for crash-safety.
+Recordings are now remuxed to a standard MP4 on stop. [Full write-up above.](#-whats-new-in-v230)
 
 ---
 

@@ -22,6 +22,13 @@ public sealed class RecordingManager : IDisposable
     private CancellationTokenSource? _pacerCts;
     private Task? _pacerTask;
 
+    // The path ffmpeg actually writes to during capture (a fragmented ".part.mp4"), and the final
+    // path the user asked for. For MP4 output these differ: on stop the fragmented file is remuxed
+    // into a normal faststart MP4 at _finalPath (see StopAsync / FFmpegRemuxer). For MKV they're the
+    // same — ffmpeg writes straight to the final path.
+    private string? _encodePath;
+    private string? _finalPath;
+
     private nint? _previewMonitorHandle;
     private nint? _previewWindowHandle;
     private bool _previewCursor;
@@ -47,6 +54,24 @@ public sealed class RecordingManager : IDisposable
     public RecordingState State { get; private set; } = RecordingState.Idle;
     public string? LastOutputPath { get; private set; }
     public string? LastError { get; private set; }
+
+    /// <summary>
+    /// "Screen pause": while true the pacer keeps feeding ffmpeg the last captured frame (so the
+    /// recorded image freezes) but audio and the elapsed timer keep running normally. Independent of
+    /// <see cref="State"/> — the session is still <see cref="RecordingState.Recording"/>. A full
+    /// <see cref="Pause"/> overrides it visually anyway (same pacer guard) and it re-applies on resume.
+    /// </summary>
+    public bool IsScreenFrozen { get; private set; }
+
+    /// <summary>Freezes the recorded image only. No-op unless actively recording.</summary>
+    public void FreezeScreen()
+    {
+        if (State != RecordingState.Recording) return;
+        IsScreenFrozen = true;
+    }
+
+    /// <summary>Resumes live frames after <see cref="FreezeScreen"/>.</summary>
+    public void UnfreezeScreen() => IsScreenFrozen = false;
 
     public int PreviewWidth => _video.Width;
     public int PreviewHeight => _video.Height;
@@ -182,6 +207,7 @@ public sealed class RecordingManager : IDisposable
 
         State = RecordingState.Starting;
         LastError = null;
+        IsScreenFrozen = false;
 
         try
         {
@@ -201,7 +227,15 @@ public sealed class RecordingManager : IDisposable
                 settings.MouseTrackingZoomEnabled, settings.ZoomFactor, settings.KeystrokeOverlayEnabled,
                 settings.SpotlightEnabled, settings.SpotlightRadius, settings.ClickRipplesEnabled); } });
 
-            var outputPath = settings.BuildOutputFilePath();
+            _finalPath = settings.BuildOutputFilePath();
+            // MP4 is recorded to a fragmented ".part.mp4" and remuxed to a faststart MP4 on stop
+            // (see StopAsync). MKV has no such step — the fragmented flags aren't applied to it and
+            // Media Foundation can't play it regardless — so it's written straight to the final path.
+            _encodePath = settings.Container == OutputContainer.Mp4
+                ? Path.Combine(Path.GetDirectoryName(_finalPath)!,
+                    Path.GetFileNameWithoutExtension(_finalPath) + ".part.mp4")
+                : _finalPath;
+            var outputPath = _encodePath;
             var audioRequested = settings.CaptureSystemAudio || settings.CaptureMicrophone;
 
             // ffmpeg's rawvideo demuxer blocks probing the video pipe until real bytes arrive, and
@@ -238,7 +272,7 @@ public sealed class RecordingManager : IDisposable
                 }
             }
 
-            LastOutputPath = outputPath;
+            LastOutputPath = _finalPath;
             _startTimeUtc = DateTime.UtcNow;
             _pausedAccum = TimeSpan.Zero;
             _pauseStartedUtc = null;
@@ -261,7 +295,7 @@ public sealed class RecordingManager : IDisposable
         {
             while (await timer.WaitForNextTickAsync(ct).ConfigureAwait(false))
             {
-                if (State != RecordingState.Paused)
+                if (State != RecordingState.Paused && !IsScreenFrozen)
                 {
                     _video.TryGetLatestFrame(_frameBuffer);
                 }
@@ -290,6 +324,7 @@ public sealed class RecordingManager : IDisposable
     {
         if (State != RecordingState.Recording) return;
         State = RecordingState.Paused;
+        IsScreenFrozen = false; // a full pause supersedes screen-freeze; resume comes back clean
         _audio.IsMuted = true;
         _pauseStartedUtc = DateTime.UtcNow;
     }
@@ -320,8 +355,37 @@ public sealed class RecordingManager : IDisposable
 
         await _ffmpeg.StopAsync();
 
+        IsScreenFrozen = false;
+        await FinalizeRecordingAsync();
+
         State = RecordingState.Idle;
         return LastOutputPath;
+    }
+
+    /// <summary>
+    /// Turns the fragmented ".part.mp4" ffmpeg just finished writing into the normal faststart MP4 the
+    /// user asked for. Falls back to renaming the fragmented file into place if the remux can't run or
+    /// fails — a fragmented MP4 still opens fine in VLC/editors, only the in-app preview struggles with
+    /// it, so a recording is never lost over this. No-op when encode and final paths are the same (MKV).
+    /// </summary>
+    private async Task FinalizeRecordingAsync()
+    {
+        if (_encodePath is null || _finalPath is null || _encodePath == _finalPath) return;
+        if (!File.Exists(_encodePath)) return;
+
+        var remuxed = await FFmpegRemuxer.ToFaststartAsync(_encodePath, _finalPath);
+        try
+        {
+            if (remuxed)
+            {
+                File.Delete(_encodePath);
+            }
+            else
+            {
+                File.Move(_encodePath, _finalPath, overwrite: true);
+            }
+        }
+        catch { /* best effort — LastOutputPath still points at _finalPath either way */ }
     }
 
     private async Task CleanupAfterFailureAsync()
@@ -330,6 +394,16 @@ public sealed class RecordingManager : IDisposable
         _audio.Stop();
         lock (_videoLock) { _video.Stop(); }
         try { await _ffmpeg.StopAsync(); } catch { /* best effort */ }
+
+        // Don't leave a half-written ".part.mp4" behind after a failed start.
+        try
+        {
+            if (_encodePath is not null && _encodePath != _finalPath && File.Exists(_encodePath))
+            {
+                File.Delete(_encodePath);
+            }
+        }
+        catch { /* best effort */ }
     }
 
     public void Dispose()
