@@ -27,24 +27,30 @@
                     <FontIcon Glyph="&#xE767;" />
                 </ctcontrols:SettingsExpander.HeaderIcon>
                 <ctcontrols:SettingsExpander.Items>
-                    <ctcontrols:SettingsCard Header="Record system audio">
+                    <!-- Switchable mid-recording: both sources feed one mixer behind a single ffmpeg
+                         audio pipe, so a source can be added or dropped without restarting the encode.
+                         See MainViewModel.CanChangeAudioLive for the two cases where it can't. -->
+                    <ctcontrols:SettingsCard Header="Record system audio"
+                                              Description="Applies immediately, even mid-recording">
                         <ToggleSwitch OnContent="On" OffContent="Off"
                                       IsOn="{x:Bind ViewModel.CaptureSystemAudio, Mode=TwoWay}"
-                                      IsEnabled="{x:Bind ViewModel.IsIdle, Mode=OneWay}" />
+                                      IsEnabled="{x:Bind ViewModel.CanChangeAudioLive, Mode=OneWay}" />
                     </ctcontrols:SettingsCard>
 
-                    <ctcontrols:SettingsCard Header="Record microphone">
+                    <ctcontrols:SettingsCard Header="Record microphone"
+                                              Description="Applies immediately, even mid-recording">
                         <ToggleSwitch OnContent="On" OffContent="Off"
                                       IsOn="{x:Bind ViewModel.CaptureMicrophone, Mode=TwoWay}"
-                                      IsEnabled="{x:Bind ViewModel.IsIdle, Mode=OneWay}" />
+                                      IsEnabled="{x:Bind ViewModel.CanChangeAudioLive, Mode=OneWay}" />
                     </ctcontrols:SettingsCard>
 
-                    <ctcontrols:SettingsCard Header="Microphone device">
+                    <ctcontrols:SettingsCard Header="Microphone device"
+                                              Description="Can be swapped mid-recording too">
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <ComboBox MinWidth="260"
                                 ItemsSource="{x:Bind ViewModel.Microphones}"
                                 SelectedItem="{x:Bind ViewModel.SelectedMicrophone, Mode=TwoWay}"
-                                IsEnabled="{x:Bind ViewModel.IsIdle, Mode=OneWay}" />
+                                IsEnabled="{x:Bind ViewModel.CanChangeAudioLive, Mode=OneWay}" />
                             <Button Command="{x:Bind ViewModel.RefreshMicrophonesCommand}"
                                     ToolTipService.ToolTip="Refresh microphones">
                                 <FontIcon Glyph="&#xE72C;" FontSize="14" />
@@ -95,6 +101,10 @@
                               IsOn="{x:Bind ViewModel.EnableMicNoiseSuppression, Mode=TwoWay}"
                               IsEnabled="{x:Bind ViewModel.IsIdle, Mode=OneWay}" />
             </ctcontrols:SettingsCard>
+
+            <TextBlock Text="The audio sources above are locked for this recording: it was started with no audio at all, or with noise suppression on both sources — in either case FFmpeg's audio graph was fixed when the recording began. Stop and start again to change them."
+                       Style="{StaticResource SectionDescriptionText}"
+                       Visibility="{x:Bind ViewModel.ShowAudioLockedHint, Mode=OneWay}" />
         </StackPanel>
     </ScrollViewer>
 </Page>

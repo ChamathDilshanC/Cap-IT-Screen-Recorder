@@ -37,6 +37,10 @@ public partial class MainViewModel : BaseViewModel
     private CancellationTokenSource? _micMonitorCts;
     private CancellationTokenSource? _speakerMonitorCts;
 
+    // Same background-apply-with-debounce reasoning as the two monitors above, for pushing an audio
+    // source change into a recording that's already running — see ApplyAudioSourcesLive.
+    private CancellationTokenSource? _audioSourceCts;
+
     public ObservableCollection<MonitorInfo> Monitors { get; } = [];
     public ObservableCollection<AudioDeviceOption> Microphones { get; } = [];
     public ObservableCollection<WindowInfo> Windows { get; } = [];
@@ -216,6 +220,19 @@ public partial class MainViewModel : BaseViewModel
     public bool HasPreview => PreviewSource is not null;
     public bool ShowPlaceholder => !HasPreview;
 
+    /// <summary>The installed release version, shown under the Home tab's footer — the same number <see cref="UpdateService"/> compares against the latest GitHub release tag.</summary>
+    public string AppVersionText => $"Version {UpdateService.CurrentVersion.ToString(3)}";
+
+    /// <summary>
+    /// Audio sources are freely editable when idle, and mid-recording too whenever the running audio
+    /// pipeline can absorb the change — see RecordingManager.CanChangeAudioSourcesLive for the two cases
+    /// where it can't.
+    /// </summary>
+    public bool CanChangeAudioLive => IsIdle || _manager.CanChangeAudioSourcesLive;
+
+    /// <summary>Shown only in the case where the audio controls are locked *because of how this particular recording was started*, so the greyed-out switches don't read as a bug.</summary>
+    public bool ShowAudioLockedHint => IsBusy && !_manager.CanChangeAudioSourcesLive;
+
     public bool IsIdle => State == RecordingState.Idle;
     public bool IsBusy => !IsIdle;
     public bool IsRecording => State == RecordingState.Recording;
@@ -367,6 +384,7 @@ public partial class MainViewModel : BaseViewModel
         _uiTimer.Stop();
         _micMonitorCts?.Cancel();
         _speakerMonitorCts?.Cancel();
+        _audioSourceCts?.Cancel();
         try { _micLevelMonitor.Dispose(); } catch { /* best effort */ }
         try { _speakerLevelMonitor.Dispose(); } catch { /* best effort */ }
         try { _annotations.Disarm(); } catch { /* best effort */ }
@@ -542,6 +560,8 @@ public partial class MainViewModel : BaseViewModel
         OnPropertyChanged(nameof(IsPaused));
         OnPropertyChanged(nameof(PauseResumeButtonText));
         OnPropertyChanged(nameof(CanToggleAnnotations));
+        OnPropertyChanged(nameof(CanChangeAudioLive));
+        OnPropertyChanged(nameof(ShowAudioLockedHint));
         StartRecordingCommand.NotifyCanExecuteChanged();
         StopRecordingCommand.NotifyCanExecuteChanged();
         PauseResumeCommand.NotifyCanExecuteChanged();
@@ -735,9 +755,37 @@ public partial class MainViewModel : BaseViewModel
     {
         QueueSaveSettings();
         RestartMicMonitor();
+        ApplyAudioSourcesLive();
         OnPropertyChanged(nameof(MicStatusText));
         OnPropertyChanged(nameof(MicMeterBrush));
         OnPropertyChanged(nameof(IsMicMonitorAvailable));
+    }
+
+    /// <summary>
+    /// Pushes the current audio-source selection into a recording that's already running. Opening and
+    /// closing WASAPI devices MUST happen off the UI thread (see MicLevelMonitorService's remarks — doing
+    /// it inline is what used to freeze the whole app), and the short debounce coalesces the burst of
+    /// changes made clicking through the device combo into one apply. No-op when idle or when the
+    /// running pipeline can't take a source change — see RecordingManager.CanChangeAudioSourcesLive.
+    /// </summary>
+    private void ApplyAudioSourcesLive()
+    {
+        if (!_manager.CanChangeAudioSourcesLive) return;
+
+        _audioSourceCts?.Cancel();
+        var cts = _audioSourceCts = new CancellationTokenSource();
+        var systemAudio = CaptureSystemAudio;
+        var microphone = CaptureMicrophone;
+        var micDeviceId = SelectedMicrophone?.Id;
+
+        _ = Task.Run(async () =>
+        {
+            try { await Task.Delay(200, cts.Token); }
+            catch (OperationCanceledException) { return; }
+
+            try { _manager.UpdateAudioSources(systemAudio, microphone, micDeviceId); }
+            catch { /* best effort: a device that won't open shouldn't take the recording down */ }
+        });
     }
 
     partial void OnMicLevelChanged(double value)
@@ -759,6 +807,7 @@ public partial class MainViewModel : BaseViewModel
         QueueSaveSettings();
         OnPropertyChanged(nameof(ShowSpeakerMeter));
         RestartSpeakerMonitor();
+        ApplyAudioSourcesLive();
         // IsActive can flip without SpeakerLevel itself changing (e.g. it's already 0 and Start() just
         // failed, or it's still 0 right after a successful Start() before the first callback arrives) —
         // OnSpeakerLevelChanged wouldn't fire in either case, so these need an explicit nudge here too.
@@ -780,6 +829,7 @@ public partial class MainViewModel : BaseViewModel
         QueueSaveSettings();
         OnPropertyChanged(nameof(ShowMicMeter));
         RestartMicMonitor();
+        ApplyAudioSourcesLive();
         // See the matching comment in OnCaptureSystemAudioChanged — IsActive can change independently of
         // MicLevel, so OnMicLevelChanged alone can't be relied on to refresh these.
         OnPropertyChanged(nameof(MicStatusText));

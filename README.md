@@ -9,7 +9,7 @@ tutorial for you** — pick what to record from live thumbnails, let smart zoom 
 actually doing, draw on your screen while you talk, clean up your mic, and export a trimmed GIF, all
 without leaving the app.
 
-[![Release](https://img.shields.io/badge/release-v2.4.0-success?logo=github)](../../releases/latest)
+[![Release](https://img.shields.io/badge/release-v2.5.0-success?logo=github)](../../releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/ChamathDilshanC/Cap-IT-Screen-Recorder/total?color=blue&logo=github)](../../releases)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-0078D6?logo=windows&logoColor=white)](#-installation)
 [![.NET](https://img.shields.io/badge/.NET-8-512BD4?logo=dotnet&logoColor=white)](#%EF%B8%8F-tech-stack)
@@ -18,7 +18,7 @@ without leaving the app.
 
 ### [**⬇ Download for Windows**](../../releases/latest)
 
-[What's new](#-whats-new-in-v240) · [Features](#-features) · [Screenshots](#-screenshots) · [Install](#-installation) · [Shortcuts](#%EF%B8%8F-keyboard-shortcuts) · [Build from source](#-building-from-source)
+[What's new](#-whats-new-in-v250) · [Features](#-features) · [Screenshots](#-screenshots) · [Install](#-installation) · [Shortcuts](#%EF%B8%8F-keyboard-shortcuts) · [Build from source](#-building-from-source)
 
 <br/>
 
@@ -28,40 +28,39 @@ without leaving the app.
 
 ---
 
-## 🆕 What's new in v2.4.0
+## 🆕 What's new in v2.5.0
 
-A proper drawing toolbar for teaching, settings you can change mid-take, and a Pause that actually
-pauses.
+Audio sources you can change mid-take, and the installed version on screen.
 
 | | |
 |---|---|
-| 🧰 **Annotation toolbar — shapes and text** | Drawing Mode now puts a floating palette on screen: **Pen, Line, Arrow, Rectangle, Ellipse** and a click-to-type **Text** tool, plus the six colours, three thickness presets, undo and clear. Drag it anywhere. It's flagged `WDA_EXCLUDEFROMCAPTURE`, so **the toolbar never appears in the recording** — only what you draw with it does. |
-| ⚙️ **Change settings while you're recording** | Cursor style, smart zoom and its level, the keystroke overlay, click ripples, the spotlight, and the webcam PiP can all be switched on, off, or adjusted **mid-recording** — they're composited per frame, so they take effect on the next one. No stopping, no restart. |
-| ⏸️ **Pause actually shortens the recording** | Pausing used to keep feeding the encoder a frozen frame and silence, so a 4-second take paused for 5 seconds came out **9 seconds long** — and disagreed with the on-screen timer. Both the video pacer and the audio pump now stop writing entirely while paused. |
+| 🎙️ **Switch audio sources while recording** | **Record system audio**, **Record microphone** and the **microphone device** can now be changed in the middle of a recording. Turn your mic on halfway through, drop system sound before a noisy bit, swap headsets — no stopping, no second file. |
+| 🔢 **Version on the Home tab** | The installed release version now shows under *Developed by Chamath Dilshan*, so you can tell at a glance which build you're on. |
+
+Everything on the **Capture** tab that FFmpeg is handed once at start — capture target, frame rate,
+encoder, bitrate, quality and output format — is still fixed for the length of a recording, because a
+single MP4 can't change resolution or frame rate partway through. The Capture tab now says so while
+you're recording, instead of just greying out.
 
 <details>
-<summary><strong>What was wrong with Pause, and how the toolbar stays out of your video</strong></summary>
+<summary><strong>How the audio sources come and go mid-stream</strong></summary>
 
 <br/>
 
-**Pause never paused the file.** The frame pacer skipped *fetching* a new frame while paused but still
-wrote the last one to FFmpeg on every tick, and the audio pump zero-filled its buffer and wrote that —
-so the encoder received a full second of video and audio for every real second of a pause. The elapsed
-timer, which correctly excludes paused time, therefore disagreed with the file it produced. Both now
-skip the write outright, so the output timeline stops with the timer and the two streams resume in
-step. The audio pump still *reads* and discards while paused, so the 2-second capture buffer can't fill
-up and replay stale audio the moment you resume.
+Both sources already fed a single NAudio `MixingSampleProvider` behind one FFmpeg audio pipe. The
+mixer is now built from the target wave format rather than from a fixed source list, which keeps it
+valid with **zero** inputs — so a source can be added or removed at any time, and with `ReadFully`
+set it hands back silence rather than stalling when nothing is attached. FFmpeg keeps receiving a
+continuous audio stream either way, so the timeline never drifts.
 
-**The toolbar is a second window on purpose.** Annotations have to be captured — that's the whole
-point, they're drawn onto the desktop the recorder is duplicating. A palette drawn onto that same
-surface would be captured too. So the palette is its own layered window with
-`SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)`, which DXGI Desktop Duplication and Windows
-Graphics Capture both honour: visible on your screen, absent from the recording and the live preview.
+Opening and closing a WASAPI device can't happen on the UI thread (that's what used to freeze the app
+when the mic device changed), so each change is applied on a background thread with a short debounce
+— the same pattern the live level meters already use.
 
-**Typing doesn't leak.** The overlay is `WS_EX_NOACTIVATE` and never takes keyboard focus, so the text
-tool's keystrokes come from the low-level hook that already handles the annotation hotkeys. While a
-label is being typed the hook returns non-zero for printable keys, Backspace, Enter and Esc, so they
-land in the annotation instead of the app underneath.
+Two cases still can't take a live change, and the Audio tab now explains rather than just disabling:
+a recording **started with no audio at all** has no FFmpeg audio stream to feed, and the **Studio Mic
+noise suppression** path puts each source on its own FFmpeg input inside a fixed `amix` filter graph
+that can't lose a leg mid-stream.
 
 </details>
 
@@ -104,7 +103,7 @@ land in the annotation instead of the app underneath.
 - **Eight-tab NavigationView shell** — Home, Capture, Smart Tracking, Webcam, Annotations, Effects, Audio, Settings; each a focused, card-based Fluent Design page
 - **Live preview** of exactly what's being captured, from the moment a source is selected — not just while recording
 - **Pause / resume, two ways** — **Pause Video** stops the recording outright (the file gets no longer while you're paused), **Pause Screen** freezes just the picture while your voice and the timeline keep running
-- **Live settings** — cursor style, smart zoom, keystroke overlay, click ripples, spotlight and the webcam PiP can all be changed mid-recording
+- **Live settings** — cursor style, smart zoom, keystroke overlay, click ripples, spotlight, the webcam PiP **and your audio sources** can all be changed mid-recording
 - **In-app updates** — checks GitHub Releases on startup and can download and install a new version in place
 - **FFmpeg auto-setup** — if `ffmpeg.exe` isn't found, Start Recording offers to fetch it with a live progress bar instead of failing
 
@@ -163,7 +162,7 @@ land in the annotation instead of the app underneath.
 
 ## 📦 Installation
 
-Grab **`CapIT-Screen-Recorder-Setup-2.4.0.exe`** from
+Grab **`CapIT-Screen-Recorder-Setup-2.5.0.exe`** from
 **[Releases](../../releases/latest)** and run it. It's a normal Windows installer (built with Inno
 Setup) and it's fully self-contained — no separate .NET runtime, no Windows App SDK runtime, and no
 manual FFmpeg download.
@@ -405,7 +404,7 @@ for the exact trimmed clip, then `paletteuse` dithers onto it.
 **And the two fixed in v2.3.0 / v2.4.0** — "Video could not be decoded" in the review window (Media
 Foundation can't decode the fragmented MP4 the app records for crash-safety; recordings are now
 remuxed to a standard MP4 on stop), and a Pause that never actually shortened the file.
-[Full write-up above.](#-whats-new-in-v240)
+[Full write-up above.](#-whats-new-in-v250)
 
 ---
 

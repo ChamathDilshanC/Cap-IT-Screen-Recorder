@@ -211,6 +211,26 @@ public sealed class RecordingManager : IDisposable
     /// <summary>Starts/stops/switches the webcam PiP overlay live. Already independent of the screen-capture engine's lifecycle — see VideoCaptureService.SetWebcam.</summary>
     public void UpdateWebcam(bool enabled, string? deviceId) => _video.SetWebcam(enabled, deviceId);
 
+    /// <summary>
+    /// Whether system-audio / microphone / mic-device changes can be applied to the recording that's
+    /// running right now. False when no audio pipe was opened at all (both sources were off at record
+    /// start, so ffmpeg has no audio stream to feed) and for the dual-leg noise-suppression pipeline,
+    /// whose <c>amix</c> filter graph can't lose an input mid-stream — see
+    /// <see cref="AudioCaptureService.SupportsLiveSourceChanges"/>.
+    /// </summary>
+    public bool CanChangeAudioSourcesLive =>
+        State is RecordingState.Recording or RecordingState.Paused && _audio.SupportsLiveSourceChanges;
+
+    /// <summary>
+    /// Applies an audio source change to the running recording. Opens/closes WASAPI devices, so call it
+    /// from a background thread — never the UI thread.
+    /// </summary>
+    public void UpdateAudioSources(bool captureSystemAudio, bool captureMicrophone, string? microphoneDeviceId)
+    {
+        _audio.SetSystemAudioEnabled(captureSystemAudio);
+        _audio.SetMicrophone(captureMicrophone, microphoneDeviceId);
+    }
+
     /// <summary>Stops preview-only capture. No-op while actually recording.</summary>
     public void StopPreview()
     {

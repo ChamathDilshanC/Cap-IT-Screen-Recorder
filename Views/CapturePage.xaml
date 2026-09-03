@@ -136,6 +136,10 @@
                     </ctcontrols:SettingsCard>
                 </ctcontrols:SettingsExpander.Items>
             </ctcontrols:SettingsExpander>
+
+            <TextBlock Text="Capture target, frame rate, encoder, bitrate, quality and output format are fixed for the length of a recording — FFmpeg is handed them once when it starts, and a single MP4 can't change resolution or frame rate partway through. Everything else (cursor, zoom, spotlight, ripples, keystrokes, webcam, audio sources) can be changed while you record."
+                       Style="{StaticResource SectionDescriptionText}"
+                       Visibility="{x:Bind ViewModel.IsBusy, Mode=OneWay}" />
         </StackPanel>
     </ScrollViewer>
 </Page>

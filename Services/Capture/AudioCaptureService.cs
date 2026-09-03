@@ -41,7 +41,26 @@ public sealed class AudioCaptureService : IDisposable
     private Stream? _outputStream;
     private Stream? _micOutputStream;
 
+    // The mixer inputs currently feeding the pre-mixed path, kept so a source can be added or removed
+    // mid-recording (see SetSystemAudioEnabled / SetMicrophone). Guarded by _liveLock, which serializes
+    // those UI-driven changes against each other; NAudio's MixingSampleProvider already locks its own
+    // source list, so the pump thread's Read is safe against them without extra coordination.
+    private readonly object _liveLock = new();
+    private ISampleProvider? _loopbackInput;
+    private ISampleProvider? _micInput;
+    private string? _currentMicDeviceId;
+
     public bool IsActive { get; private set; }
+
+    /// <summary>
+    /// True while the pre-mixed single-pipe session is running, meaning sources can be switched on and
+    /// off without restarting the recording. False for the dual-leg noise-suppression path, where each
+    /// source is its own ffmpeg input inside a fixed <c>amix</c> filter graph that can't lose a leg
+    /// mid-stream, and false when no audio pipe was opened at all (both sources off at record start).
+    /// </summary>
+    public bool SupportsLiveSourceChanges { get; private set; }
+
+    private static WaveFormat TargetFormat => WaveFormat.CreateIeeeFloatWaveFormat(SampleRate, Channels);
 
     /// <summary>
     /// While true, <see cref="PumpLoop"/> keeps draining the capture buffers but writes <em>nothing</em>
@@ -64,32 +83,96 @@ public sealed class AudioCaptureService : IDisposable
         if (!captureSystemAudio && !captureMicrophone) return false;
 
         _outputStream = outputStream;
-        var targetFormat = WaveFormat.CreateIeeeFloatWaveFormat(SampleRate, Channels);
-        var sources = new List<ISampleProvider>();
 
-        using var enumerator = new MMDeviceEnumerator();
+        // Constructed from the target format rather than from a source list, so the mixer stays valid
+        // with zero inputs — that's what lets both sources be switched off mid-recording without the
+        // pump losing its provider. ReadFully means it hands back silence in that state, so the output's
+        // audio timeline keeps pace with the video instead of stalling.
+        _mixer = new MixingSampleProvider(TargetFormat) { ReadFully = true };
 
-        if (captureSystemAudio)
+        lock (_liveLock)
         {
-            sources.Add(BuildResampledProvider(OpenLoopback(enumerator).ToSampleProvider(), targetFormat));
+            if (captureSystemAudio) AttachSystemAudioLocked();
+            if (captureMicrophone) AttachMicrophoneLocked(microphoneDeviceId);
         }
-
-        if (captureMicrophone)
-        {
-            sources.Add(BuildResampledProvider(OpenMic(enumerator, microphoneDeviceId).ToSampleProvider(), targetFormat));
-        }
-
-        _mixer = new MixingSampleProvider(sources) { ReadFully = true };
-
-        _loopback?.StartRecording();
-        _mic?.StartRecording();
 
         _running = true;
         IsActive = true;
+        SupportsLiveSourceChanges = true;
         _pumpThread = new Thread(() => PumpLoop(_mixer.ToWaveProvider16(), _outputStream)) { IsBackground = true, Name = "AudioPump" };
         _pumpThread.Start();
 
         return true;
+    }
+
+    /// <summary>
+    /// Switches system (loopback) audio on or off on a running recording. No-op outside the pre-mixed
+    /// path — see <see cref="SupportsLiveSourceChanges"/>. Opens/closes a WASAPI device, so it must be
+    /// called off the UI thread (see MicLevelMonitorService's remarks for what happens otherwise).
+    /// </summary>
+    public void SetSystemAudioEnabled(bool enabled)
+    {
+        lock (_liveLock)
+        {
+            if (!IsActive || !SupportsLiveSourceChanges || _mixer is null) return;
+            if (enabled) AttachSystemAudioLocked();
+            else DetachSystemAudioLocked();
+        }
+    }
+
+    /// <summary>Microphone equivalent of <see cref="SetSystemAudioEnabled"/>; also swaps the device when <paramref name="deviceId"/> changes.</summary>
+    public void SetMicrophone(bool enabled, string? deviceId)
+    {
+        lock (_liveLock)
+        {
+            if (!IsActive || !SupportsLiveSourceChanges || _mixer is null) return;
+            if (enabled) AttachMicrophoneLocked(deviceId);
+            else DetachMicrophoneLocked();
+        }
+    }
+
+    private void AttachSystemAudioLocked()
+    {
+        if (_loopbackInput is not null) return;
+        using var enumerator = new MMDeviceEnumerator();
+        _loopbackInput = BuildResampledProvider(OpenLoopback(enumerator).ToSampleProvider(), TargetFormat);
+        _mixer!.AddMixerInput(_loopbackInput);
+        _loopback!.StartRecording();
+    }
+
+    private void DetachSystemAudioLocked()
+    {
+        if (_loopbackInput is null) return;
+        _mixer?.RemoveMixerInput(_loopbackInput);
+        _loopbackInput = null;
+        try { _loopback?.StopRecording(); } catch { /* already stopping */ }
+        _loopback?.Dispose();
+        _loopback = null;
+        _loopbackBuffer = null;
+    }
+
+    private void AttachMicrophoneLocked(string? deviceId)
+    {
+        if (_micInput is not null && _currentMicDeviceId == deviceId) return;
+        DetachMicrophoneLocked();
+
+        using var enumerator = new MMDeviceEnumerator();
+        _micInput = BuildResampledProvider(OpenMic(enumerator, deviceId).ToSampleProvider(), TargetFormat);
+        _mixer!.AddMixerInput(_micInput);
+        _mic!.StartRecording();
+        _currentMicDeviceId = deviceId;
+    }
+
+    private void DetachMicrophoneLocked()
+    {
+        if (_micInput is null) return;
+        _mixer?.RemoveMixerInput(_micInput);
+        _micInput = null;
+        _currentMicDeviceId = null;
+        try { _mic?.StopRecording(); } catch { /* already stopping */ }
+        _mic?.Dispose();
+        _mic = null;
+        _micBuffer = null;
     }
 
     /// <summary>
@@ -209,19 +292,29 @@ public sealed class AudioCaptureService : IDisposable
     {
         if (!IsActive) return;
         IsActive = false;
+        SupportsLiveSourceChanges = false;
         _running = false;
         _pumpThread?.Join(1000);
         _pumpThread = null;
         _micPumpThread?.Join(1000);
         _micPumpThread = null;
 
-        _loopback?.StopRecording();
-        _loopback?.Dispose();
-        _loopback = null;
+        lock (_liveLock)
+        {
+            try { _loopback?.StopRecording(); } catch { /* already stopping */ }
+            _loopback?.Dispose();
+            _loopback = null;
 
-        _mic?.StopRecording();
-        _mic?.Dispose();
-        _mic = null;
+            try { _mic?.StopRecording(); } catch { /* already stopping */ }
+            _mic?.Dispose();
+            _mic = null;
+
+            _loopbackInput = null;
+            _micInput = null;
+            _currentMicDeviceId = null;
+            _loopbackBuffer = null;
+            _micBuffer = null;
+        }
 
         _mixer = null;
         _outputStream = null;

@@ -263,8 +263,15 @@
             </Button>
         </StackPanel>
 
-        <TextBlock Grid.Row="4" Text="Cap-IT Screen Recorder · Developed by Chamath Dilshan"
-                   HorizontalAlignment="Center" Margin="0,14,0,0"
-                   Foreground="{ThemeResource TextFillColorTertiaryBrush}" FontSize="12" />
+        <StackPanel Grid.Row="4" HorizontalAlignment="Center" Margin="0,14,0,0" Spacing="2">
+            <TextBlock Text="Cap-IT Screen Recorder · Developed by Chamath Dilshan"
+                       HorizontalAlignment="Center"
+                       Foreground="{ThemeResource TextFillColorTertiaryBrush}" FontSize="12" />
+            <!-- The installed release version, read back from the assembly (see UpdateService.CurrentVersion) —
+                 the same number the updater compares against the latest GitHub release tag. -->
+            <TextBlock Text="{x:Bind ViewModel.AppVersionText}"
+                       HorizontalAlignment="Center"
+                       Foreground="{ThemeResource TextFillColorTertiaryBrush}" FontSize="11" Opacity="0.8" />
+        </StackPanel>
     </Grid>
 </Page>
