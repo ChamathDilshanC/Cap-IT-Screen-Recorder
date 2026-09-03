@@ -53,6 +53,9 @@ public sealed class AppSettings
     public bool AnnotationsEnabled { get; set; } = false;
     public string AnnotationColorLabel { get; set; } = "Neon Green";
     public double AnnotationStrokeThickness { get; set; } = 6;
+    // Last tool picked on the annotation toolbar (Pen/Line/Arrow/Rectangle/Ellipse/Text). Matched by
+    // label against AnnotationToolOption.All at load, same convention AnnotationColorLabel uses.
+    public string AnnotationToolLabel { get; set; } = "Pen";
 
     public bool MaximizeTextClarity { get; set; } = false;
 

@@ -29,18 +29,17 @@
                     <FontIcon Glyph="&#xE721;" />
                 </ctcontrols:SettingsExpander.HeaderIcon>
                 <ctcontrols:SettingsExpander.Items>
-                    <ctcontrols:SettingsCard Header="Enable mouse tracking zoom">
+                    <ctcontrols:SettingsCard Header="Enable mouse tracking zoom"
+                                              Description="Applies immediately, even mid-recording — turning it off eases back out to 1x rather than cutting">
                         <ToggleSwitch OnContent="On" OffContent="Off"
-                                      IsOn="{x:Bind ViewModel.MouseTrackingZoomEnabled, Mode=TwoWay}"
-                                      IsEnabled="{x:Bind ViewModel.IsIdle, Mode=OneWay}" />
+                                      IsOn="{x:Bind ViewModel.MouseTrackingZoomEnabled, Mode=TwoWay}" />
                     </ctcontrols:SettingsCard>
 
                     <ctcontrols:SettingsCard Header="Zoom level"
                                               Visibility="{x:Bind ViewModel.MouseTrackingZoomEnabled, Mode=OneWay}">
                         <ComboBox MinWidth="160"
                             ItemsSource="{x:Bind ViewModel.ZoomLevelOptions}"
-                            SelectedItem="{x:Bind ViewModel.SelectedZoomLevel, Mode=TwoWay}"
-                            IsEnabled="{x:Bind ViewModel.IsIdle, Mode=OneWay}" />
+                            SelectedItem="{x:Bind ViewModel.SelectedZoomLevel, Mode=TwoWay}" />
                     </ctcontrols:SettingsCard>
                 </ctcontrols:SettingsExpander.Items>
             </ctcontrols:SettingsExpander>
@@ -53,10 +52,10 @@
                     <FontIcon Glyph="&#xE765;" />
                 </ctcontrols:SettingsExpander.HeaderIcon>
                 <ctcontrols:SettingsExpander.Items>
-                    <ctcontrols:SettingsCard Header="Enable keystroke overlay">
+                    <ctcontrols:SettingsCard Header="Enable keystroke overlay"
+                                              Description="Applies immediately, even mid-recording">
                         <ToggleSwitch OnContent="On" OffContent="Off"
-                                      IsOn="{x:Bind ViewModel.KeystrokeOverlayEnabled, Mode=TwoWay}"
-                                      IsEnabled="{x:Bind ViewModel.IsIdle, Mode=OneWay}" />
+                                      IsOn="{x:Bind ViewModel.KeystrokeOverlayEnabled, Mode=TwoWay}" />
                     </ctcontrols:SettingsCard>
                 </ctcontrols:SettingsExpander.Items>
             </ctcontrols:SettingsExpander>

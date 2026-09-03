@@ -79,7 +79,17 @@
                         Value="{x:Bind ViewModel.AnnotationStrokeThickness, Mode=TwoWay}" />
             </ctcontrols:SettingsCard>
 
-            <TextBlock Text="While Drawing Mode is on, the overlay captures your clicks — toggle it back off with Ctrl+Shift+D to interact with the apps underneath. Freehand drawing only for now; arrow and rectangle shape tools are a future addition."
+            <ctcontrols:SettingsCard Header="Drawing tools"
+                                      Description="A floating toolbar appears on the recorded display while Drawing Mode is on — Pen, Line, Arrow, Rectangle, Ellipse and a click-to-type Text tool, plus the colours and thickness. Drag it anywhere; it never appears in the recording or the live preview, only what you draw with it does."
+                                      Visibility="{x:Bind ViewModel.AnnotationsEnabled, Mode=OneWay}">
+                <ctcontrols:SettingsCard.HeaderIcon>
+                    <FontIcon Glyph="&#xE70F;" />
+                </ctcontrols:SettingsCard.HeaderIcon>
+                <TextBlock Text="{x:Bind ViewModel.SelectedAnnotationToolLabel, Mode=OneWay}" FontSize="13"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            </ctcontrols:SettingsCard>
+
+            <TextBlock Text="While Drawing Mode is on, the overlay captures your clicks — toggle it back off with Ctrl+Shift+D to interact with the apps underneath. With the Text tool, click where you want a label and just type; Enter adds a line, Esc places it."
                        Style="{StaticResource SectionDescriptionText}"
                        Visibility="{x:Bind ViewModel.AnnotationsEnabled, Mode=OneWay}" />
         </StackPanel>

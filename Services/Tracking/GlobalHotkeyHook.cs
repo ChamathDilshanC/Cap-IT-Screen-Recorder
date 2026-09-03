@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace ScreenRecorderApp.Services.Tracking;
 
@@ -27,6 +28,12 @@ public sealed class GlobalHotkeyHook : IDisposable
 
     private const int VK_CONTROL = 0x11;
     private const int VK_SHIFT = 0x10;
+    private const int VK_MENU = 0x12; // Alt
+    private const int VK_LWIN = 0x5B;
+    private const int VK_RWIN = 0x5C;
+    private const int VK_CAPITAL = 0x14;
+    private const int VK_BACK = 0x08;
+    private const int VK_RETURN = 0x0D;
     private const int VK_D = 0x44;
     private const int VK_Z = 0x5A;
     private const int VK_ESCAPE = 0x1B;
@@ -59,6 +66,16 @@ public sealed class GlobalHotkeyHook : IDisposable
     /// </summary>
     [DllImport("user32.dll")]
     private static extern short GetAsyncKeyState(int nVirtKey);
+
+    [DllImport("user32.dll")]
+    private static extern bool GetKeyboardState(byte[] lpKeyState);
+
+    [DllImport("user32.dll")]
+    private static extern uint MapVirtualKey(uint uCode, uint uMapType);
+
+    [DllImport("user32.dll")]
+    private static extern int ToUnicode(uint wVirtKey, uint wScanCode, byte[] lpKeyState,
+        [Out] System.Text.StringBuilder pwszBuff, int cchBuff, uint wFlags);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct MSG
@@ -102,11 +119,31 @@ public sealed class GlobalHotkeyHook : IDisposable
     /// <summary>Ctrl+Shift+D was pressed. Fires on the hook's own background thread — subscribers touching UI/WinUI state must marshal back via DispatcherQueue.</summary>
     public event Action? ToggleDrawingModeRequested;
 
-    /// <summary>Esc was pressed. Same threading caveat as <see cref="ToggleDrawingModeRequested"/>.</summary>
+    /// <summary>Esc was pressed while NOT entering text. Same threading caveat as <see cref="ToggleDrawingModeRequested"/>.</summary>
     public event Action? ClearRequested;
 
     /// <summary>Ctrl+Shift+Z was pressed — undo the last stroke. Same threading caveat as <see cref="ToggleDrawingModeRequested"/>.</summary>
     public event Action? UndoRequested;
+
+    /// <summary>
+    /// When true, printable keystrokes (plus Backspace / Enter / Esc) are captured for the text
+    /// annotation tool instead of reaching the app underneath — <see cref="AnnotationOverlayWindow"/>
+    /// has no keyboard focus of its own. Toggled by <see cref="AnnotationOverlayService"/> from the
+    /// overlay's <c>TextCaptureChanged</c> event.
+    /// </summary>
+    public bool TextCaptureActive { get; set; }
+
+    /// <summary>A printable character was typed while <see cref="TextCaptureActive"/>. Swallowed from the app underneath.</summary>
+    public event Action<char>? TextCharTyped;
+
+    /// <summary>Backspace while entering text.</summary>
+    public event Action? TextBackspaceRequested;
+
+    /// <summary>Enter while entering text — insert a line break.</summary>
+    public event Action? TextNewlineRequested;
+
+    /// <summary>Esc while entering text — finalize the label and leave text mode.</summary>
+    public event Action? TextCommitRequested;
 
     public void Start()
     {
@@ -167,7 +204,32 @@ public sealed class GlobalHotkeyHook : IDisposable
                     else if (vkCode == VK_ESCAPE && !_escLatched)
                     {
                         _escLatched = true;
+                        if (TextCaptureActive)
+                        {
+                            TextCommitRequested?.Invoke();
+                            return 1; // don't let Esc reach the app underneath while typing
+                        }
                         ClearRequested?.Invoke();
+                    }
+                    else if (TextCaptureActive)
+                    {
+                        if (vkCode == VK_BACK)
+                        {
+                            TextBackspaceRequested?.Invoke();
+                            return 1;
+                        }
+                        if (vkCode == VK_RETURN)
+                        {
+                            TextNewlineRequested?.Invoke();
+                            return 1;
+                        }
+                        // Let Ctrl/Alt/Win combos through untouched (Ctrl+Shift+D/Z handled above).
+                        if (!IsDown(VK_CONTROL) && !IsDown(VK_MENU) && !IsDown(VK_LWIN) && !IsDown(VK_RWIN)
+                            && TryTranslateChar(vkCode) is { } ch)
+                        {
+                            TextCharTyped?.Invoke(ch);
+                            return 1; // typed into the annotation, not the app underneath
+                        }
                     }
                 }
                 else if (wParam == WM_KEYUP || wParam == WM_SYSKEYUP)
@@ -187,6 +249,27 @@ public sealed class GlobalHotkeyHook : IDisposable
     }
 
     private static bool IsDown(int vk) => (GetAsyncKeyState(vk) & 0x8000) != 0;
+
+    /// <summary>
+    /// Turns a virtual-key code into the character it would type under the current layout, or null for
+    /// non-printing keys. A low-level hook thread has no input queue, so <c>GetKeyboardState</c> reads
+    /// blank — the Shift/CapsLock bits are patched in from live physical state so capitals still work.
+    /// </summary>
+    private static char? TryTranslateChar(int vkCode)
+    {
+        var state = new byte[256];
+        if (!GetKeyboardState(state)) return null;
+        if (IsDown(VK_SHIFT)) state[VK_SHIFT] = 0x80;
+        if ((GetAsyncKeyState(VK_CAPITAL) & 0x0001) != 0) state[VK_CAPITAL] = 0x01;
+
+        var scanCode = MapVirtualKey((uint)vkCode, 0);
+        var sb = new StringBuilder(4);
+        int result = ToUnicode((uint)vkCode, scanCode, state, sb, sb.Capacity, 0);
+        if (result != 1) return null;
+
+        var ch = sb[0];
+        return char.IsControl(ch) ? null : ch;
+    }
 
     public void Stop()
     {

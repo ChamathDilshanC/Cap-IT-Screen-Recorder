@@ -101,6 +101,22 @@ public sealed record ZoomLevelOption(double Factor, string Label)
     ];
 }
 
+/// <summary>Pairs an <see cref="AnnotationTool"/> with a friendly label, for the Annotations tab and toolbar-state sync.</summary>
+public sealed record AnnotationToolOption(AnnotationTool Value, string Label)
+{
+    public override string ToString() => Label;
+
+    public static readonly IReadOnlyList<AnnotationToolOption> All =
+    [
+        new(AnnotationTool.Pen, "Pen"),
+        new(AnnotationTool.Line, "Line"),
+        new(AnnotationTool.Arrow, "Arrow"),
+        new(AnnotationTool.Rectangle, "Rectangle"),
+        new(AnnotationTool.Ellipse, "Ellipse"),
+        new(AnnotationTool.Text, "Text"),
+    ];
+}
+
 /// <summary>Pairs a preset pen color for annotation drawing with a friendly label for display in a ComboBox. Presets rather than a full color picker, since a tutorial annotation needs to read clearly against arbitrary desktop content, not match a brand palette.</summary>
 public sealed record AnnotationColorOption(Windows.UI.Color Value, string Label)
 {

@@ -173,6 +173,44 @@ public sealed class RecordingManager : IDisposable
         _video.UpdateSpotlight(enabled, radius);
     }
 
+    /// <summary>
+    /// Live cursor rendering change — preview or recording, either one. Like
+    /// <see cref="UpdateSpotlight"/>, this also refreshes the snapshot <see cref="StartPreview"/> dedups
+    /// against, so a later preview call doesn't tear the pipeline down just because these look "changed"
+    /// when the running capture already has them.
+    /// </summary>
+    public void UpdateCursor(bool captureCursor, CursorStyle cursorStyle)
+    {
+        _previewCursor = captureCursor;
+        _previewCursorStyle = cursorStyle;
+        lock (_videoLock) { _video.UpdateCursor(captureCursor, cursorStyle); }
+    }
+
+    /// <inheritdoc cref="UpdateCursor"/>
+    public void UpdateZoom(bool enabled, double factor)
+    {
+        _previewZoomEnabled = enabled;
+        _previewZoomFactor = factor;
+        lock (_videoLock) { _video.UpdateZoom(enabled, factor); }
+    }
+
+    /// <inheritdoc cref="UpdateCursor"/>
+    public void UpdateKeystrokeOverlay(bool enabled)
+    {
+        _previewKeystrokeOverlay = enabled;
+        lock (_videoLock) { _video.UpdateKeystrokeOverlay(enabled); }
+    }
+
+    /// <inheritdoc cref="UpdateCursor"/>
+    public void UpdateClickRipples(bool enabled)
+    {
+        _previewClickRipplesEnabled = enabled;
+        lock (_videoLock) { _video.UpdateClickRipples(enabled); }
+    }
+
+    /// <summary>Starts/stops/switches the webcam PiP overlay live. Already independent of the screen-capture engine's lifecycle — see VideoCaptureService.SetWebcam.</summary>
+    public void UpdateWebcam(bool enabled, string? deviceId) => _video.SetWebcam(enabled, deviceId);
+
     /// <summary>Stops preview-only capture. No-op while actually recording.</summary>
     public void StopPreview()
     {
@@ -295,7 +333,17 @@ public sealed class RecordingManager : IDisposable
         {
             while (await timer.WaitForNextTickAsync(ct).ConfigureAwait(false))
             {
-                if (State != RecordingState.Paused && !IsScreenFrozen)
+                // A full pause writes NOTHING to the encoder, so the output's video timeline stops
+                // advancing along with the elapsed timer. Writing a frozen frame every tick (which is
+                // what this used to do) meant a pause still cost a second of footage per real second —
+                // pausing a 4s recording for 5s produced a 9s file. AudioCaptureService.IsPaused stops
+                // its own writes for exactly the same reason, so the two streams pause together and
+                // stay in sync.
+                if (State == RecordingState.Paused) continue;
+
+                // Screen pause is deliberately different: frames keep flowing at full rate, they're
+                // just the same (frozen) frame, so audio and the timeline carry on normally.
+                if (!IsScreenFrozen)
                 {
                     _video.TryGetLatestFrame(_frameBuffer);
                 }
@@ -325,7 +373,7 @@ public sealed class RecordingManager : IDisposable
         if (State != RecordingState.Recording) return;
         State = RecordingState.Paused;
         IsScreenFrozen = false; // a full pause supersedes screen-freeze; resume comes back clean
-        _audio.IsMuted = true;
+        _audio.IsPaused = true;
         _pauseStartedUtc = DateTime.UtcNow;
     }
 
@@ -334,7 +382,7 @@ public sealed class RecordingManager : IDisposable
         if (State != RecordingState.Paused) return;
         if (_pauseStartedUtc is { } p) _pausedAccum += DateTime.UtcNow - p;
         _pauseStartedUtc = null;
-        _audio.IsMuted = false;
+        _audio.IsPaused = false;
         State = RecordingState.Recording;
     }
 

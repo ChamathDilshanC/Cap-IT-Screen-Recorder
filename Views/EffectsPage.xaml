@@ -40,13 +40,12 @@
                 </ctcontrols:SettingsExpander.Items>
             </ctcontrols:SettingsExpander>
 
-            <ctcontrols:SettingsCard Header="Click ripples" Description="A brief expanding ring wherever you click, left or right">
+            <ctcontrols:SettingsCard Header="Click ripples" Description="A brief expanding ring wherever you click, left or right. Applies immediately, even mid-recording.">
                 <ctcontrols:SettingsCard.HeaderIcon>
                     <FontIcon Glyph="&#xE7C9;" />
                 </ctcontrols:SettingsCard.HeaderIcon>
                 <ToggleSwitch OnContent="On" OffContent="Off"
-                              IsOn="{x:Bind ViewModel.ClickRipplesEnabled, Mode=TwoWay}"
-                              IsEnabled="{x:Bind ViewModel.IsIdle, Mode=OneWay}" />
+                              IsOn="{x:Bind ViewModel.ClickRipplesEnabled, Mode=TwoWay}" />
             </ctcontrols:SettingsCard>
         </StackPanel>
     </ScrollViewer>

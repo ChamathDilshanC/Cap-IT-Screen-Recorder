@@ -8,7 +8,9 @@ namespace ScreenRecorderApp.Services.Overlay;
 
 /// <summary>
 /// Full-screen, click-through, genuinely transparent overlay the user draws annotations on. Rendered
-/// with GDI+ into a per-pixel-alpha layered window via <c>UpdateLayeredWindow</c>.
+/// with GDI+ into a per-pixel-alpha layered window via <c>UpdateLayeredWindow</c>. Freehand pen,
+/// straight line, arrow, rectangle, ellipse and a click-to-type text tool — the tool is chosen on the
+/// separate <see cref="AnnotationToolbarWindow"/>, which this window knows nothing about.
 /// </summary>
 /// <remarks>
 /// <para><b>Why this is a hand-rolled Win32 window and not a WinUI page.</b></para>
@@ -29,6 +31,10 @@ namespace ScreenRecorderApp.Services.Overlay;
 /// hit-testing for free in exactly the shape this feature needs: the OS routes clicks by the surface's
 /// alpha channel, so fully transparent pixels pass input through on their own.
 /// </para>
+/// <para><b>Text input</b> is fed in from <see cref="Tracking.GlobalHotkeyHook"/> (via
+/// <see cref="AnnotationOverlayService"/>) rather than real keyboard focus — this window is
+/// WS_EX_NOACTIVATE and never takes focus. <see cref="TextCaptureChanged"/> tells the service when to
+/// start/stop routing keystrokes here.</para>
 /// <para><b>Threading:</b> created and driven entirely on the UI thread. A plain Win32 window on that
 /// thread has its <see cref="WndProc"/> pumped by the same message loop WinUI already runs, so no extra
 /// thread or pump is needed.</para>
@@ -48,15 +54,18 @@ internal sealed class AnnotationOverlayWindow : IDisposable
     private const int PillVisibleMs = 3500;
     private const uint PillTimerId = 1;
 
-    private sealed class Stroke
+    private sealed class Annotation
     {
+        public required AnnotationTool Tool { get; init; }
+        // Pen: the full freehand path. Line/Arrow/Rectangle/Ellipse: exactly [start, end]. Text: [anchor].
         public required List<PointF> Points { get; init; }
         public required Color Color { get; init; }
         public required float Thickness { get; init; }
+        public string? Text { get; set; }
     }
 
-    private readonly List<Stroke> _strokes = [];
-    private Stroke? _activeStroke;
+    private readonly List<Annotation> _annotations = [];
+    private Annotation? _activeAnnotation;
 
     private nint _hwnd;
     private int _x, _y, _width, _height;
@@ -72,8 +81,13 @@ internal sealed class AnnotationOverlayWindow : IDisposable
 
     private Color _penColor = Color.FromArgb(255, 57, 255, 20); // Neon Green — matches AnnotationColorOption's default
     private float _penThickness = 6;
+    private AnnotationTool _currentTool = AnnotationTool.Pen;
+    private bool _textCaptureActive;
     private bool _pillVisible;
     private bool _disposed;
+
+    /// <summary>Raised (on the UI thread) when the text tool starts/stops accepting keystrokes — the service uses it to route <see cref="Tracking.GlobalHotkeyHook"/> character events here and back.</summary>
+    public event Action<bool>? TextCaptureChanged;
 
     // SetWindowsHookEx-style lifetime rule: the class's WndProc is stored by Windows as a raw function
     // pointer, so the delegate has to outlive the window or the CLR frees the thunk under it.
@@ -85,6 +99,8 @@ internal sealed class AnnotationOverlayWindow : IDisposable
     private static readonly Dictionary<nint, AnnotationOverlayWindow> Instances = [];
 
     public bool IsDrawingModeEnabled { get; private set; }
+    public bool IsTextCaptureActive => _textCaptureActive;
+    public AnnotationTool CurrentTool => _currentTool;
 
     /// <summary>Creates (if needed) and shows the overlay positioned exactly over <paramref name="monitor"/>, in click-through mode. Safe to call again to move it to another display.</summary>
     public void ShowOverMonitor(MonitorInfo monitor)
@@ -134,7 +150,11 @@ internal sealed class AnnotationOverlayWindow : IDisposable
         exStyle = enabled ? exStyle & ~WsExTransparent : exStyle | WsExTransparent;
         SetWindowLongW(_hwnd, GwlExStyle, exStyle);
 
-        if (!enabled) EndStroke();
+        if (!enabled)
+        {
+            EndAnnotation();
+            CommitActiveText();
+        }
 
         // The toggle is a global hotkey pressed while another app has focus, so this pill is the only
         // confirmation the keypress registered. It stays up while drawing (where it also signals that
@@ -153,25 +173,83 @@ internal sealed class AnnotationOverlayWindow : IDisposable
         _penThickness = (float)Math.Max(1, thickness);
     }
 
-    /// <summary>Wipes every stroke. Wired to the Esc hotkey.</summary>
+    /// <summary>Selects the active drawing tool. Any in-progress text is committed first.</summary>
+    public void SetTool(AnnotationTool tool)
+    {
+        if (_currentTool == tool) return;
+        CommitActiveText();
+        _currentTool = tool;
+    }
+
+    /// <summary>Wipes every annotation. Wired to the Esc hotkey (when not typing).</summary>
     public void ClearInk()
     {
-        _strokes.Clear();
-        _activeStroke = null;
+        CancelActiveText();
+        _annotations.Clear();
+        _activeAnnotation = null;
         Render();
     }
 
-    /// <summary>Removes the most recent completed stroke. Wired to the Ctrl+Shift+Z hotkey.</summary>
+    /// <summary>Removes the most recent completed annotation. Wired to the Ctrl+Shift+Z hotkey.</summary>
     public void UndoLastStroke()
     {
-        if (_strokes.Count == 0) return;
-        _strokes.RemoveAt(_strokes.Count - 1);
+        if (_annotations.Count == 0) return;
+        _annotations.RemoveAt(_annotations.Count - 1);
         Render();
     }
 
     public void HideOverlay()
     {
+        CommitActiveText();
         if (_hwnd != nint.Zero) ShowWindow(_hwnd, SwHide);
+    }
+
+    // --- Text tool ------------------------------------------------------------------------------
+
+    /// <summary>Appends typed text to the active label. No-op if the text tool isn't mid-entry.</summary>
+    public void TextAppend(string s)
+    {
+        if (_activeAnnotation is not { Tool: AnnotationTool.Text }) return;
+        _activeAnnotation.Text += s;
+        Render();
+    }
+
+    public void TextBackspace()
+    {
+        if (_activeAnnotation is not { Tool: AnnotationTool.Text } a || string.IsNullOrEmpty(a.Text)) return;
+        a.Text = a.Text[..^1];
+        Render();
+    }
+
+    public void TextNewline() => TextAppend("\n");
+
+    /// <summary>Finalizes the active label (keeping it only if it has content) and leaves text-entry mode.</summary>
+    public void TextCommit() => CommitActiveText();
+
+    private void CommitActiveText()
+    {
+        if (_activeAnnotation is not { Tool: AnnotationTool.Text } a)
+        {
+            SetTextCapture(false);
+            return;
+        }
+        if (!string.IsNullOrEmpty(a.Text)) _annotations.Add(a);
+        _activeAnnotation = null;
+        SetTextCapture(false);
+        Render();
+    }
+
+    private void CancelActiveText()
+    {
+        if (_activeAnnotation is { Tool: AnnotationTool.Text }) _activeAnnotation = null;
+        SetTextCapture(false);
+    }
+
+    private void SetTextCapture(bool on)
+    {
+        if (_textCaptureActive == on) return;
+        _textCaptureActive = on;
+        TextCaptureChanged?.Invoke(on);
     }
 
     // --- Rendering -------------------------------------------------------------------------------
@@ -225,44 +303,142 @@ internal sealed class AnnotationOverlayWindow : IDisposable
         var canvasAlpha = IsDrawingModeEnabled ? DrawModeCanvasAlpha : (byte)0;
         _graphics.Clear(Color.FromArgb(canvasAlpha, 0, 0, 0));
 
-        foreach (var stroke in _strokes) DrawStroke(stroke);
-        if (_activeStroke is not null) DrawStroke(_activeStroke);
+        foreach (var annotation in _annotations) DrawAnnotation(annotation, active: false);
+        if (_activeAnnotation is not null) DrawAnnotation(_activeAnnotation, active: true);
         if (_pillVisible) DrawStatusPill();
 
         _graphics.Flush(FlushIntention.Sync);
         Present();
     }
 
-    private void DrawStroke(Stroke stroke)
+    private void DrawAnnotation(Annotation ann, bool active)
     {
-        if (_graphics is null || stroke.Points.Count == 0) return;
+        if (_graphics is null || ann.Points.Count == 0) return;
 
-        using var pen = new Pen(stroke.Color, stroke.Thickness)
+        using var pen = new Pen(ann.Color, ann.Thickness)
         {
             StartCap = LineCap.Round,
             EndCap = LineCap.Round,
             LineJoin = LineJoin.Round,
         };
 
-        if (stroke.Points.Count == 1)
+        switch (ann.Tool)
+        {
+            case AnnotationTool.Pen:
+                DrawFreehand(ann, pen);
+                break;
+
+            case AnnotationTool.Line when ann.Points.Count >= 2:
+                _graphics.DrawLine(pen, ann.Points[0], ann.Points[1]);
+                break;
+
+            case AnnotationTool.Arrow when ann.Points.Count >= 2:
+                DrawArrow(pen, ann.Points[0], ann.Points[1], ann.Thickness);
+                break;
+
+            case AnnotationTool.Rectangle when ann.Points.Count >= 2:
+            {
+                var r = Normalize(ann.Points[0], ann.Points[1]);
+                _graphics.DrawRectangle(pen, r.X, r.Y, r.Width, r.Height);
+                break;
+            }
+
+            case AnnotationTool.Ellipse when ann.Points.Count >= 2:
+            {
+                var r = Normalize(ann.Points[0], ann.Points[1]);
+                _graphics.DrawEllipse(pen, r.X, r.Y, r.Width, r.Height);
+                break;
+            }
+
+            case AnnotationTool.Text:
+                DrawText(ann, active);
+                break;
+        }
+    }
+
+    private void DrawFreehand(Annotation ann, Pen pen)
+    {
+        if (_graphics is null) return;
+
+        if (ann.Points.Count == 1)
         {
             // A click with no drag is still a mark the user meant to make — a dot, not nothing.
-            var p = stroke.Points[0];
-            var r = stroke.Thickness / 2f;
-            using var brush = new SolidBrush(stroke.Color);
-            _graphics.FillEllipse(brush, p.X - r, p.Y - r, stroke.Thickness, stroke.Thickness);
+            var p = ann.Points[0];
+            var r = ann.Thickness / 2f;
+            using var brush = new SolidBrush(ann.Color);
+            _graphics.FillEllipse(brush, p.X - r, p.Y - r, ann.Thickness, ann.Thickness);
             return;
         }
 
-        _graphics.DrawLines(pen, stroke.Points.ToArray());
+        _graphics.DrawLines(pen, ann.Points.ToArray());
     }
+
+    private void DrawArrow(Pen pen, PointF a, PointF b, float thickness)
+    {
+        if (_graphics is null) return;
+        _graphics.DrawLine(pen, a, b);
+
+        var angle = Math.Atan2(b.Y - a.Y, b.X - a.X);
+        if (double.IsNaN(angle)) return;
+        float head = Math.Max(12f, thickness * 4f);
+        const double spread = 25 * Math.PI / 180;
+
+        var w1 = new PointF(
+            (float)(b.X - head * Math.Cos(angle - spread)),
+            (float)(b.Y - head * Math.Sin(angle - spread)));
+        var w2 = new PointF(
+            (float)(b.X - head * Math.Cos(angle + spread)),
+            (float)(b.Y - head * Math.Sin(angle + spread)));
+        _graphics.DrawLine(pen, b, w1);
+        _graphics.DrawLine(pen, b, w2);
+    }
+
+    private void DrawText(Annotation ann, bool active)
+    {
+        if (_graphics is null) return;
+
+        var origin = ann.Points[0];
+        var text = ann.Text ?? "";
+        float size = Math.Max(14f, ann.Thickness * 2.5f);
+        using var font = new Font("Segoe UI", size, FontStyle.Bold, GraphicsUnit.Pixel);
+
+        var measured = _graphics.MeasureString(text.Length == 0 ? " " : text, font);
+
+        if (active)
+        {
+            using var backing = new SolidBrush(Color.FromArgb(90, 0, 0, 0));
+            _graphics.FillRectangle(backing, origin.X - 4, origin.Y - 2, measured.Width + 8, measured.Height + 4);
+        }
+
+        if (text.Length > 0)
+        {
+            using var brush = new SolidBrush(ann.Color);
+            _graphics.DrawString(text, font, brush, origin.X, origin.Y);
+        }
+
+        if (active)
+        {
+            var lines = text.Split('\n');
+            var lastLine = lines[^1];
+            float lineHeight = font.GetHeight(_graphics);
+            float caretX = origin.X + (lastLine.Length == 0 ? 0 : _graphics.MeasureString(lastLine, font).Width);
+            float caretY = origin.Y + (lines.Length - 1) * lineHeight;
+            using var caretPen = new Pen(ann.Color, 2f);
+            _graphics.DrawLine(caretPen, caretX, caretY + 2, caretX, caretY + lineHeight - 2);
+        }
+    }
+
+    private static RectangleF Normalize(PointF a, PointF b) =>
+        new(Math.Min(a.X, b.X), Math.Min(a.Y, b.Y), Math.Abs(a.X - b.X), Math.Abs(a.Y - b.Y));
 
     private void DrawStatusPill()
     {
         if (_graphics is null) return;
 
         var text = IsDrawingModeEnabled
-            ? "Drawing Mode: On  ·  Ctrl+Shift+D to stop  ·  Ctrl+Shift+Z undo  ·  Esc clears"
+            ? _textCaptureActive
+                ? "Typing…  ·  Enter for a new line  ·  Esc to place the text"
+                : "Drawing Mode: On  ·  Ctrl+Shift+D to stop  ·  Ctrl+Shift+Z undo  ·  Esc clears"
             : "Drawing Mode: Off  ·  Ctrl+Shift+D to draw";
 
         using var font = new Font("Segoe UI", 11f, FontStyle.Bold, GraphicsUnit.Point);
@@ -321,30 +497,75 @@ internal sealed class AnnotationOverlayWindow : IDisposable
 
     // --- Input -----------------------------------------------------------------------------------
 
-    private void BeginStroke(int x, int y)
+    private void OnLeftButtonDown(int x, int y)
     {
-        _activeStroke = new Stroke { Points = [new PointF(x, y)], Color = _penColor, Thickness = _penThickness };
+        if (_currentTool == AnnotationTool.Text)
+        {
+            CommitActiveText();
+            _activeAnnotation = new Annotation
+            {
+                Tool = AnnotationTool.Text,
+                Points = [new PointF(x, y)],
+                Color = _penColor,
+                Thickness = _penThickness,
+                Text = "",
+            };
+            SetTextCapture(true);
+            _pillVisible = true;
+            KillTimer(_hwnd, PillTimerId);
+            Render();
+            return;
+        }
+
+        _activeAnnotation = new Annotation
+        {
+            Tool = _currentTool,
+            Points = _currentTool == AnnotationTool.Pen
+                ? [new PointF(x, y)]
+                : [new PointF(x, y), new PointF(x, y)],
+            Color = _penColor,
+            Thickness = _penThickness,
+        };
         SetCapture(_hwnd);
         Render();
     }
 
-    private void ExtendStroke(int x, int y)
+    private void ExtendAnnotation(int x, int y)
     {
-        if (_activeStroke is null) return;
+        if (_activeAnnotation is null || _activeAnnotation.Tool == AnnotationTool.Text) return;
 
-        // Skip sub-pixel jitter: it bloats the point list without changing the rendered curve.
-        var last = _activeStroke.Points[^1];
-        if (Math.Abs(last.X - x) < 1 && Math.Abs(last.Y - y) < 1) return;
-
-        _activeStroke.Points.Add(new PointF(x, y));
+        if (_activeAnnotation.Tool == AnnotationTool.Pen)
+        {
+            // Skip sub-pixel jitter: it bloats the point list without changing the rendered curve.
+            var last = _activeAnnotation.Points[^1];
+            if (Math.Abs(last.X - x) < 1 && Math.Abs(last.Y - y) < 1) return;
+            _activeAnnotation.Points.Add(new PointF(x, y));
+        }
+        else
+        {
+            _activeAnnotation.Points[1] = new PointF(x, y);
+        }
         Render();
     }
 
-    private void EndStroke()
+    private void EndAnnotation()
     {
-        if (_activeStroke is null) return;
-        _strokes.Add(_activeStroke);
-        _activeStroke = null;
+        if (_activeAnnotation is null || _activeAnnotation.Tool == AnnotationTool.Text) return;
+
+        bool keep;
+        if (_activeAnnotation.Tool == AnnotationTool.Pen)
+        {
+            keep = _activeAnnotation.Points.Count >= 1;
+        }
+        else
+        {
+            var a = _activeAnnotation.Points[0];
+            var b = _activeAnnotation.Points[1];
+            keep = Math.Abs(a.X - b.X) > 3 || Math.Abs(a.Y - b.Y) > 3;
+        }
+
+        if (keep) _annotations.Add(_activeAnnotation);
+        _activeAnnotation = null;
         if (GetCapture() == _hwnd) ReleaseCapture();
         Render();
     }
@@ -354,16 +575,16 @@ internal sealed class AnnotationOverlayWindow : IDisposable
         switch (message)
         {
             case WmLButtonDown:
-                BeginStroke(LoWord(lParam), HiWord(lParam));
+                OnLeftButtonDown(LoWord(lParam), HiWord(lParam));
                 return 0;
 
             case WmMouseMove:
-                if (_activeStroke is not null) ExtendStroke(LoWord(lParam), HiWord(lParam));
+                if (_activeAnnotation is not null) ExtendAnnotation(LoWord(lParam), HiWord(lParam));
                 return 0;
 
             case WmLButtonUp:
             case WmCaptureChanged:
-                EndStroke();
+                EndAnnotation();
                 return 0;
 
             case WmTimer when wParam == PillTimerId:

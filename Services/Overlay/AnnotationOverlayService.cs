@@ -1,32 +1,36 @@
+using System.Drawing;
 using Microsoft.UI.Dispatching;
 using ScreenRecorderApp.Models;
 using ScreenRecorderApp.Services.Tracking;
-using Windows.UI;
+using WinColor = Windows.UI.Color;
 
 namespace ScreenRecorderApp.Services.Overlay;
 
 /// <summary>
 /// Orchestrates the live annotation overlay: owns the transparent, click-through
-/// <see cref="AnnotationOverlayWindow"/> and the <see cref="GlobalHotkeyHook"/> that toggles it.
+/// <see cref="AnnotationOverlayWindow"/>, the capture-excluded <see cref="AnnotationToolbarWindow"/>,
+/// and the <see cref="GlobalHotkeyHook"/> that toggles drawing mode and feeds the text tool.
 /// </summary>
 /// <remarks>
 /// Armed whenever the Annotations feature is switched on and a display is selected — not only for the
-/// duration of a recording, which is what it used to be. Tying it to an in-progress recording made the
-/// feature look completely broken: you turned Annotations on, pressed Ctrl+Shift+D, and nothing
-/// happened, because no overlay and no hotkey hook existed yet. It also left no way to check the pen
-/// color or practise a stroke before going live. The hook is still scoped to the feature being on
-/// (never the whole app session) for the reason described in <see cref="GlobalHotkeyHook"/>'s remarks.
+/// duration of a recording. The hook is still scoped to the feature being on (never the whole app
+/// session) for the reason described in <see cref="GlobalHotkeyHook"/>'s remarks.
 /// </remarks>
 public sealed class AnnotationOverlayService : IDisposable
 {
     private readonly DispatcherQueue _dispatcherQueue;
     private AnnotationOverlayWindow? _window;
+    private AnnotationToolbarWindow? _toolbar;
     private GlobalHotkeyHook? _hook;
 
     // Which monitor the armed overlay is currently positioned over, so Arm() can tell "already armed,
-    // nothing to do" from "already armed, but the user picked a different display" — the latter has to
-    // reposition the window rather than silently keep annotating the wrong screen.
+    // nothing to do" from "already armed, but the user picked a different display".
     private nint _armedMonitorHandle;
+
+    // Last attributes pushed in, so a toolbar/page round-trip doesn't fight itself.
+    private AnnotationTool _tool = AnnotationTool.Pen;
+    private WinColor _penColor;
+    private double _penThickness = 6;
 
     public AnnotationOverlayService(DispatcherQueue dispatcherQueue)
     {
@@ -35,56 +39,120 @@ public sealed class AnnotationOverlayService : IDisposable
 
     public bool IsArmed => _window is not null;
 
+    /// <summary>Raised when a tool / colour / thickness is picked on the floating toolbar, so the view model can mirror it into the Annotations tab and persist it. Fires on the UI thread.</summary>
+    public event Action<AnnotationTool, WinColor, double>? AttributesChanged;
+
     /// <summary>
-    /// Shows the overlay over <paramref name="monitor"/> with the given pen color/thickness and starts
-    /// listening for the annotation hotkeys. Idempotent: calling it again for the same monitor does
-    /// nothing, and calling it for a different monitor repositions the existing overlay rather than
-    /// stacking up a second one. Must be called on the UI thread — the overlay is a Win32 window whose
-    /// message loop is the one WinUI already pumps there.
+    /// Shows the overlay + toolbar over <paramref name="monitor"/> with the given tool/pen and starts
+    /// listening for the annotation hotkeys. Idempotent for the same monitor; repositions both windows
+    /// for a different one. Must be called on the UI thread.
     /// </summary>
-    public void Arm(MonitorInfo monitor, Color penColor, double penThickness)
+    public void Arm(MonitorInfo monitor, AnnotationTool tool, WinColor penColor, double penThickness)
     {
+        _tool = tool;
+        _penColor = penColor;
+        _penThickness = penThickness;
+
         if (IsArmed)
         {
-            _window!.UpdateDrawingAttributes(ToDrawingColor(penColor), penThickness);
+            PushAttributes();
             if (_armedMonitorHandle != monitor.Handle)
             {
-                _window.ShowOverMonitor(monitor);
+                _window!.ShowOverMonitor(monitor);
+                _toolbar!.ShowOverMonitor(monitor);
+                if (!_window.IsDrawingModeEnabled) _toolbar.Hide();
                 _armedMonitorHandle = monitor.Handle;
             }
             return;
         }
 
         _window = new AnnotationOverlayWindow();
-        _window.UpdateDrawingAttributes(ToDrawingColor(penColor), penThickness);
         _window.ShowOverMonitor(monitor);
+
+        _toolbar = new AnnotationToolbarWindow();
+        _toolbar.ShowOverMonitor(monitor);
+        _toolbar.Hide(); // only visible once Drawing Mode is on
+
+        _toolbar.ToolSelected += t =>
+        {
+            _tool = t;
+            _window?.SetTool(t);
+            RaiseAttributesChanged();
+        };
+        _toolbar.ColorSelected += c =>
+        {
+            _penColor = WinColor.FromArgb(c.A, c.R, c.G, c.B);
+            _window?.UpdateDrawingAttributes(c, _penThickness);
+            RaiseAttributesChanged();
+        };
+        _toolbar.ThicknessSelected += th =>
+        {
+            _penThickness = th;
+            _window?.UpdateDrawingAttributes(ToDrawingColor(_penColor), th);
+            RaiseAttributesChanged();
+        };
+        _toolbar.UndoRequested += () => _window?.UndoLastStroke();
+        _toolbar.ClearRequested += () => _window?.ClearInk();
+
+        PushAttributes();
         _armedMonitorHandle = monitor.Handle;
 
         _hook = new GlobalHotkeyHook();
-        // Hook events fire on GlobalHotkeyHook's own dedicated thread (see its remarks). The overlay's
-        // window was created on the UI thread and must only be touched from there, so every callback is
-        // marshaled back via the DispatcherQueue captured at construction — the same pattern
-        // MainViewModel already uses for VideoCaptureService's off-thread CaptureTargetLost event.
-        _hook.ToggleDrawingModeRequested += () => _dispatcherQueue.TryEnqueue(() =>
-            _window?.SetDrawingMode(!_window.IsDrawingModeEnabled));
+        // Hook events fire on GlobalHotkeyHook's own thread; the windows live on the UI thread, so every
+        // callback is marshaled back via the DispatcherQueue captured at construction.
+        _hook.ToggleDrawingModeRequested += () => _dispatcherQueue.TryEnqueue(ToggleDrawingMode);
         _hook.ClearRequested += () => _dispatcherQueue.TryEnqueue(() => _window?.ClearInk());
         _hook.UndoRequested += () => _dispatcherQueue.TryEnqueue(() => _window?.UndoLastStroke());
+        _hook.TextCharTyped += ch => _dispatcherQueue.TryEnqueue(() => _window?.TextAppend(ch.ToString()));
+        _hook.TextBackspaceRequested += () => _dispatcherQueue.TryEnqueue(() => _window?.TextBackspace());
+        _hook.TextNewlineRequested += () => _dispatcherQueue.TryEnqueue(() => _window?.TextNewline());
+        _hook.TextCommitRequested += () => _dispatcherQueue.TryEnqueue(() => _window?.TextCommit());
         _hook.Start();
+
+        // Keep the low-level hook's swallow-keystrokes mode in step with the overlay's text tool.
+        _window.TextCaptureChanged += active =>
+        {
+            if (_hook is not null) _hook.TextCaptureActive = active;
+        };
     }
 
-    /// <summary>Pushes a new pen color/thickness to the live overlay, if one is armed — safe to call at any time, including mid-recording (see AnnotationOverlayWindow.UpdateDrawingAttributes). No-op if not armed.</summary>
-    public void UpdateDrawingAttributes(Color penColor, double penThickness) =>
-        _window?.UpdateDrawingAttributes(ToDrawingColor(penColor), penThickness);
+    private void ToggleDrawingMode()
+    {
+        if (_window is null) return;
+        var enable = !_window.IsDrawingModeEnabled;
+        _window.SetDrawingMode(enable);
+        if (enable) _toolbar?.Show();
+        else _toolbar?.Hide();
+    }
 
-    /// <summary>The pen presets are WinRT colors (they double as XAML brushes on the Annotations tab); the overlay renders with GDI+, which wants System.Drawing.</summary>
-    private static System.Drawing.Color ToDrawingColor(Color color) =>
-        System.Drawing.Color.FromArgb(color.A, color.R, color.G, color.B);
+    private void RaiseAttributesChanged() => AttributesChanged?.Invoke(_tool, _penColor, _penThickness);
 
-    /// <summary>Stops the hotkey hook and tears down the overlay window. No-op if not armed.</summary>
+    private void PushAttributes()
+    {
+        _window?.SetTool(_tool);
+        _window?.UpdateDrawingAttributes(ToDrawingColor(_penColor), _penThickness);
+        _toolbar?.SetActiveState(_tool, ToDrawingColor(_penColor), (float)_penThickness);
+    }
+
+    /// <summary>Pushes a tool/pen change made on the Annotations tab into the live overlay + toolbar. Safe any time, no-op if not armed.</summary>
+    public void UpdateDrawingAttributes(AnnotationTool tool, WinColor penColor, double penThickness)
+    {
+        _tool = tool;
+        _penColor = penColor;
+        _penThickness = penThickness;
+        PushAttributes();
+    }
+
+    private static Color ToDrawingColor(WinColor color) => Color.FromArgb(color.A, color.R, color.G, color.B);
+
+    /// <summary>Stops the hotkey hook and tears down both windows. No-op if not armed.</summary>
     public void Disarm()
     {
         _hook?.Dispose();
         _hook = null;
+
+        _toolbar?.Dispose();
+        _toolbar = null;
 
         _window?.HideOverlay();
         _window?.Dispose();

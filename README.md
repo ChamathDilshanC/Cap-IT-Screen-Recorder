@@ -9,7 +9,7 @@ tutorial for you** — pick what to record from live thumbnails, let smart zoom 
 actually doing, draw on your screen while you talk, clean up your mic, and export a trimmed GIF, all
 without leaving the app.
 
-[![Release](https://img.shields.io/badge/release-v2.3.0-success?logo=github)](../../releases/latest)
+[![Release](https://img.shields.io/badge/release-v2.4.0-success?logo=github)](../../releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/ChamathDilshanC/Cap-IT-Screen-Recorder/total?color=blue&logo=github)](../../releases)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-0078D6?logo=windows&logoColor=white)](#-installation)
 [![.NET](https://img.shields.io/badge/.NET-8-512BD4?logo=dotnet&logoColor=white)](#%EF%B8%8F-tech-stack)
@@ -18,7 +18,7 @@ without leaving the app.
 
 ### [**⬇ Download for Windows**](../../releases/latest)
 
-[What's new](#-whats-new-in-v230) · [Features](#-features) · [Screenshots](#-screenshots) · [Install](#-installation) · [Shortcuts](#%EF%B8%8F-keyboard-shortcuts) · [Build from source](#-building-from-source)
+[What's new](#-whats-new-in-v240) · [Features](#-features) · [Screenshots](#-screenshots) · [Install](#-installation) · [Shortcuts](#%EF%B8%8F-keyboard-shortcuts) · [Build from source](#-building-from-source)
 
 <br/>
 
@@ -28,35 +28,40 @@ without leaving the app.
 
 ---
 
-## 🆕 What's new in v2.3.0
+## 🆕 What's new in v2.4.0
 
-Two things this release: a second way to pause, and every recording plays back in the review window
-again.
+A proper drawing toolbar for teaching, settings you can change mid-take, and a Pause that actually
+pauses.
 
 | | |
 |---|---|
-| ⏸️ **Pause the screen without pausing the recording** | The old Pause froze the picture, the timer, and the audio all together. There's now a separate **Pause Screen** that holds the last frame on screen while your voice and the clip's timeline keep recording — switch a tab, open something you'd rather not have on camera, keep narrating, then hit **Resume Screen**. The original all-stop pause is still there as **Pause Video**. |
-| ▶️ **Recordings play in the review window again** | "Error: Video could not be decoded" in the post-recording Review & Export window is fixed. |
+| 🧰 **Annotation toolbar — shapes and text** | Drawing Mode now puts a floating palette on screen: **Pen, Line, Arrow, Rectangle, Ellipse** and a click-to-type **Text** tool, plus the six colours, three thickness presets, undo and clear. Drag it anywhere. It's flagged `WDA_EXCLUDEFROMCAPTURE`, so **the toolbar never appears in the recording** — only what you draw with it does. |
+| ⚙️ **Change settings while you're recording** | Cursor style, smart zoom and its level, the keystroke overlay, click ripples, the spotlight, and the webcam PiP can all be switched on, off, or adjusted **mid-recording** — they're composited per frame, so they take effect on the next one. No stopping, no restart. |
+| ⏸️ **Pause actually shortens the recording** | Pausing used to keep feeding the encoder a frozen frame and silence, so a 4-second take paused for 5 seconds came out **9 seconds long** — and disagreed with the on-screen timer. Both the video pacer and the audio pump now stop writing entirely while paused. |
 
 <details>
-<summary><strong>Why the review window couldn't play its own recordings</strong></summary>
+<summary><strong>What was wrong with Pause, and how the toolbar stays out of your video</strong></summary>
 
 <br/>
 
-Cap-IT records to *fragmented* MP4 on purpose — an empty `moov` up front plus a `moof`/`mdat` pair
-flushed per GOP, so a crash or a forced kill mid-recording still leaves a file that's valid up to the
-last flushed fragment, with none of the multi-second rewrite-on-stop that `+faststart` forces on a
-large file. The cost is that Windows Media Foundation — which backs the `MediaPlayer` in the review
-window — can't reliably decode an `empty_moov` fragmented MP4. It already couldn't read the duration
-(that's why the trim range is probed with FFmpeg), and on many setups it fails the video track
-outright.
+**Pause never paused the file.** The frame pacer skipped *fetching* a new frame while paused but still
+wrote the last one to FFmpeg on every tick, and the audio pump zero-filled its buffer and wrote that —
+so the encoder received a full second of video and audio for every real second of a pause. The elapsed
+timer, which correctly excludes paused time, therefore disagreed with the file it produced. Both now
+skip the write outright, so the output timeline stops with the timer and the two streams resume in
+step. The audio pump still *reads* and discards while paused, so the 2-second capture buffer can't fill
+up and replay stale audio the moment you resume.
 
-So once recording actually stops, the fragmented file is now remuxed into a normal indexed MP4:
-`-c copy` makes it an I/O-bound container rewrite — seconds, even for a multi-GB file — and a kill
-mid-remux just leaves the already-valid fragmented source untouched, which is strictly safer than
-writing `+faststart` during capture. If the remux can't run for any reason, the fragmented file is
-kept under the final name; it still opens in VLC and every editor, only the in-app preview struggled
-with it.
+**The toolbar is a second window on purpose.** Annotations have to be captured — that's the whole
+point, they're drawn onto the desktop the recorder is duplicating. A palette drawn onto that same
+surface would be captured too. So the palette is its own layered window with
+`SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)`, which DXGI Desktop Duplication and Windows
+Graphics Capture both honour: visible on your screen, absent from the recording and the live preview.
+
+**Typing doesn't leak.** The overlay is `WS_EX_NOACTIVATE` and never takes keyboard focus, so the text
+tool's keystrokes come from the low-level hook that already handles the annotation hotkeys. While a
+label is being typed the hook returns non-zero for printable keys, Backspace, Enter and Esc, so they
+land in the annotation instead of the app underneath.
 
 </details>
 
@@ -76,7 +81,7 @@ with it.
 
 ### 🖊️ Live on-screen creativity
 
-- **Live ink annotations** — draw over your desktop while recording, on a genuinely transparent, always-on-top, click-through overlay. Toggle drawing with **Ctrl+Shift+D** from anywhere, undo with **Ctrl+Shift+Z**, clear with **Esc**. Pen color and thickness apply live, mid-recording
+- **Live annotations with a real toolbar** — draw over your desktop while recording, on a genuinely transparent, always-on-top, click-through overlay. **Pen, Line, Arrow, Rectangle, Ellipse and a click-to-type Text tool**, with colours, thickness, undo and clear on a draggable floating palette that is hidden from the recording itself. Toggle drawing with **Ctrl+Shift+D** from anywhere, undo with **Ctrl+Shift+Z**, clear with **Esc**
 - **Circular webcam PiP** — a round, always-on-top picture-in-picture webcam overlay, composited straight into the recording
 - **Cursor spotlight** — dims everything except a soft-edged circle around the pointer, with a radius you can adjust live, even while recording
 - **Click ripples** — a brief expanding ring on every click, left or right
@@ -98,7 +103,8 @@ with it.
 
 - **Eight-tab NavigationView shell** — Home, Capture, Smart Tracking, Webcam, Annotations, Effects, Audio, Settings; each a focused, card-based Fluent Design page
 - **Live preview** of exactly what's being captured, from the moment a source is selected — not just while recording
-- **Pause / resume** — freezes the frame and mutes audio without ending the file
+- **Pause / resume, two ways** — **Pause Video** stops the recording outright (the file gets no longer while you're paused), **Pause Screen** freezes just the picture while your voice and the timeline keep running
+- **Live settings** — cursor style, smart zoom, keystroke overlay, click ripples, spotlight and the webcam PiP can all be changed mid-recording
 - **In-app updates** — checks GitHub Releases on startup and can download and install a new version in place
 - **FFmpeg auto-setup** — if `ffmpeg.exe` isn't found, Start Recording offers to fetch it with a live progress bar instead of failing
 
@@ -157,7 +163,7 @@ with it.
 
 ## 📦 Installation
 
-Grab **`CapIT-Screen-Recorder-Setup-2.3.0.exe`** from
+Grab **`CapIT-Screen-Recorder-Setup-2.4.0.exe`** from
 **[Releases](../../releases/latest)** and run it. It's a normal Windows installer (built with Inno
 Setup) and it's fully self-contained — no separate .NET runtime, no Windows App SDK runtime, and no
 manual FFmpeg download.
@@ -396,9 +402,10 @@ by decoupling webcam lifecycle from video-capture lifecycle entirely.
 256-color palette. Fixed with the standard two-pass approach — `palettegen` builds an optimal palette
 for the exact trimmed clip, then `paletteuse` dithers onto it.
 
-**And "Video could not be decoded" in v2.3.0** — every recording opened in the review window failed
-to play, because Media Foundation can't decode the fragmented MP4 the app records for crash-safety.
-Recordings are now remuxed to a standard MP4 on stop. [Full write-up above.](#-whats-new-in-v230)
+**And the two fixed in v2.3.0 / v2.4.0** — "Video could not be decoded" in the review window (Media
+Foundation can't decode the fragmented MP4 the app records for crash-safety; recordings are now
+remuxed to a standard MP4 on stop), and a Pause that never actually shortened the file.
+[Full write-up above.](#-whats-new-in-v240)
 
 ---
 

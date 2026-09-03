@@ -159,6 +159,14 @@ public partial class MainViewModel : BaseViewModel
     [ObservableProperty] private double _annotationStrokeThickness = 6;
     public string AnnotationStrokeThicknessLabel => $"{AnnotationStrokeThickness:0}px";
 
+    // The drawing tool picked on the on-screen toolbar. The toolbar is authoritative while drawing;
+    // changes there flow back here (guarded by _syncingAnnotationFromToolbar) so this stays in step
+    // and persists. Not shown as a combo on the tab — it's a read-only reflection there.
+    public IReadOnlyList<AnnotationToolOption> AnnotationToolOptions { get; } = AnnotationToolOption.All;
+    [ObservableProperty] private AnnotationToolOption _selectedAnnotationTool = AnnotationToolOption.All[0];
+    public string SelectedAnnotationToolLabel => $"Current tool: {SelectedAnnotationTool.Label}";
+    private bool _syncingAnnotationFromToolbar;
+
     [ObservableProperty] private int _fps = 30;
     [ObservableProperty] private double _videoBitrateKbps = 12000;
     public string BitrateLabel => $"Video bitrate: {VideoBitrateKbps:0} kbps";
@@ -233,6 +241,7 @@ public partial class MainViewModel : BaseViewModel
     public MainViewModel()
     {
         _annotations = new AnnotationOverlayService(_dispatcherQueue);
+        _annotations.AttributesChanged += OnAnnotationAttributesChangedFromToolbar;
         _uiTimer = DispatcherQueue.GetForCurrentThread().CreateTimer();
         _uiTimer.Interval = TimeSpan.FromMilliseconds(150);
         _uiTimer.Tick += (_, _) =>
@@ -449,6 +458,7 @@ public partial class MainViewModel : BaseViewModel
             AnnotationsEnabled = s.AnnotationsEnabled;
             SelectedAnnotationColor = AnnotationColorOptions.FirstOrDefault(c => c.Label == s.AnnotationColorLabel) ?? SelectedAnnotationColor;
             AnnotationStrokeThickness = s.AnnotationStrokeThickness > 0 ? s.AnnotationStrokeThickness : AnnotationStrokeThickness;
+            SelectedAnnotationTool = AnnotationToolOptions.FirstOrDefault(t => t.Label == s.AnnotationToolLabel) ?? SelectedAnnotationTool;
             MaximizeTextClarity = s.MaximizeTextClarity;
             if (!string.IsNullOrWhiteSpace(s.OutputDirectory)) OutputDirectory = s.OutputDirectory;
         }
@@ -486,6 +496,7 @@ public partial class MainViewModel : BaseViewModel
         AnnotationsEnabled = AnnotationsEnabled,
         AnnotationColorLabel = SelectedAnnotationColor.Label,
         AnnotationStrokeThickness = AnnotationStrokeThickness,
+        AnnotationToolLabel = SelectedAnnotationTool.Label,
         MaximizeTextClarity = MaximizeTextClarity,
         OutputDirectory = OutputDirectory,
     };
@@ -573,44 +584,57 @@ public partial class MainViewModel : BaseViewModel
         QueueSaveSettings();
     }
 
+    // Every effect below is composited per frame (or, for the webcam, lives on its own device lifecycle),
+    // so all of them are pushed straight into the running capture instead of restarting it — which means
+    // they apply live to the preview *and* to a recording already in progress. RestartPreviewIfIdle is
+    // still called afterwards purely to *start* a preview that isn't running yet: RecordingManager's
+    // Update* methods refresh the same snapshot StartPreview dedups against, so an already-running
+    // capture is left alone rather than being torn down and rebuilt.
     partial void OnCaptureCursorChanged(bool value)
     {
+        _manager.UpdateCursor(value, SelectedCursorStyle.Value);
         RestartPreviewIfIdle();
         QueueSaveSettings();
     }
 
     partial void OnSelectedCursorStyleChanged(CursorStyleOption value)
     {
+        _manager.UpdateCursor(CaptureCursor, value.Value);
         RestartPreviewIfIdle();
         QueueSaveSettings();
     }
 
     partial void OnMouseTrackingZoomEnabledChanged(bool value)
     {
+        _manager.UpdateZoom(value, SelectedZoomLevel.Factor);
         RestartPreviewIfIdle();
         QueueSaveSettings();
     }
 
     partial void OnSelectedZoomLevelChanged(ZoomLevelOption value)
     {
+        _manager.UpdateZoom(MouseTrackingZoomEnabled, value.Factor);
         RestartPreviewIfIdle();
         QueueSaveSettings();
     }
 
     partial void OnKeystrokeOverlayEnabledChanged(bool value)
     {
+        _manager.UpdateKeystrokeOverlay(value);
         RestartPreviewIfIdle();
         QueueSaveSettings();
     }
 
     partial void OnSelectedWebcamChanged(WebcamDeviceOption? value)
     {
+        _manager.UpdateWebcam(WebcamEnabled, value?.Id);
         RestartPreviewIfIdle();
         QueueSaveSettings();
     }
 
     partial void OnWebcamEnabledChanged(bool value)
     {
+        _manager.UpdateWebcam(value, SelectedWebcam?.Id);
         RestartPreviewIfIdle();
         QueueSaveSettings();
     }
@@ -636,6 +660,7 @@ public partial class MainViewModel : BaseViewModel
 
     partial void OnClickRipplesEnabledChanged(bool value)
     {
+        _manager.UpdateClickRipples(value);
         RestartPreviewIfIdle();
         QueueSaveSettings();
     }
@@ -649,15 +674,43 @@ public partial class MainViewModel : BaseViewModel
 
     partial void OnSelectedAnnotationColorChanged(AnnotationColorOption value)
     {
-        _annotations.UpdateDrawingAttributes(value.Value, AnnotationStrokeThickness);
+        if (!_syncingAnnotationFromToolbar)
+            _annotations.UpdateDrawingAttributes(SelectedAnnotationTool.Value, value.Value, AnnotationStrokeThickness);
         QueueSaveSettings();
     }
 
     partial void OnAnnotationStrokeThicknessChanged(double value)
     {
         OnPropertyChanged(nameof(AnnotationStrokeThicknessLabel));
-        _annotations.UpdateDrawingAttributes(SelectedAnnotationColor.Value, value);
+        if (!_syncingAnnotationFromToolbar)
+            _annotations.UpdateDrawingAttributes(SelectedAnnotationTool.Value, SelectedAnnotationColor.Value, value);
         QueueSaveSettings();
+    }
+
+    partial void OnSelectedAnnotationToolChanged(AnnotationToolOption value)
+    {
+        OnPropertyChanged(nameof(SelectedAnnotationToolLabel));
+        if (!_syncingAnnotationFromToolbar)
+            _annotations.UpdateDrawingAttributes(value.Value, SelectedAnnotationColor.Value, AnnotationStrokeThickness);
+        QueueSaveSettings();
+    }
+
+    /// <summary>A tool / colour / thickness was picked on the on-screen toolbar — mirror it here (for the tab + persistence) without pushing straight back into the overlay.</summary>
+    private void OnAnnotationAttributesChangedFromToolbar(Models.AnnotationTool tool, Windows.UI.Color color, double thickness)
+    {
+        _syncingAnnotationFromToolbar = true;
+        try
+        {
+            SelectedAnnotationTool = AnnotationToolOptions.FirstOrDefault(t => t.Value == tool) ?? SelectedAnnotationTool;
+            var match = AnnotationColorOptions.FirstOrDefault(c =>
+                c.Value.R == color.R && c.Value.G == color.G && c.Value.B == color.B);
+            if (match is not null) SelectedAnnotationColor = match;
+            AnnotationStrokeThickness = thickness;
+        }
+        finally
+        {
+            _syncingAnnotationFromToolbar = false;
+        }
     }
 
     partial void OnSelectedEncoderChanged(HardwareEncoder value)
@@ -759,7 +812,7 @@ public partial class MainViewModel : BaseViewModel
 
         if (AnnotationsEnabled && IsMonitorCaptureMode && SelectedMonitor is { } monitor)
         {
-            try { _annotations.Arm(monitor, SelectedAnnotationColor.Value, AnnotationStrokeThickness); }
+            try { _annotations.Arm(monitor, SelectedAnnotationTool.Value, SelectedAnnotationColor.Value, AnnotationStrokeThickness); }
             catch { /* best effort: annotations are an add-on, never worth failing a recording over */ }
         }
         else

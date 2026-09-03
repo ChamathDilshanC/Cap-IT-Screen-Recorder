@@ -119,10 +119,12 @@
                             IsEnabled="{x:Bind ViewModel.IsIdle, Mode=OneWay}" />
                     </ctcontrols:SettingsCard>
 
-                    <ctcontrols:SettingsCard Header="Show cursor">
+                    <!-- Cursor rendering is composited per frame, so unlike the encoder settings above
+                         these two apply instantly — to the live preview and to a recording already running. -->
+                    <ctcontrols:SettingsCard Header="Show cursor"
+                                              Description="Applies immediately, even mid-recording">
                         <ToggleSwitch OnContent="On" OffContent="Off"
-                                      IsOn="{x:Bind ViewModel.CaptureCursor, Mode=TwoWay}"
-                                      IsEnabled="{x:Bind ViewModel.IsIdle, Mode=OneWay}" />
+                                      IsOn="{x:Bind ViewModel.CaptureCursor, Mode=TwoWay}" />
                     </ctcontrols:SettingsCard>
 
                     <ctcontrols:SettingsCard Header="Cursor style"
@@ -130,8 +132,7 @@
                                               Visibility="{x:Bind ViewModel.CaptureCursor, Mode=OneWay}">
                         <ComboBox MinWidth="200"
                             ItemsSource="{x:Bind ViewModel.CursorStyleOptions}"
-                            SelectedItem="{x:Bind ViewModel.SelectedCursorStyle, Mode=TwoWay}"
-                            IsEnabled="{x:Bind ViewModel.IsIdle, Mode=OneWay}" />
+                            SelectedItem="{x:Bind ViewModel.SelectedCursorStyle, Mode=TwoWay}" />
                     </ctcontrols:SettingsCard>
                 </ctcontrols:SettingsExpander.Items>
             </ctcontrols:SettingsExpander>

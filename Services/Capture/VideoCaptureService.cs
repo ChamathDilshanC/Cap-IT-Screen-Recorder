@@ -137,8 +137,13 @@ public sealed class VideoCaptureService : IDisposable
     private double _letterboxOffsetX;
     private double _letterboxOffsetY;
 
+    // Guards the keyboard/mouse hook fields specifically. Effects that need them (zoom, keystroke
+    // overlay, click ripples) can now be switched on mid-session from the UI thread (see
+    // EnsureActivityHooks), which races Stop() tearing the same fields down on another thread.
+    private readonly object _hookLock = new();
     private GlobalKeyboardHook? _keyboardHook;
     private GlobalMouseHook? _mouseHook;
+    private bool _clickAtSubscribed;
     private KeystrokeOverlayRenderer? _keystrokeOverlay;
 
     // Cursor spotlight (Phase 4). Radius is stored in canvas pixels, the same space _cursorX/_cursorY
@@ -259,6 +264,7 @@ public sealed class VideoCaptureService : IDisposable
             if (clickRipplesEnabled)
             {
                 _mouseHook.ClickAt += OnMouseClickAt;
+                _clickAtSubscribed = true;
             }
         }
 
@@ -462,6 +468,110 @@ public sealed class VideoCaptureService : IDisposable
     {
         _spotlightRadius = Math.Max(1, (int)Math.Round(radius));
         _spotlightEnabled = enabled;
+    }
+
+    /// <summary>
+    /// Live cursor rendering change — no restart. <see cref="_captureCursor"/>/<see cref="_cursorStyle"/>
+    /// are read per frame by <see cref="CopyFrameToBuffer"/>, so flipping them takes effect on the very
+    /// next frame of the preview or of an in-progress recording. Window (WGC) capture bakes the real
+    /// system cursor in at the session level instead, so that path pushes the flag onto the live capture
+    /// session; the style has no meaning there (see <see cref="CursorStyle"/>).
+    /// </summary>
+    public void UpdateCursor(bool captureCursor, CursorStyle cursorStyle)
+    {
+        _captureCursor = captureCursor;
+        _cursorStyle = cursorStyle;
+
+        if (_captureTarget == CaptureTargetKind.Window)
+        {
+            lock (_wgcCallbackLock)
+            {
+                try { if (_captureSession is not null) _captureSession.IsCursorCaptureEnabled = captureCursor; }
+                catch { /* session may be mid-teardown — cosmetic either way */ }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Live smart-zoom change — no restart. The factor and enabled flag are eased toward per frame by
+    /// <see cref="ApplyZoom"/>, so turning zoom off mid-recording glides back out to 1x rather than
+    /// cutting. Zoom needs the keyboard/mouse hooks for its activity signal (see <see cref="Prepare"/>),
+    /// which may not exist if the session started with zoom off — <see cref="EnsureActivityHooks"/>
+    /// installs them on demand.
+    /// </summary>
+    public void UpdateZoom(bool enabled, double factor)
+    {
+        _zoomTargetFactor = factor;
+        _zoomEnabled = enabled;
+        if (enabled) EnsureActivityHooks(needKeyboard: true, needMouse: true, needClickAt: false);
+    }
+
+    /// <summary>
+    /// Live keystroke-overlay toggle — no restart. Creates the renderer (and the keyboard hook that
+    /// feeds it) the first time it's switched on mid-session; switching off drops the renderer so
+    /// <see cref="ApplyKeystrokeOverlay"/> stops compositing, leaving the hook in place for whatever
+    /// else may still want the activity signal.
+    /// </summary>
+    public void UpdateKeystrokeOverlay(bool enabled)
+    {
+        if (enabled)
+        {
+            _keystrokeOverlay ??= new KeystrokeOverlayRenderer();
+            EnsureActivityHooks(needKeyboard: true, needMouse: false, needClickAt: false);
+        }
+        else
+        {
+            _keystrokeOverlay = null;
+        }
+    }
+
+    /// <summary>Live click-ripple toggle — no restart. Needs the mouse hook's ClickAt signal, installed on demand.</summary>
+    public void UpdateClickRipples(bool enabled)
+    {
+        _clickRipplesEnabled = enabled;
+        if (enabled)
+        {
+            EnsureActivityHooks(needKeyboard: false, needMouse: true, needClickAt: true);
+        }
+        else
+        {
+            lock (_rippleLock) { _activeRipples.Clear(); }
+        }
+    }
+
+    /// <summary>
+    /// Installs the global keyboard/mouse hooks a live-enabled effect needs, if the session didn't
+    /// already start with them. Only ever adds — a hook that's up stays up for the rest of the capture
+    /// session and is torn down by <see cref="Stop"/>, since the cost of an installed low-level hook is
+    /// the install itself, not keeping it. Guarded by <see cref="_hookLock"/> because these calls come
+    /// from the UI thread while <see cref="Stop"/> may be tearing the same fields down.
+    /// </summary>
+    private void EnsureActivityHooks(bool needKeyboard, bool needMouse, bool needClickAt)
+    {
+        lock (_hookLock)
+        {
+            if (!_prepared) return;
+
+            if (needKeyboard && _keyboardHook is null)
+            {
+                _keyboardHook = new GlobalKeyboardHook();
+                _keyboardHook.KeyPressed += OnKeyboardActivity;
+                if (IsCapturing) _keyboardHook.Start();
+            }
+
+            if (needMouse && _mouseHook is null)
+            {
+                _mouseHook = new GlobalMouseHook();
+                _mouseHook.Click += OnMouseActivity;
+                if (IsCapturing) _mouseHook.Start();
+            }
+
+            if (needClickAt && _mouseHook is not null && !_clickAtSubscribed)
+            {
+                _mouseHook.ClickAt += OnMouseClickAt;
+                _clickAtSubscribed = true;
+            }
+        }
     }
 
     private void OnCaptureItemClosed(GraphicsCaptureItem sender, object args) => SignalCaptureTargetLostOnce();
@@ -1516,17 +1626,22 @@ public sealed class VideoCaptureService : IDisposable
             _wgcStagingWidth = 0;
             _wgcStagingHeight = 0;
 
-            if (_keyboardHook is not null)
+            lock (_hookLock)
             {
-                _keyboardHook.KeyPressed -= OnKeyboardActivity;
-                _keyboardHook.Dispose();
-                _keyboardHook = null;
-            }
-            if (_mouseHook is not null)
-            {
-                _mouseHook.Click -= OnMouseActivity;
-                _mouseHook.Dispose();
-                _mouseHook = null;
+                if (_keyboardHook is not null)
+                {
+                    _keyboardHook.KeyPressed -= OnKeyboardActivity;
+                    _keyboardHook.Dispose();
+                    _keyboardHook = null;
+                }
+                if (_mouseHook is not null)
+                {
+                    _mouseHook.Click -= OnMouseActivity;
+                    if (_clickAtSubscribed) _mouseHook.ClickAt -= OnMouseClickAt;
+                    _mouseHook.Dispose();
+                    _mouseHook = null;
+                }
+                _clickAtSubscribed = false;
             }
             _keystrokeOverlay = null;
             // Deliberately no webcam teardown here — see SetWebcam's remarks. Stop() tears down the

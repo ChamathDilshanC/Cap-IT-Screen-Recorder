@@ -43,8 +43,20 @@ public sealed class AudioCaptureService : IDisposable
 
     public bool IsActive { get; private set; }
 
-    /// <summary>While true, PumpLoop writes silence instead of live audio (used while recording is paused).</summary>
-    public volatile bool IsMuted;
+    /// <summary>
+    /// While true, <see cref="PumpLoop"/> keeps draining the capture buffers but writes <em>nothing</em>
+    /// to the encoder, so the output's audio timeline stops advancing for the duration of a pause.
+    /// </summary>
+    /// <remarks>
+    /// This used to write silence instead of skipping the write, which meant a pause still fed the
+    /// encoder a full second of samples per real second — so a 4-second recording paused for 5 seconds
+    /// came out 9 seconds long, and the on-screen elapsed timer (which correctly excludes paused time)
+    /// disagreed with the file. Draining but not writing keeps it in step with the video pacer, which
+    /// skips its write for exactly the same reason — see RecordingManager.PacerLoopAsync. Reading and
+    /// discarding (rather than not reading at all) matters too: it stops the 2-second capture buffers
+    /// filling up and replaying stale audio from during the pause once recording resumes.
+    /// </remarks>
+    public volatile bool IsPaused;
 
     /// <summary>Starts capturing with both sources pre-mixed into one stream. Returns false (and does nothing) if neither source is requested.</summary>
     public bool Start(bool captureSystemAudio, bool captureMicrophone, string? microphoneDeviceId, Stream outputStream)
@@ -174,10 +186,9 @@ public sealed class AudioCaptureService : IDisposable
             int read = provider16.Read(chunk, 0, chunk.Length);
             if (read <= 0) continue;
 
-            if (IsMuted)
-            {
-                Array.Clear(chunk, 0, read);
-            }
+            // Paused: the samples were still read above (draining the capture buffer so nothing stale
+            // replays on resume), but nothing reaches the encoder — see IsPaused's remarks.
+            if (IsPaused) continue;
 
             try
             {
