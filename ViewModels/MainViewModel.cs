@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices.WindowsRuntime;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -121,6 +121,7 @@ public partial class MainViewModel : BaseViewModel
 
     [ObservableProperty] private bool _mouseTrackingZoomEnabled;
     [ObservableProperty] private ZoomLevelOption _selectedZoomLevel = ZoomLevelOption.All[0];
+    [ObservableProperty] private bool _zoomOnClickOnly;
     [ObservableProperty] private bool _keystrokeOverlayEnabled;
 
     // Circular webcam PiP overlay (Phase 3 Step 1 — device selection/persistence only; VideoCaptureService
@@ -469,6 +470,7 @@ public partial class MainViewModel : BaseViewModel
             EnableMicNoiseSuppression = s.EnableMicNoiseSuppression;
             MouseTrackingZoomEnabled = s.MouseTrackingZoomEnabled;
             SelectedZoomLevel = ZoomLevelOptions.FirstOrDefault(z => z.Factor == s.ZoomFactor) ?? SelectedZoomLevel;
+            ZoomOnClickOnly = s.ZoomOnClickOnly;
             KeystrokeOverlayEnabled = s.KeystrokeOverlayEnabled;
             SpotlightEnabled = s.SpotlightEnabled;
             SpotlightRadius = s.SpotlightRadius;
@@ -505,6 +507,7 @@ public partial class MainViewModel : BaseViewModel
         EnableMicNoiseSuppression = EnableMicNoiseSuppression,
         MouseTrackingZoomEnabled = MouseTrackingZoomEnabled,
         ZoomFactor = SelectedZoomLevel.Factor,
+        ZoomOnClickOnly = ZoomOnClickOnly,
         KeystrokeOverlayEnabled = KeystrokeOverlayEnabled,
         WebcamEnabled = WebcamEnabled,
         WebcamDeviceId = SelectedWebcam?.Id,
@@ -626,14 +629,26 @@ public partial class MainViewModel : BaseViewModel
 
     partial void OnMouseTrackingZoomEnabledChanged(bool value)
     {
-        _manager.UpdateZoom(value, SelectedZoomLevel.Factor);
+        _manager.UpdateZoom(value, SelectedZoomLevel.Factor, ZoomOnClickOnly);
         RestartPreviewIfIdle();
         QueueSaveSettings();
     }
 
     partial void OnSelectedZoomLevelChanged(ZoomLevelOption value)
     {
-        _manager.UpdateZoom(MouseTrackingZoomEnabled, value.Factor);
+        _manager.UpdateZoom(MouseTrackingZoomEnabled, value.Factor, ZoomOnClickOnly);
+        RestartPreviewIfIdle();
+        QueueSaveSettings();
+    }
+
+    /// <summary>
+    /// Switching the zoom trigger mid-recording is safe and takes effect on the next frame: the capture
+    /// service only reads the flag when deciding whether the zoom is currently being held open, so the
+    /// camera eases between the two behaviours rather than cutting.
+    /// </summary>
+    partial void OnZoomOnClickOnlyChanged(bool value)
+    {
+        _manager.UpdateZoom(MouseTrackingZoomEnabled, SelectedZoomLevel.Factor, value);
         RestartPreviewIfIdle();
         QueueSaveSettings();
     }
@@ -885,6 +900,7 @@ public partial class MainViewModel : BaseViewModel
         var cursorStyle = SelectedCursorStyle.Value;
         var zoomEnabled = MouseTrackingZoomEnabled;
         var zoomFactor = SelectedZoomLevel.Factor;
+        var zoomClickOnly = ZoomOnClickOnly;
         var keystrokeOverlay = KeystrokeOverlayEnabled;
         var webcamEnabled = WebcamEnabled;
         var webcamDeviceId = SelectedWebcam?.Id;
@@ -896,7 +912,7 @@ public partial class MainViewModel : BaseViewModel
             try
             {
                 _manager.StartPreview(targetKind, monitor, window, cursor, cursorStyle, zoomEnabled, zoomFactor, keystrokeOverlay,
-                    webcamEnabled, webcamDeviceId, spotlightEnabled, spotlightRadius, clickRipplesEnabled);
+                    webcamEnabled, webcamDeviceId, spotlightEnabled, spotlightRadius, clickRipplesEnabled, zoomClickOnly);
             }
             catch { /* best effort: live preview is a convenience, not required to record */ }
         });
@@ -1119,6 +1135,7 @@ public partial class MainViewModel : BaseViewModel
             CursorStyle = SelectedCursorStyle.Value,
             MouseTrackingZoomEnabled = MouseTrackingZoomEnabled,
             ZoomFactor = SelectedZoomLevel.Factor,
+            ZoomOnClickOnly = ZoomOnClickOnly,
             KeystrokeOverlayEnabled = KeystrokeOverlayEnabled,
             WebcamEnabled = WebcamEnabled,
             WebcamDeviceId = SelectedWebcam?.Id,

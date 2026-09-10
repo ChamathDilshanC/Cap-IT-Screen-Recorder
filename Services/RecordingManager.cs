@@ -1,4 +1,4 @@
-using ScreenRecorderApp.Models;
+﻿using ScreenRecorderApp.Models;
 using ScreenRecorderApp.Services.Capture;
 using ScreenRecorderApp.Services.Encoding;
 
@@ -35,6 +35,7 @@ public sealed class RecordingManager : IDisposable
     private CursorStyle _previewCursorStyle;
     private bool _previewZoomEnabled;
     private double _previewZoomFactor;
+    private bool _previewZoomOnClickOnly;
     private bool _previewKeystrokeOverlay;
     private bool _previewSpotlightEnabled;
     private double _previewSpotlightRadius;
@@ -105,7 +106,8 @@ public sealed class RecordingManager : IDisposable
         bool captureCursor, CursorStyle cursorStyle,
         bool zoomEnabled = false, double zoomFactor = 2.0, bool keystrokeOverlayEnabled = false,
         bool webcamEnabled = false, string? webcamDeviceId = null,
-        bool spotlightEnabled = false, double spotlightRadius = 180, bool clickRipplesEnabled = false)
+        bool spotlightEnabled = false, double spotlightRadius = 180, bool clickRipplesEnabled = false,
+        bool zoomOnClickOnly = false)
     {
         // Same single-authority rule StartAsync applies — the chosen target kind decides, so the preview
         // can never end up showing a different source than a recording started from the same selection.
@@ -129,6 +131,7 @@ public sealed class RecordingManager : IDisposable
             if (_video.IsCapturing && _previewMonitorHandle == monitor?.Handle && _previewWindowHandle == window?.Handle
                 && _previewCursor == captureCursor && _previewCursorStyle == cursorStyle
                 && _previewZoomEnabled == zoomEnabled && _previewZoomFactor == zoomFactor
+                && _previewZoomOnClickOnly == zoomOnClickOnly
                 && _previewKeystrokeOverlay == keystrokeOverlayEnabled
                 && _previewSpotlightEnabled == spotlightEnabled && _previewSpotlightRadius == spotlightRadius
                 && _previewClickRipplesEnabled == clickRipplesEnabled) return;
@@ -137,7 +140,7 @@ public sealed class RecordingManager : IDisposable
             try
             {
                 _video.Prepare(monitor, window, captureCursor, cursorStyle, zoomEnabled, zoomFactor, keystrokeOverlayEnabled,
-                    spotlightEnabled, spotlightRadius, clickRipplesEnabled);
+                    spotlightEnabled, spotlightRadius, clickRipplesEnabled, zoomOnClickOnly);
                 _video.BeginCapture();
                 _previewMonitorHandle = monitor?.Handle;
                 _previewWindowHandle = window?.Handle;
@@ -145,6 +148,7 @@ public sealed class RecordingManager : IDisposable
                 _previewCursorStyle = cursorStyle;
                 _previewZoomEnabled = zoomEnabled;
                 _previewZoomFactor = zoomFactor;
+                _previewZoomOnClickOnly = zoomOnClickOnly;
                 _previewKeystrokeOverlay = keystrokeOverlayEnabled;
                 _previewSpotlightEnabled = spotlightEnabled;
                 _previewSpotlightRadius = spotlightRadius;
@@ -187,11 +191,12 @@ public sealed class RecordingManager : IDisposable
     }
 
     /// <inheritdoc cref="UpdateCursor"/>
-    public void UpdateZoom(bool enabled, double factor)
+    public void UpdateZoom(bool enabled, double factor, bool clickOnly = false)
     {
         _previewZoomEnabled = enabled;
         _previewZoomFactor = factor;
-        lock (_videoLock) { _video.UpdateZoom(enabled, factor); }
+        _previewZoomOnClickOnly = clickOnly;
+        lock (_videoLock) { _video.UpdateZoom(enabled, factor, clickOnly); }
     }
 
     /// <inheritdoc cref="UpdateCursor"/>
@@ -283,7 +288,8 @@ public sealed class RecordingManager : IDisposable
             // Prepare (but don't start) capture first so we know the real resolution.
             await Task.Run(() => { lock (_videoLock) { _video.Prepare(monitor, window, settings.CaptureCursor, settings.CursorStyle,
                 settings.MouseTrackingZoomEnabled, settings.ZoomFactor, settings.KeystrokeOverlayEnabled,
-                settings.SpotlightEnabled, settings.SpotlightRadius, settings.ClickRipplesEnabled); } });
+                settings.SpotlightEnabled, settings.SpotlightRadius, settings.ClickRipplesEnabled,
+                settings.ZoomOnClickOnly); } });
 
             _finalPath = settings.BuildOutputFilePath();
             // MP4 is recorded to a fragmented ".part.mp4" and remuxed to a faststart MP4 on stop

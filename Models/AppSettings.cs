@@ -1,4 +1,4 @@
-namespace ScreenRecorderApp.Models;
+﻿namespace ScreenRecorderApp.Models;
 
 /// <summary>
 /// Durable user preferences, persisted across app restarts by <see cref="Services.SettingsService"/>.
@@ -38,6 +38,11 @@ public sealed class AppSettings
 
     public bool MouseTrackingZoomEnabled { get; set; } = false;
     public double ZoomFactor { get; set; } = 2.0;
+    // Restricts the smart zoom's trigger to mouse clicks: with this on, moving the mouse or typing no
+    // longer holds the camera in, so it sits at 1x until you actually click something and then eases back
+    // out a couple of seconds later. Separate from MouseTrackingZoomEnabled rather than a third state of
+    // it, because it is a modifier on how the same feature is triggered, not a different feature.
+    public bool ZoomOnClickOnly { get; set; } = false;
     public bool KeystrokeOverlayEnabled { get; set; } = false;
 
     public bool WebcamEnabled { get; set; } = false;

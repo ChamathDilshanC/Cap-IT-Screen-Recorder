@@ -1,4 +1,4 @@
-namespace ScreenRecorderApp.Models;
+﻿namespace ScreenRecorderApp.Models;
 
 /// <summary>Pairs a <see cref="CaptureTargetKind"/> with a friendly label for display in a ComboBox.</summary>
 public sealed record CaptureTargetKindOption(CaptureTargetKind Value, string Label)
@@ -166,6 +166,11 @@ public sealed class RecordingSettings
 
     public bool MouseTrackingZoomEnabled { get; set; } = false;
     public double ZoomFactor { get; set; } = 2.0;
+    // Restricts the smart zoom's trigger to mouse clicks: with this on, moving the mouse or typing no
+    // longer holds the camera in, so it sits at 1x until you actually click something and then eases back
+    // out a couple of seconds later. Separate from MouseTrackingZoomEnabled rather than a third state of
+    // it, because it is a modifier on how the same feature is triggered, not a different feature.
+    public bool ZoomOnClickOnly { get; set; } = false;
     public bool KeystrokeOverlayEnabled { get; set; } = false;
 
     // Circular webcam PiP overlay (Phase 3). WebcamDeviceId is the WinRT DeviceInformation.Id string —

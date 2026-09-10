@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Runtime.InteropServices;
 using ScreenRecorderApp.Models;
 using ScreenRecorderApp.Services.Capture.Interop;
@@ -101,14 +101,44 @@ public sealed class VideoCaptureService : IDisposable
     // frame (rather than snapping) so enabling/disabling the effect and following a moving cursor both
     // read as smooth camera motion instead of a jump cut. The *target* factor itself is gated on recent
     // interaction (see _lastActivityTicks) rather than being "on" continuously whenever zoom is enabled.
-    private const double ZoomTimeConstant = 0.18; // seconds — smaller = snappier camera motion
+    //
+    // The easing is a critically damped spring (see SmoothDamp), not the first-order lag
+    // (value += (target - value) * alpha) this used to run. That distinction is the whole difference
+    // between "it moves smoothly" and the After Effects-style Easy Ease look: a first-order lag jumps to
+    // its maximum velocity the instant the target changes and only decays from there — smooth stop, hard
+    // start. A second-order spring carries velocity as state, so it accelerates *and* decelerates
+    // smoothly (C1-continuous through a target change) and, being critically damped, settles without any
+    // overshoot or bounce. Separate in/out smooth times because a push-in that lands a touch quicker than
+    // it pulls back out reads as intentional camera work rather than a rubber band.
+    private const double ZoomInSmoothTime = 0.50;  // seconds to (approximately) settle when pushing in
+    private const double ZoomOutSmoothTime = 0.75; // slower on the way out — an unhurried release
+    private const double ZoomPanSmoothTime = 0.32; // the camera's lateral follow, snappier than the push
     private const double IdleTimeoutSeconds = 1.5;
+    // Click-triggered mode holds the zoom longer than plain idle does: the point of a click zoom is to
+    // show what the click did, which happens *after* the click, so releasing on the same 1.5s as mouse
+    // movement would pull out before the result is on screen.
+    private const double ClickHoldSeconds = 2.5;
+    // The cursor may wander this fraction of the zoomed crop away from the camera's aim point before the
+    // camera bothers to re-aim. Without it, hand tremor and pixel-level cursor jitter drive a permanent
+    // low-amplitude wobble in the pan spring, which at 2x is very visible; with it the camera holds
+    // genuinely still until the cursor actually goes somewhere.
+    private const double PanDeadZoneFraction = 0.12;
     private const int MovementActivityThresholdPx = 3;
     private bool _zoomEnabled;
+    private bool _zoomOnClickOnly;
     private double _zoomTargetFactor = 1.0;
     private double _zoomCurrentFactor = 1.0;
+    private double _zoomFactorVelocity;
     private double _zoomCenterX;
     private double _zoomCenterY;
+    private double _zoomCenterVelocityX;
+    private double _zoomCenterVelocityY;
+    // Where the camera is aiming, as opposed to where it currently is: the cursor moves the anchor (only
+    // once it leaves the dead zone above), and the pan spring chases the anchor. Keeping these separate
+    // is what makes the dead zone hold — feeding the cursor straight into the spring instead would let
+    // every jitter through as a small impulse.
+    private double _panAnchorX;
+    private double _panAnchorY;
     private bool _zoomCenterInitialized;
     private byte[]? _zoomScratchBuffer;
     private readonly Stopwatch _zoomClock = Stopwatch.StartNew();
@@ -118,6 +148,12 @@ public sealed class VideoCaptureService : IDisposable
     // threads (typing, clicks) — Volatile access instead of a lock since it's a single primitive value
     // and ApplyZoom only ever needs the most recent write, not strict ordering with anything else.
     private long _lastActivityTicks;
+
+    // Click-only zoom's trigger. Deliberately *not* folded into _lastActivityTicks: that one means "any
+    // interaction at all" (movement, wheel, typing) and several things besides zoom read it, whereas this
+    // is specifically the last mouse-button-down, which is the only thing allowed to open the zoom when
+    // _zoomOnClickOnly is set. Written from GlobalMouseHook's thread, read from the capture thread.
+    private long _lastClickTicks;
 
     // While typing, the zoom follows the text caret instead of the (possibly stale) mouse position —
     // set on every keypress via CaretLocator, cleared back to null on the next mouse movement/click so
@@ -198,7 +234,8 @@ public sealed class VideoCaptureService : IDisposable
     /// </summary>
     public void Prepare(MonitorInfo? monitor, WindowInfo? window, bool captureCursor, CursorStyle cursorStyle = CursorStyle.Arrow,
         bool zoomEnabled = false, double zoomFactor = 2.0, bool keystrokeOverlayEnabled = false,
-        bool spotlightEnabled = false, double spotlightRadius = 180, bool clickRipplesEnabled = false)
+        bool spotlightEnabled = false, double spotlightRadius = 180, bool clickRipplesEnabled = false,
+        bool zoomOnClickOnly = false)
     {
         if (_prepared) return;
         if (monitor is null && window is null)
@@ -220,10 +257,15 @@ public sealed class VideoCaptureService : IDisposable
         _cursorStyle = cursorStyle;
 
         _zoomEnabled = zoomEnabled;
+        _zoomOnClickOnly = zoomOnClickOnly;
         _zoomTargetFactor = zoomFactor;
         _zoomCurrentFactor = 1.0;
+        _zoomFactorVelocity = 0;
+        _zoomCenterVelocityX = 0;
+        _zoomCenterVelocityY = 0;
         _zoomCenterInitialized = false;
         _lastActivityTicks = 0; // starts idle: zoom eases in only once real activity is observed
+        _lastClickTicks = 0;    // ...and click-only mode starts idle until a real button-down
         _lastZoomFrameSeconds = _zoomClock.Elapsed.TotalSeconds;
         _typingTargetX = null;
         _typingTargetY = null;
@@ -256,16 +298,16 @@ public sealed class VideoCaptureService : IDisposable
         // A click needs a real hook for both zoom's activity signal and click ripples — DXGI reports
         // cursor *position* every frame already (used for movement-based activity in CaptureLoop), and
         // window mode polls position itself in OnWgcFrameArrived, but neither ever reports button state
-        // on its own. ClickAt (screen coordinates) is only subscribed when ripples actually want it.
+        // on its own. Both of the hook's signals are wired up together now: ClickAt used to be ripples-
+        // only, but it is the sole button-down-without-the-wheel signal in the app, which is exactly what
+        // click-only zoom needs as its trigger — so whoever owns the hook subscribes both, and each
+        // handler decides for itself whether its feature is currently on.
         if (zoomEnabled || clickRipplesEnabled)
         {
             _mouseHook = new GlobalMouseHook();
             _mouseHook.Click += OnMouseActivity;
-            if (clickRipplesEnabled)
-            {
-                _mouseHook.ClickAt += OnMouseClickAt;
-                _clickAtSubscribed = true;
-            }
+            _mouseHook.ClickAt += OnMouseClickAt;
+            _clickAtSubscribed = true;
         }
 
         if (_captureTarget == CaptureTargetKind.Window)
@@ -499,11 +541,12 @@ public sealed class VideoCaptureService : IDisposable
     /// which may not exist if the session started with zoom off — <see cref="EnsureActivityHooks"/>
     /// installs them on demand.
     /// </summary>
-    public void UpdateZoom(bool enabled, double factor)
+    public void UpdateZoom(bool enabled, double factor, bool clickOnly = false)
     {
         _zoomTargetFactor = factor;
         _zoomEnabled = enabled;
-        if (enabled) EnsureActivityHooks(needKeyboard: true, needMouse: true, needClickAt: false);
+        _zoomOnClickOnly = clickOnly;
+        if (enabled) EnsureActivityHooks(needKeyboard: true, needMouse: true);
     }
 
     /// <summary>
@@ -517,7 +560,7 @@ public sealed class VideoCaptureService : IDisposable
         if (enabled)
         {
             _keystrokeOverlay ??= new KeystrokeOverlayRenderer();
-            EnsureActivityHooks(needKeyboard: true, needMouse: false, needClickAt: false);
+            EnsureActivityHooks(needKeyboard: true, needMouse: false);
         }
         else
         {
@@ -531,7 +574,7 @@ public sealed class VideoCaptureService : IDisposable
         _clickRipplesEnabled = enabled;
         if (enabled)
         {
-            EnsureActivityHooks(needKeyboard: false, needMouse: true, needClickAt: true);
+            EnsureActivityHooks(needKeyboard: false, needMouse: true);
         }
         else
         {
@@ -546,7 +589,7 @@ public sealed class VideoCaptureService : IDisposable
     /// the install itself, not keeping it. Guarded by <see cref="_hookLock"/> because these calls come
     /// from the UI thread while <see cref="Stop"/> may be tearing the same fields down.
     /// </summary>
-    private void EnsureActivityHooks(bool needKeyboard, bool needMouse, bool needClickAt)
+    private void EnsureActivityHooks(bool needKeyboard, bool needMouse)
     {
         lock (_hookLock)
         {
@@ -563,11 +606,13 @@ public sealed class VideoCaptureService : IDisposable
             {
                 _mouseHook = new GlobalMouseHook();
                 _mouseHook.Click += OnMouseActivity;
+                _mouseHook.ClickAt += OnMouseClickAt;
+                _clickAtSubscribed = true;
                 if (IsCapturing) _mouseHook.Start();
             }
-
-            if (needClickAt && _mouseHook is not null && !_clickAtSubscribed)
+            else if (needMouse && _mouseHook is not null && !_clickAtSubscribed)
             {
+                // A hook left over from a session that predates the always-both wiring above.
                 _mouseHook.ClickAt += OnMouseClickAt;
                 _clickAtSubscribed = true;
             }
@@ -616,6 +661,17 @@ public sealed class VideoCaptureService : IDisposable
     /// </summary>
     private void OnMouseClickAt(int screenX, int screenY)
     {
+        // Click-only zoom's trigger, recorded before the visibility test below so it is unconditional:
+        // unlike a ripple (which has to be drawn *somewhere* and so needs a point inside the frame), the
+        // zoom only needs to know that a click happened — it takes its aim from the cursor either way.
+        Volatile.Write(ref _lastClickTicks, DateTime.UtcNow.Ticks);
+
+        // The subscription is now permanent for the life of the hook (see Prepare), so the enabled check
+        // that used to be implicit in "only subscribe when ripples are on" has to be explicit here —
+        // without it, ripples queued while the feature is off would accumulate forever, since ApplyRipples
+        // (the only thing that prunes the list) doesn't run when it's off.
+        if (!_clickRipplesEnabled) return;
+
         MapScreenToCanvas(screenX, screenY, out var canvasX, out var canvasY, out var visible);
         if (!visible) return;
 
@@ -1109,49 +1165,86 @@ public sealed class VideoCaptureService : IDisposable
     /// Eases the zoom factor and pan center toward their targets, then — if the eased factor is
     /// meaningfully above 1x — resamples a centered crop of <paramref name="frame"/> back up to the full
     /// frame size in place, in effect a "camera" pushing in on and following the cursor. The target factor
-    /// itself is gated on recent interaction: zoom eases back to 1x whenever the user has been idle
-    /// (no mouse movement/click/keypress) for <see cref="IdleTimeoutSeconds"/>, not just when the feature
-    /// is toggled off — that's what makes it "smart" rather than continuously zoomed while enabled.
-    /// Runs every frame (not just while <see cref="_zoomEnabled"/>) so disabling zoom, or going idle,
-    /// eases back out to 1x instead of snapping.
+    /// itself is gated on recent interaction: zoom eases back to 1x whenever the user has been idle for
+    /// <see cref="IdleTimeoutSeconds"/>, not just when the feature is toggled off — that's what makes it
+    /// "smart" rather than continuously zoomed while enabled. What counts as "interaction" depends on
+    /// <see cref="_zoomOnClickOnly"/>: normally any mouse movement, click or keypress holds the zoom open,
+    /// but in click-only mode nothing but a mouse button-down does, and it holds for the longer
+    /// <see cref="ClickHoldSeconds"/>. Runs every frame (not just while <see cref="_zoomEnabled"/>) so
+    /// disabling zoom, or going idle, eases back out to 1x instead of snapping.
+    ///
+    /// All three eased quantities (factor, pan X, pan Y) go through <see cref="SmoothDamp"/> rather than
+    /// the first-order lag this used to use — see the easing constants' remarks for why that is what
+    /// produces motion with a soft start as well as a soft stop.
     /// </summary>
     private void ApplyZoom(byte[] frame, int width, int height)
     {
         var nowSeconds = _zoomClock.Elapsed.TotalSeconds;
-        var dt = Math.Max(0, nowSeconds - _lastZoomFrameSeconds);
+        // Clamped, not just floored at zero: a capture hitch (a long GC, a display-mode change) would
+        // otherwise hand the springs a dt of hundreds of milliseconds and teleport the camera in a single
+        // frame, undoing the smoothness everywhere else. Capping it makes a hitch cost a little extra
+        // catch-up time instead of a visible jump.
+        var dt = Math.Clamp(nowSeconds - _lastZoomFrameSeconds, 0, 0.1);
         _lastZoomFrameSeconds = nowSeconds;
-        // Exponential ease toward the target, driven by real elapsed time rather than a fixed per-frame
-        // blend factor — reads as smooth, consistent easing regardless of the capture thread's actual
-        // (variable) frame timing, instead of assuming a fixed FPS.
-        var alpha = dt <= 0 ? 0 : 1 - Math.Exp(-dt / ZoomTimeConstant);
 
-        var idleSeconds = TimeSpan.FromTicks(DateTime.UtcNow.Ticks - Volatile.Read(ref _lastActivityTicks)).TotalSeconds;
-        var isIdle = idleSeconds > IdleTimeoutSeconds;
+        // What holds the zoom open, and for how long — the one behavioural difference between the two
+        // trigger modes. Both counters start at 0 (see Prepare), i.e. "idle since forever", so a fresh
+        // session begins zoomed out and only pushes in once something real happens.
+        var clickOnly = _zoomOnClickOnly;
+        var triggerTicks = clickOnly ? Volatile.Read(ref _lastClickTicks) : Volatile.Read(ref _lastActivityTicks);
+        var holdSeconds = clickOnly ? ClickHoldSeconds : IdleTimeoutSeconds;
+        var idleSeconds = TimeSpan.FromTicks(DateTime.UtcNow.Ticks - triggerTicks).TotalSeconds;
+        var isIdle = idleSeconds > holdSeconds;
+
         var targetFactor = (_zoomEnabled && !isIdle) ? _zoomTargetFactor : 1.0;
-        _zoomCurrentFactor += (targetFactor - _zoomCurrentFactor) * alpha;
+        var factorSmoothTime = targetFactor > _zoomCurrentFactor ? ZoomInSmoothTime : ZoomOutSmoothTime;
+        _zoomCurrentFactor = SmoothDamp(_zoomCurrentFactor, targetFactor, ref _zoomFactorVelocity, factorSmoothTime, dt);
+        if (_zoomCurrentFactor < 1.0)
+        {
+            // A critically damped spring will not overshoot a step, but the target here is not a step — it
+            // can flip mid-flight (a click landing while the camera is already pulling out), and the
+            // residual velocity that carries over can dip a hair under 1x. Below 1x would mean sampling
+            // outside the frame, so pin it and kill the velocity that was driving it there.
+            _zoomCurrentFactor = 1.0;
+            if (_zoomFactorVelocity < 0) _zoomFactorVelocity = 0;
+        }
 
         // While typing, follow the text caret instead of the mouse — _typingTargetX/Y is set on every
         // keypress and cleared on the next mouse movement/click, so whichever happened most recently
         // decides the pan target.
-        double targetCenterX, targetCenterY;
+        double followX, followY;
         if (_typingTargetX is double typingX && _typingTargetY is double typingY)
         {
-            targetCenterX = typingX;
-            targetCenterY = typingY;
+            followX = typingX;
+            followY = typingY;
         }
         else
         {
-            targetCenterX = _cursorVisible ? _cursorX : width / 2.0;
-            targetCenterY = _cursorVisible ? _cursorY : height / 2.0;
+            followX = _cursorVisible ? _cursorX : width / 2.0;
+            followY = _cursorVisible ? _cursorY : height / 2.0;
         }
+
         if (!_zoomCenterInitialized)
         {
-            _zoomCenterX = targetCenterX;
-            _zoomCenterY = targetCenterY;
+            _zoomCenterX = _panAnchorX = followX;
+            _zoomCenterY = _panAnchorY = followY;
             _zoomCenterInitialized = true;
         }
-        _zoomCenterX += (targetCenterX - _zoomCenterX) * alpha;
-        _zoomCenterY += (targetCenterY - _zoomCenterY) * alpha;
+
+        // Dead zone: the anchor only moves once the cursor has left a box around it, and then only far
+        // enough to sit back on that box's edge. Sized off the *target* crop rather than the current one
+        // so it stays a fixed physical distance while the factor is still easing — otherwise the dead zone
+        // would be the whole frame at 1x and the anchor would arrive at the push-in already stale.
+        var aimFactor = Math.Max(1.0, _zoomTargetFactor);
+        var deadZoneX = width / aimFactor * PanDeadZoneFraction;
+        var deadZoneY = height / aimFactor * PanDeadZoneFraction;
+        if (followX - _panAnchorX > deadZoneX) _panAnchorX = followX - deadZoneX;
+        else if (_panAnchorX - followX > deadZoneX) _panAnchorX = followX + deadZoneX;
+        if (followY - _panAnchorY > deadZoneY) _panAnchorY = followY - deadZoneY;
+        else if (_panAnchorY - followY > deadZoneY) _panAnchorY = followY + deadZoneY;
+
+        _zoomCenterX = SmoothDamp(_zoomCenterX, _panAnchorX, ref _zoomCenterVelocityX, ZoomPanSmoothTime, dt);
+        _zoomCenterY = SmoothDamp(_zoomCenterY, _panAnchorY, ref _zoomCenterVelocityY, ZoomPanSmoothTime, dt);
 
         if (_zoomCurrentFactor <= 1.001) return;
 
@@ -1170,6 +1263,33 @@ public sealed class VideoCaptureService : IDisposable
             dst, width, height, 0, 0, width, height);
 
         Buffer.BlockCopy(dst, 0, frame, 0, frame.Length);
+    }
+
+    /// <summary>
+    /// Advances <paramref name="current"/> toward <paramref name="target"/> along a critically damped
+    /// spring, carrying <paramref name="velocity"/> across calls as the spring's state.
+    /// <paramref name="smoothTime"/> is roughly how long the move takes to settle, and the motion is
+    /// framerate-independent — this is the closed-form solution of the spring over <paramref name="dt"/>,
+    /// not a per-frame blend, so a dropped frame changes nothing about the trajectory.
+    ///
+    /// Critically damped specifically (damping ratio exactly 1) because that is the fastest approach that
+    /// still cannot overshoot: an underdamped spring would sail past the cursor and swing back, which on a
+    /// screen recording reads as the camera wobbling. The rational approximation of e^-x here is the
+    /// standard one from Game Programming Gems 4 (the same one Unity's Mathf.SmoothDamp uses); it is
+    /// unconditionally stable at any dt, unlike a naive Euler integration of the same spring, which is
+    /// what makes it safe on a capture thread whose frame timing is not guaranteed.
+    /// </summary>
+    private static double SmoothDamp(double current, double target, ref double velocity, double smoothTime, double dt)
+    {
+        if (dt <= 0) return current;
+
+        var omega = 2.0 / Math.Max(0.0001, smoothTime);
+        var x = omega * dt;
+        var exp = 1.0 / (1.0 + x + 0.48 * x * x + 0.235 * x * x * x);
+        var change = current - target;
+        var temp = (velocity + omega * change) * dt;
+        velocity = (velocity - omega * temp) * exp;
+        return target + (change + temp) * exp;
     }
 
     /// <summary>

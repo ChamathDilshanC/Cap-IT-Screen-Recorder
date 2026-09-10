@@ -9,7 +9,7 @@ tutorial for you** — pick what to record from live thumbnails, let smart zoom 
 actually doing, draw on your screen while you talk, clean up your mic, and export a trimmed GIF, all
 without leaving the app.
 
-[![Release](https://img.shields.io/badge/release-v2.5.0-success?logo=github)](../../releases/latest)
+[![Release](https://img.shields.io/badge/release-v2.6.0-success?logo=github)](../../releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/ChamathDilshanC/Cap-IT-Screen-Recorder/total?color=blue&logo=github)](../../releases)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-0078D6?logo=windows&logoColor=white)](#-installation)
 [![.NET](https://img.shields.io/badge/.NET-8-512BD4?logo=dotnet&logoColor=white)](#%EF%B8%8F-tech-stack)
@@ -18,7 +18,7 @@ without leaving the app.
 
 ### [**⬇ Download for Windows**](../../releases/latest)
 
-[What's new](#-whats-new-in-v250) · [Features](#-features) · [Screenshots](#-screenshots) · [Install](#-installation) · [Shortcuts](#%EF%B8%8F-keyboard-shortcuts) · [Build from source](#-building-from-source)
+[What's new](#-whats-new-in-v260) · [Features](#-features) · [Screenshots](#-screenshots) · [Install](#-installation) · [Shortcuts](#%EF%B8%8F-keyboard-shortcuts) · [Build from source](#-building-from-source)
 
 <br/>
 
@@ -28,7 +28,55 @@ without leaving the app.
 
 ---
 
-## 🆕 What's new in v2.5.0
+## 🆕 What's new in v2.6.0
+
+The smart zoom now moves like a real camera — and you can make it fire on clicks only.
+
+| | |
+|---|---|
+| 🎥 **Ultra-smooth, After Effects-style zoom** | The camera now eases in **and** out on a critically damped spring instead of a first-order lag. It accelerates smoothly rather than lurching to full speed the instant you move, decelerates into its target, and never overshoots or bounces. |
+| 🖱️ **Zoom on click only** | A new toggle on **Smart Tracking**: with it on, nothing but a mouse click pushes the camera in — moving the mouse or typing leaves you at full desktop. Holds for about 2.5s after the click so the result is on screen, then eases back out. |
+| 🎯 **Steadier framing** | A pan dead zone means hand tremor and pixel-level cursor jitter no longer drive a permanent low-amplitude wobble at 2x. The camera holds genuinely still until the cursor actually goes somewhere. |
+
+Both are live — you can flip the trigger mode in the middle of a recording and the camera eases
+between the two behaviours rather than cutting.
+
+<details>
+<summary><strong>Why a spring instead of the old ease</strong></summary>
+
+<br/>
+
+The previous easing was a first-order lag: `value += (target - value) * alpha`. Its velocity is at
+maximum the instant the target changes and only decays from there — a smooth stop, but a hard start.
+That asymmetry is exactly what made the motion read as mechanical.
+
+A **critically damped spring** carries velocity as state, so it is C1-continuous through a target
+change: it accelerates and decelerates smoothly, which is the shape of an After Effects Easy Ease.
+Critically damped specifically (damping ratio exactly 1) is the fastest approach that still cannot
+overshoot — an underdamped spring would sail past the cursor and swing back, which on a screen
+recording reads as the camera wobbling.
+
+The integration is the closed-form solution of the spring over the frame's elapsed time (the Game
+Programming Gems 4 approximation, the same one Unity's `Mathf.SmoothDamp` uses), so it is
+unconditionally stable at any frame interval — unlike a naive Euler integration, which matters on a
+capture thread whose timing is not guaranteed. Push-in runs at a 0.50s smooth time, the release at
+0.75s, and the lateral pan at 0.32s: a camera that lands a touch quicker than it lets go reads as
+intentional rather than rubber-banded.
+
+Click-only mode takes its trigger from the low-level hook's button-down signal rather than the
+general "a click happened" event, which also covers the mouse wheel — scrolling should not push the
+camera in.
+
+</details>
+
+---
+
+<details>
+<summary><strong>Previously, in v2.5.0</strong></summary>
+
+<br/>
+
+### v2.5.0
 
 Audio sources you can change mid-take, and the installed version on screen.
 
@@ -64,6 +112,8 @@ that can't lose a leg mid-stream.
 
 </details>
 
+</details>
+
 ---
 
 ## ✨ Features
@@ -73,7 +123,7 @@ that can't lose a leg mid-stream.
 - **Visual source picker** — a gallery of live thumbnails for every display and window; pick by sight, then **Select and record** in one step
 - **GPU-accelerated monitor capture** via the DXGI Desktop Duplication API — no screen-scraping, no per-frame WinRT overhead
 - **Single-window capture** via Windows Graphics Capture, with overlapping windows correctly excluded — record one app even while other things sit on top of it
-- **Catmull-Rom Smart Animated Zoom** — eases into your chosen zoom level only while you're actively moving the mouse, clicking, or typing (a proper time-constant ease, not a snap), pans to the real text caret while you type instead of a stale mouse position, and resamples with a 16-tap Catmull-Rom kernel — sharper than bilinear, with none of the haloing a naive sharpen filter adds on top of text
+- **Catmull-Rom Smart Animated Zoom** — eases into your chosen zoom level only while you're actively moving the mouse, clicking, or typing, on a critically damped spring that accelerates and settles smoothly with no overshoot (an After Effects-style Easy Ease, not a snap or a lurch). Pans to the real text caret while you type instead of a stale mouse position, holds steady through cursor jitter via a pan dead zone, and can be set to fire on **mouse clicks only**. Resamples with a 16-tap Catmull-Rom kernel — sharper than bilinear, with none of the haloing a naive sharpen filter adds on top of text
 - **4:4:4 Chroma Text Clarity mode** — an opt-in `yuv444p`/`high444` encode path that removes the color bleed 4:2:0 chroma subsampling causes around anti-aliased text
 - **Content-adaptive encoding** on every encoder (CRF for libx264, quality-target VBR for NVENC/AMF/QSV) — bits go where the frame needs them, with your bitrate as a hard ceiling
 - 360p up to 4K output, 15/24/30/60 fps, automatic hardware encoder selection (NVIDIA NVENC / AMD AMF / Intel QSV / software x264) with fallback
@@ -103,7 +153,7 @@ that can't lose a leg mid-stream.
 - **Eight-tab NavigationView shell** — Home, Capture, Smart Tracking, Webcam, Annotations, Effects, Audio, Settings; each a focused, card-based Fluent Design page
 - **Live preview** of exactly what's being captured, from the moment a source is selected — not just while recording
 - **Pause / resume, two ways** — **Pause Video** stops the recording outright (the file gets no longer while you're paused), **Pause Screen** freezes just the picture while your voice and the timeline keep running
-- **Live settings** — cursor style, smart zoom, keystroke overlay, click ripples, spotlight, the webcam PiP **and your audio sources** can all be changed mid-recording
+- **Live settings** — cursor style, smart zoom (including its **click-only** trigger mode), keystroke overlay, click ripples, spotlight, the webcam PiP **and your audio sources** can all be changed mid-recording
 - **In-app updates** — checks GitHub Releases on startup and can download and install a new version in place
 - **FFmpeg auto-setup** — if `ffmpeg.exe` isn't found, Start Recording offers to fetch it with a live progress bar instead of failing
 
@@ -162,7 +212,7 @@ that can't lose a leg mid-stream.
 
 ## 📦 Installation
 
-Grab **`CapIT-Screen-Recorder-Setup-2.5.0.exe`** from
+Grab **`CapIT-Screen-Recorder-Setup-2.6.0.exe`** from
 **[Releases](../../releases/latest)** and run it. It's a normal Windows installer (built with Inno
 Setup) and it's fully self-contained — no separate .NET runtime, no Windows App SDK runtime, and no
 manual FFmpeg download.
@@ -359,10 +409,18 @@ can't practically be steered by an external, constantly-changing cursor/caret si
 - **Activity tracking** — mouse movement comes from the capture API's own per-frame pointer position;
   clicks from a `WH_MOUSE_LL` hook; typing from a `WH_KEYBOARD_LL` hook. Whichever fired most recently
   decides the pan target, and typing looks up the real text caret via `GetGUIThreadInfo` rather than
-  the last mouse position.
-- **Easing** — both zoom factor and pan position ease toward their targets with `1 - e^(-dt/τ)`, a
-  proper time-constant ease driven by real elapsed time, so motion stays smooth regardless of the
-  capture thread's variable frame timing.
+  the last mouse position. **Zoom on click only** narrows the trigger to the hook's button-down signal
+  alone — not the wheel, and not movement or typing — and holds the zoom for a longer 2.5s, since what
+  a click zoom is there to show happens *after* the click.
+- **Easing** — zoom factor and both pan axes advance along a **critically damped spring**, integrated
+  with the closed-form solution over the frame's real elapsed time, so the trajectory is identical
+  regardless of the capture thread's variable frame timing (and a dropped frame changes nothing). A
+  spring carries velocity as state, which is what gives the motion a soft start as well as a soft stop;
+  critical damping is the fastest approach that still cannot overshoot into a wobble. Push-in 0.50s,
+  release 0.75s, lateral pan 0.32s.
+- **Dead zone** — the camera aims at an anchor the cursor only drags once it leaves a box around it
+  (12% of the zoomed crop). Feeding the raw cursor into the spring instead would let every hand tremor
+  through as a small impulse, which at 2x is a visible permanent wobble.
 - **Resampling** — the zoomed crop is resampled with a 16-tap separable **Catmull-Rom** kernel
   (Mitchell–Netravali B=0, C=0.5). Bilinear's positive-only weights are exactly what softens edges;
   Catmull-Rom's small negative lobes recover that lost contrast, which is what keeps zoomed text
