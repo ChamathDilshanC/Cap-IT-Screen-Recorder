@@ -9,7 +9,7 @@ tutorial for you** — pick what to record from live thumbnails, let smart zoom 
 actually doing, draw on your screen while you talk, clean up your mic, and export a trimmed GIF, all
 without leaving the app.
 
-[![Release](https://img.shields.io/badge/release-v2.6.0-success?logo=github)](../../releases/latest)
+[![Release](https://img.shields.io/badge/release-v2.6.2-success?logo=github)](../../releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/ChamathDilshanC/Cap-IT-Screen-Recorder/total?color=blue&logo=github)](../../releases)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-0078D6?logo=windows&logoColor=white)](#-installation)
 [![.NET](https://img.shields.io/badge/.NET-8-512BD4?logo=dotnet&logoColor=white)](#%EF%B8%8F-tech-stack)
@@ -18,7 +18,7 @@ without leaving the app.
 
 ### [**⬇ Download for Windows**](../../releases/latest)
 
-[What's new](#-whats-new-in-v260) · [Features](#-features) · [Screenshots](#-screenshots) · [Install](#-installation) · [Shortcuts](#%EF%B8%8F-keyboard-shortcuts) · [Build from source](#-building-from-source)
+[What's new](#-whats-new-in-v262) · [Features](#-features) · [Screenshots](#-screenshots) · [Install](#-installation) · [Shortcuts](#%EF%B8%8F-keyboard-shortcuts) · [Build from source](#-building-from-source)
 
 <br/>
 
@@ -28,7 +28,75 @@ without leaving the app.
 
 ---
 
-## 🆕 What's new in v2.6.0
+## 🆕 What's new in v2.6.2
+
+The zoom no longer freezes mid-move, and zoomed footage looks far sharper.
+
+| | |
+|---|---|
+| 🎬 **The zoom stops sticking** | The easing was advancing only when the *screen* changed. Screen capture delivers a frame when something moves — but the moments the camera most needs to keep animating (holding after a click, easing back out) are exactly the moments nothing is moving, so the zoom froze mid-push and then lurched. The capture loop now has its own ~60Hz heartbeat and re-composes the last frame, so the move plays out smoothly over a completely still screen. |
+| 🔍 **Much sharper zoomed image** | Zoomed frames get an unsharp-mask pass tuned for screen content, ramped by how far in the camera actually is so it fades in and out with the move. Text and UI edges regain most of the crispness the upscale costs. |
+| ⚡ **No allocation churn on the hot path** | The capture and compose buffers are reused and swapped rather than reallocated per frame — at 1080p each is 8MB, i.e. Large Object Heap, and now that frames are composed on a timer too, per-frame allocation would have meant GC pauses showing up as the very stutter this release removes. Idle CPU actually went *down*. |
+| ▶️ **Recordings play in Windows' own players again** | "Maximize text clarity" used to encode 4:4:4 chroma, which **Windows' built-in H.264 decoder cannot read** — those recordings failed with *"Video could not be decoded"* in the review window, in Movies & TV and in Photos, and opened only in VLC. Everything now encodes 4:2:0 High profile, which plays everywhere. |
+| ✨ **...and that setting keeps its sharpness** | It now spends its budget on a slower preset, a lower CRF and a **chroma bitrate boost** — the last one targeting exactly the colored-text fringing 4:4:4 was there to fix, without leaving a decodable profile. |
+| 💬 **A real message when preview fails** | If a recording can't be previewed, the window now says *why*, and says plainly when the file itself is fine — instead of a bare decoder error that looks like a lost take. |
+| 🔒 **Settings survive an interrupted save** | `settings.json` is now written atomically with a rolling `.bak`. A save interrupted at the wrong moment (the updater closing the app, a power cut) can no longer leave a half-written file that reads as "no settings" and resets every preference. |
+
+> **Already have a 4:4:4 recording?** It isn't damaged. Play it in VLC, or convert it with
+> `ffmpeg -i input.mp4 -c:v libx264 -pix_fmt yuv420p -crf 16 -c:a copy output.mp4`.
+
+Your saved settings are **not** affected by updating. They live in
+`%LocalAppData%\Cap-IT Screen Recorder\settings.json`, outside the install folder — an in-place
+upgrade only overwrites the program files and never runs the uninstaller.
+
+<details>
+<summary><strong>Why zoomed footage can never be as sharp as 1x — and what this actually fixes</strong></summary>
+
+<br/>
+
+Smart zoom is **digital** zoom. On a 1080p display at 150%, the region you are zoomed into only ever
+contained 1280×720 real pixels, and it is being shown at 1920×1080. A third of the linear resolution
+is simply not in the source, and no resampling kernel can invent it — that is why zoomed passages read
+as soft next to the razor-sharp 1x frames around them.
+
+Sharpening does not bring that detail back either. What it does is restore **local edge contrast**,
+which is what the eye actually reads as sharpness, and on screen content — hard edges between flat
+colors — it recovers most of the perceived crispness. The mask is radius-1 (a 1-2-1 binomial blur),
+deliberately the narrowest possible: a wider radius is what produces the bright rims around text that
+make sharpened recordings look artificial.
+
+If you want zoomed footage that is **genuinely** 1:1 sharp, give the crop somewhere to land: record at
+your native resolution but set **Resolution** on the Capture tab below it, so the zoomed crop is
+downscaled into the output rather than upscaled. At 1.5x zoom on a 1080p screen, a 720p output is an
+exact pixel-for-pixel match. A lower zoom level costs less detail for the same reason.
+
+</details>
+
+<details>
+<summary><strong>What the smoothness costs</strong></summary>
+
+<br/>
+
+Animating at ~60Hz instead of "whenever the screen happened to change" means roughly 3× as many frames
+get composed while the camera is moving, and each one is a full-frame resample. Measured on a 1080p
+desktop, CPU during a move went from ~25% to ~75% of all cores — for the ~0.5–0.75s the move lasts.
+Once the springs settle the work stops entirely (the crop is no longer changing, so re-composing would
+produce an identical frame), and fully idle sits at **0.7%**, below the 1.3% the previous release used.
+
+If a spike ever does starve the encoder, it degrades gracefully: the pacer re-sends the last frame
+rather than dropping or corrupting anything. Making the resample separable would roughly halve the
+per-frame cost and is the obvious next step if this proves tight on slower machines.
+
+</details>
+
+---
+
+<details>
+<summary><strong>Previously, in v2.6.0</strong></summary>
+
+<br/>
+
+### v2.6.0
 
 The smart zoom now moves like a real camera — and you can make it fire on clicks only.
 
@@ -70,6 +138,8 @@ camera in.
 </details>
 
 ---
+
+</details>
 
 <details>
 <summary><strong>Previously, in v2.5.0</strong></summary>
@@ -124,7 +194,7 @@ that can't lose a leg mid-stream.
 - **GPU-accelerated monitor capture** via the DXGI Desktop Duplication API — no screen-scraping, no per-frame WinRT overhead
 - **Single-window capture** via Windows Graphics Capture, with overlapping windows correctly excluded — record one app even while other things sit on top of it
 - **Catmull-Rom Smart Animated Zoom** — eases into your chosen zoom level only while you're actively moving the mouse, clicking, or typing, on a critically damped spring that accelerates and settles smoothly with no overshoot (an After Effects-style Easy Ease, not a snap or a lurch). Pans to the real text caret while you type instead of a stale mouse position, holds steady through cursor jitter via a pan dead zone, and can be set to fire on **mouse clicks only**. Resamples with a 16-tap Catmull-Rom kernel — sharper than bilinear, with none of the haloing a naive sharpen filter adds on top of text
-- **4:4:4 Chroma Text Clarity mode** — an opt-in `yuv444p`/`high444` encode path that removes the color bleed 4:2:0 chroma subsampling causes around anti-aliased text
+- **Text Clarity mode** — an opt-in encode path that spends extra bitrate on fine detail and on the chroma planes (a lower CRF, a slower preset and a negative chroma QP offset), cutting the color bleed 4:2:0 subsampling causes around anti-aliased text while staying High profile 4:2:0 so the result plays in every player
 - **Content-adaptive encoding** on every encoder (CRF for libx264, quality-target VBR for NVENC/AMF/QSV) — bits go where the frame needs them, with your bitrate as a hard ceiling
 - 360p up to 4K output, 15/24/30/60 fps, automatic hardware encoder selection (NVIDIA NVENC / AMD AMF / Intel QSV / software x264) with fallback
 
@@ -212,7 +282,7 @@ that can't lose a leg mid-stream.
 
 ## 📦 Installation
 
-Grab **`CapIT-Screen-Recorder-Setup-2.6.0.exe`** from
+Grab **`CapIT-Screen-Recorder-Setup-2.6.2.exe`** from
 **[Releases](../../releases/latest)** and run it. It's a normal Windows installer (built with Inno
 Setup) and it's fully self-contained — no separate .NET runtime, no Windows App SDK runtime, and no
 manual FFmpeg download.
@@ -421,15 +491,29 @@ can't practically be steered by an external, constantly-changing cursor/caret si
 - **Dead zone** — the camera aims at an anchor the cursor only drags once it leaves a box around it
   (12% of the zoomed crop). Feeding the raw cursor into the spring instead would let every hand tremor
   through as a small impulse, which at 2x is a visible permanent wobble.
+- **Animation clock** — the easing advances on the capture loop's own ~60Hz heartbeat, not on screen
+  changes. DXGI only yields a frame when the desktop actually changes, so tying the springs to frame
+  arrival froze the camera mid-move over a still screen; the loop now re-composes the last raw frame
+  while a move is in flight, and stops entirely once the springs settle (an unchanged crop over an
+  unchanged screen would just reproduce the same bytes).
+- **Sharpening** — a radius-1 unsharp mask after the upscale, ramped by how far past 1x the camera is
+  so it eases in with the move. Digital zoom throws away real resolution that nothing can recover;
+  restoring local edge contrast is what makes what is left read as sharp.
 - **Resampling** — the zoomed crop is resampled with a 16-tap separable **Catmull-Rom** kernel
   (Mitchell–Netravali B=0, C=0.5). Bilinear's positive-only weights are exactly what softens edges;
   Catmull-Rom's small negative lobes recover that lost contrast, which is what keeps zoomed text
   legible, at roughly 4× bilinear's per-pixel cost.
 - **Encoding** — every encoder uses content-adaptive rate control capped by your bitrate as
   `-maxrate`/`-bufsize`, so detailed regions get more bits automatically. "Maximize text clarity"
-  additionally switches libx264 to `yuv444p`/`high444`, removing chroma-subsampling fringing around
-  colored text — opt-in, since it costs meaningfully more bitrate and isn't reliably supported by
-  consumer NVENC/AMF/QSV.
+  additionally drops libx264 to `-crf 15` at `-preset medium` with `chroma-qp-offset=-2`, which spends
+  the extra bits on the chroma planes where colored-text fringing actually comes from — opt-in, since
+  it costs meaningfully more bitrate and only applies to libx264.
+
+  Everything stays **High profile 4:2:0**. Through v2.6.0 this path used `yuv444p`/`high444` instead,
+  which was sharper but undecodable by Media Foundation — so those recordings would not play in the
+  app's own review window, in Movies & TV or in Photos, only in ffmpeg-based players like VLC. Trading
+  a file's playability for chroma resolution is the wrong trade for a screen recorder, so 4:4:4 is
+  gone.
 
 ---
 

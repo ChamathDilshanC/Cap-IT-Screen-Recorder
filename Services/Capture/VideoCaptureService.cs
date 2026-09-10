@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using ScreenRecorderApp.Models;
 using ScreenRecorderApp.Services.Capture.Interop;
@@ -123,6 +123,19 @@ public sealed class VideoCaptureService : IDisposable
     // low-amplitude wobble in the pan spring, which at 2x is very visible; with it the camera holds
     // genuinely still until the cursor actually goes somewhere.
     private const double PanDeadZoneFraction = 0.12;
+    // Unsharp-mask strength applied after the zoom upscale. Magnifying a 1080p desktop is digital zoom:
+    // at 1.5x the visible region only ever held 1280x720 real pixels, and no resampling kernel can invent
+    // the rest — that lost detail is why zoomed footage reads as soft next to the razor-sharp 1x frames
+    // around it. Sharpening cannot bring the detail back either, but restoring local edge contrast is
+    // what the eye actually reads as "sharp", and on screen content (hard edges between flat colors) it
+    // recovers most of the perceived crispness.
+    //
+    // The amount ramps with how far past 1x the camera is rather than with the user's chosen zoom level,
+    // so it fades in and out with the push itself and there is no pop partway through. Ramp and cap are
+    // set so the mildest zoom (1.5x, where the softness already shows) gets a substantial correction and
+    // anything from 2x up gets the full amount.
+    private const double ZoomSharpenRamp = 1.1;
+    private const double ZoomSharpenMaxAmount = 1.0;
     private const int MovementActivityThresholdPx = 3;
     private bool _zoomEnabled;
     private bool _zoomOnClickOnly;
@@ -141,6 +154,25 @@ public sealed class VideoCaptureService : IDisposable
     private double _panAnchorY;
     private bool _zoomCenterInitialized;
     private byte[]? _zoomScratchBuffer;
+
+    // The last raw desktop frame, before the cursor and the zoom crop are composited in. Kept so the
+    // capture loop can re-composite an unchanged screen: DXGI only hands out a frame when the desktop
+    // actually changes, but the zoom's easing is a function of *time*, and the moments it most needs to
+    // keep animating — the hold after a click, the ease back out once you stop — are by definition the
+    // moments when nothing on screen is moving. Re-composing from this buffer on an AcquireNextFrame
+    // timeout is what keeps the camera moving over a still screen instead of freezing mid-push.
+    private byte[]? _rawFrame;
+    private int _rawFrameWidth;
+    private int _rawFrameHeight;
+
+    // The buffer ComposeAndPublish builds into, swapped with _latestFrame under _frameLock once it is
+    // complete. Both this and _rawFrame are reused rather than reallocated per frame: at 1080p a frame is
+    // 8MB, which lands on the Large Object Heap, and now that the capture loop composes on a timer as
+    // well as on screen changes, allocating one per frame would mean ~480MB/s of LOH churn on a static
+    // zoomed screen — GC pauses that would show up as exactly the stutter this timer exists to remove.
+    // The swap is safe because readers only ever touch _latestFrame while holding _frameLock, and they
+    // copy out before releasing it, so the buffer handed back here is guaranteed to have no reader left.
+    private byte[]? _composeBuffer;
     private readonly Stopwatch _zoomClock = Stopwatch.StartNew();
     private double _lastZoomFrameSeconds;
 
@@ -736,13 +768,22 @@ public sealed class VideoCaptureService : IDisposable
         {
             try
             {
-                var result = _duplication!.AcquireNextFrame(500, out var frameInfo, out var desktopResource);
+                // The timeout doubles as the animation tick. It used to be 500ms, which was fine when
+                // the only thing that mattered was "has the screen changed" — but the zoom eases on a
+                // clock, so a static screen meant AcquireNextFrame blocked for half a second at a time
+                // and the camera advanced in 500ms lurches, or appeared to stop dead. A short timeout
+                // gives the loop a steady heartbeat to animate on; the wakeups themselves cost nothing
+                // when there is no animation in flight (see NeedsAnimationTick).
+                var result = _duplication!.AcquireNextFrame(AcquireTimeoutMs, out var frameInfo, out var desktopResource);
                 if (result.Failure)
                 {
-                    // WAIT_TIMEOUT just means the desktop hasn't changed in the last 500ms; anything
-                    // else (e.g. ACCESS_LOST from a resolution change or a fullscreen-exclusive app) we
-                    // simply retry on — there is no per-frame state to corrupt here, unlike the old
-                    // WGC path.
+                    // WAIT_TIMEOUT just means the desktop hasn't changed; anything else (e.g. ACCESS_LOST
+                    // from a resolution change or a fullscreen-exclusive app) we simply retry on — there
+                    // is no per-frame state to corrupt here, unlike the old WGC path.
+                    //
+                    // Either way, a zoom that is still moving has to keep moving, so re-composite the
+                    // last raw frame with the eased crop advanced to now.
+                    if (NeedsAnimationTick()) ComposeAndPublish();
                     continue;
                 }
 
@@ -825,7 +866,17 @@ public sealed class VideoCaptureService : IDisposable
             int width = (int)desc.Width;
             int height = (int)desc.Height;
             int rowBytes = width * 4;
-            var buffer = new byte[rowBytes * height];
+
+            // Written straight into the reused raw buffer — and kept clean of the cursor and the zoom
+            // crop, so a re-composite on a timeout starts from untouched desktop pixels rather than from
+            // a frame that already has both baked in (compositing twice would smear the cursor and crop
+            // a crop).
+            var buffer = _rawFrame;
+            if (buffer is null || buffer.Length != rowBytes * height)
+            {
+                buffer = new byte[rowBytes * height];
+                _rawFrame = buffer;
+            }
 
             nint srcPtr = mapped.DataPointer;
             int rowPitch = (int)mapped.RowPitch;
@@ -834,31 +885,99 @@ public sealed class VideoCaptureService : IDisposable
                 System.Runtime.InteropServices.Marshal.Copy(IntPtr.Add(srcPtr, y * rowPitch), buffer, y * rowBytes, rowBytes);
             }
 
-            if (_captureCursor && _cursorVisible)
-            {
-                var icon = _cursorStyle == CursorStyle.SystemDefault ? _systemCursorIcon : CursorIcons.Get(_cursorStyle);
-                if (icon is { } iconValue)
-                {
-                    BlendCursorIcon(buffer, width, height, iconValue, _cursorX, _cursorY);
-                }
-            }
-
-            ApplyZoom(buffer, width, height);
-            // Keystroke overlay, webcam, spotlight, and ripples are NOT applied here — see
-            // TryGetLatestFrame's remarks on why the whole effects stack is composited at pull time
-            // instead, decoupled from DXGI's own frame-arrival cadence.
-
-            lock (_frameLock)
-            {
-                _latestFrame = buffer;
-                _frameWidth = width;
-                _frameHeight = height;
-                _hasFrame = true;
-            }
+            _rawFrameWidth = width;
+            _rawFrameHeight = height;
         }
         finally
         {
             _context.Unmap(_stagingTexture, 0);
+        }
+
+        ComposeAndPublish();
+    }
+
+    /// <summary>
+    /// How long <see cref="CaptureLoop"/> waits on DXGI before waking up to advance the zoom animation.
+    /// Short enough that the easing gets a smooth ~60Hz heartbeat over a completely static screen.
+    /// </summary>
+    private const int AcquireTimeoutMs = 16;
+
+    /// <summary>
+    /// Whether the zoom camera is still in motion and so needs a frame published even though the desktop
+    /// itself hasn't changed — either it is currently zoomed (or easing out of a zoom), or it is settled
+    /// at 1x but a live trigger means it is about to ease in.
+    /// </summary>
+    private bool NeedsAnimationTick()
+    {
+        if (_rawFrame is null) return false;
+
+        var target = CurrentZoomTargetFactor();
+
+        // Parked at 1x with nothing pulling it in. "Zoom is enabled" on its own is not enough here: an
+        // enabled-but-idle zoom is the steady state of any session where nobody is clicking, and
+        // composing for it would burn a full frame's work 60 times a second to produce identical output.
+        if (_zoomCurrentFactor <= 1.001 && target <= 1.0) return false;
+
+        // Zoomed, but the springs have arrived: the crop rectangle is no longer changing, so re-running
+        // the resample over an unchanged screen would produce a byte-identical frame. Skipping it is what
+        // keeps the cost of this timer confined to the ~half-second the camera is actually in motion,
+        // rather than for the whole hold. Anything that *should* restart the motion — the screen
+        // changing, the cursor moving (DXGI wakes for pointer-only updates too), a new click retriggering
+        // the hold — comes back through AcquireNextFrame's success path and composes regardless.
+        return !IsZoomSettled(target);
+    }
+
+    /// <summary>
+    /// Whether both springs have reached their targets closely enough that another step would not move
+    /// the crop by a visible amount. Thresholds are sub-pixel and far below a 1/255 change in the
+    /// resampled output, so this can never freeze the camera somewhere the eye would notice.
+    /// </summary>
+    private bool IsZoomSettled(double targetFactor)
+        => Math.Abs(_zoomCurrentFactor - targetFactor) < 0.0005
+        && Math.Abs(_zoomCenterX - _panAnchorX) < 0.05
+        && Math.Abs(_zoomCenterY - _panAnchorY) < 0.05;
+
+    /// <summary>
+    /// Rebuilds the published frame from <see cref="_rawFrame"/>: cursor first, then the eased zoom crop.
+    /// Called both when a genuinely new desktop frame arrives and, on a static screen, from the capture
+    /// loop's timeout path so the zoom keeps easing. The remaining effects (ripples, spotlight, webcam,
+    /// keystrokes) are deliberately not applied here — see <see cref="TryGetLatestFrame"/>.
+    /// </summary>
+    private void ComposeAndPublish()
+    {
+        var raw = _rawFrame;
+        if (raw is null) return;
+
+        int width = _rawFrameWidth;
+        int height = _rawFrameHeight;
+
+        var composed = _composeBuffer;
+        if (composed is null || composed.Length != raw.Length)
+        {
+            composed = new byte[raw.Length];
+        }
+        Buffer.BlockCopy(raw, 0, composed, 0, raw.Length);
+
+        if (_captureCursor && _cursorVisible)
+        {
+            var icon = _cursorStyle == CursorStyle.SystemDefault ? _systemCursorIcon : CursorIcons.Get(_cursorStyle);
+            if (icon is { } iconValue)
+            {
+                BlendCursorIcon(composed, width, height, iconValue, _cursorX, _cursorY);
+            }
+        }
+
+        ApplyZoom(composed, width, height);
+
+        lock (_frameLock)
+        {
+            // Swap rather than assign: the outgoing frame becomes the next compose target, so neither
+            // buffer is ever reallocated once the pipeline is warm.
+            _composeBuffer = _latestFrame;
+            _latestFrame = composed;
+            _frameWidth = width;
+            _frameHeight = height;
+            _hasFrame = true;
         }
     }
 
@@ -1162,6 +1281,32 @@ public sealed class VideoCaptureService : IDisposable
     }
 
     /// <summary>
+    /// The factor the camera should currently be heading for: the user's chosen zoom while a trigger is
+    /// still holding it open, otherwise 1x. This is the whole "smart" part of the smart zoom, and the one
+    /// behavioural difference between the two trigger modes — a click-only session is held open by mouse
+    /// button-downs alone and for longer, everything else by any interaction at all. Both counters start
+    /// at 0 (see Prepare), i.e. "idle since forever", so a fresh session begins zoomed out and only
+    /// pushes in once something real happens.
+    /// </summary>
+    /// <remarks>
+    /// Shared with <see cref="NeedsAnimationTick"/> rather than inlined into <see cref="ApplyZoom"/>: the
+    /// capture loop has to answer "is this camera going to move?" before deciding whether an unchanged
+    /// screen still needs a frame composed, and answering it with a second, separately-maintained copy of
+    /// this logic is how the two would silently drift apart.
+    /// </remarks>
+    private double CurrentZoomTargetFactor()
+    {
+        if (!_zoomEnabled) return 1.0;
+
+        var clickOnly = _zoomOnClickOnly;
+        var triggerTicks = clickOnly ? Volatile.Read(ref _lastClickTicks) : Volatile.Read(ref _lastActivityTicks);
+        var holdSeconds = clickOnly ? ClickHoldSeconds : IdleTimeoutSeconds;
+        var idleSeconds = TimeSpan.FromTicks(DateTime.UtcNow.Ticks - triggerTicks).TotalSeconds;
+
+        return idleSeconds > holdSeconds ? 1.0 : _zoomTargetFactor;
+    }
+
+    /// <summary>
     /// Eases the zoom factor and pan center toward their targets, then — if the eased factor is
     /// meaningfully above 1x — resamples a centered crop of <paramref name="frame"/> back up to the full
     /// frame size in place, in effect a "camera" pushing in on and following the cursor. The target factor
@@ -1187,16 +1332,7 @@ public sealed class VideoCaptureService : IDisposable
         var dt = Math.Clamp(nowSeconds - _lastZoomFrameSeconds, 0, 0.1);
         _lastZoomFrameSeconds = nowSeconds;
 
-        // What holds the zoom open, and for how long — the one behavioural difference between the two
-        // trigger modes. Both counters start at 0 (see Prepare), i.e. "idle since forever", so a fresh
-        // session begins zoomed out and only pushes in once something real happens.
-        var clickOnly = _zoomOnClickOnly;
-        var triggerTicks = clickOnly ? Volatile.Read(ref _lastClickTicks) : Volatile.Read(ref _lastActivityTicks);
-        var holdSeconds = clickOnly ? ClickHoldSeconds : IdleTimeoutSeconds;
-        var idleSeconds = TimeSpan.FromTicks(DateTime.UtcNow.Ticks - triggerTicks).TotalSeconds;
-        var isIdle = idleSeconds > holdSeconds;
-
-        var targetFactor = (_zoomEnabled && !isIdle) ? _zoomTargetFactor : 1.0;
+        var targetFactor = CurrentZoomTargetFactor();
         var factorSmoothTime = targetFactor > _zoomCurrentFactor ? ZoomInSmoothTime : ZoomOutSmoothTime;
         _zoomCurrentFactor = SmoothDamp(_zoomCurrentFactor, targetFactor, ref _zoomFactorVelocity, factorSmoothTime, dt);
         if (_zoomCurrentFactor < 1.0)
@@ -1262,7 +1398,74 @@ public sealed class VideoCaptureService : IDisposable
         ResampleCatmullRomInto(frame, width, height, cropX, cropY, cropWidth, cropHeight,
             dst, width, height, 0, 0, width, height);
 
-        Buffer.BlockCopy(dst, 0, frame, 0, frame.Length);
+        // Sharpen in place on the scratch buffer, reading from it and writing into `frame` (which is
+        // about to be overwritten anyway and is exactly the right size) — that avoids a third full-frame
+        // allocation per zoomed frame on the capture thread's hot path.
+        SharpenInto(dst, frame, width, height, SharpenAmountFor(_zoomCurrentFactor));
+    }
+
+    /// <summary>
+    /// How hard to sharpen at a given eased zoom factor: nothing at 1x, rising with the upscale ratio,
+    /// capped at <see cref="ZoomSharpenMaxAmount"/>. Driven by the *current* eased factor rather than the
+    /// user's target, so the correction eases in and out along with the camera instead of snapping to a
+    /// crunchier image partway through a push-in.
+    /// </summary>
+    private static double SharpenAmountFor(double factor)
+        => Math.Clamp((factor - 1.0) * ZoomSharpenRamp, 0.0, ZoomSharpenMaxAmount);
+
+    /// <summary>
+    /// A 3x3 unsharp mask: <c>result = src + amount * (src - blur(src))</c>, written to
+    /// <paramref name="dst"/>. The blur is a fixed 1-2-1 binomial kernel, whose radius of one pixel is
+    /// deliberately the smallest possible — a wider radius produces the bright rims around dark-on-light
+    /// text that make sharpened screen recordings look artificial, whereas at one pixel the correction
+    /// stays inside the glyph's own anti-aliasing.
+    /// </summary>
+    /// <remarks>
+    /// Separable in principle, but at radius 1 the 9-tap direct form avoids an intermediate buffer and a
+    /// second pass over the frame, which matters more here than the handful of multiplies saved. Alpha is
+    /// copied through untouched: DXGI frames carry alpha=0 for opaque content and sharpening it would be
+    /// meaningless either way. Parallelized per row, like the resampler it follows.
+    /// </remarks>
+    private static void SharpenInto(byte[] src, byte[] dst, int width, int height, double amount)
+    {
+        if (amount <= 0.001)
+        {
+            Buffer.BlockCopy(src, 0, dst, 0, src.Length);
+            return;
+        }
+
+        int maxX = width - 1;
+        int maxY = height - 1;
+
+        Parallel.For(0, height, y =>
+        {
+            int y0 = Math.Max(y - 1, 0) * width * 4;
+            int y1 = y * width * 4;
+            int y2 = Math.Min(y + 1, maxY) * width * 4;
+
+            for (int x = 0; x < width; x++)
+            {
+                int x0 = Math.Max(x - 1, 0) * 4;
+                int x1 = x * 4;
+                int x2 = Math.Min(x + 1, maxX) * 4;
+                int idx = y1 + x1;
+
+                for (int c = 0; c < 3; c++)
+                {
+                    // 1-2-1 / 2-4-2 / 1-2-1, sum 16.
+                    int blur =
+                        src[y0 + x0 + c] + 2 * src[y0 + x1 + c] + src[y0 + x2 + c] +
+                        2 * src[y1 + x0 + c] + 4 * src[y1 + x1 + c] + 2 * src[y1 + x2 + c] +
+                        src[y2 + x0 + c] + 2 * src[y2 + x1 + c] + src[y2 + x2 + c];
+
+                    double center = src[idx + c];
+                    double sharpened = center + amount * (center - blur / 16.0);
+                    dst[idx + c] = (byte)Math.Clamp(sharpened + 0.5, 0.0, 255.0);
+                }
+
+                dst[idx + 3] = src[idx + 3];
+            }
+        });
     }
 
     /// <summary>
