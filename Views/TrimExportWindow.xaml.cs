@@ -29,6 +29,11 @@ public sealed partial class TrimExportWindow : Window
 {
     private readonly string _filePath;
 
+    // What ffmpeg could read about the file. Null until the probe finishes; OnMediaFailed can fire first,
+    // which is what _pendingPlaybackError defers.
+    private MediaProbeResult? _probe;
+    private bool _pendingPlaybackError;
+
     // Canceled if the window is closed while an export is still running, so a stray ffmpeg process never
     // outlives the window that started it.
     private CancellationTokenSource? _exportCts;
@@ -52,6 +57,7 @@ public sealed partial class TrimExportWindow : Window
         // ordering explicit instead of load-bearing.
         var player = new MediaPlayer();
         player.MediaOpened += OnMediaOpened;
+        player.MediaFailed += OnMediaFailed;
         player.Source = MediaSource.CreateFromUri(new Uri(filePath));
         Player.SetMediaPlayer(player);
 
@@ -66,17 +72,69 @@ public sealed partial class TrimExportWindow : Window
 
     /// <summary>
     /// Establishes the trim range from the file's real duration, probed with ffmpeg rather than taken
-    /// from the media player. See <see cref="MediaDurationProbe"/>: the app records fragmented MP4,
-    /// whose duration Media Foundation reports as zero, which used to leave this slider pinned at 0 and
+    /// from the media player. See <see cref="MediaProbe"/>: the app records fragmented MP4, whose
+    /// duration Media Foundation reports as zero, which used to leave this slider pinned at 0 and
     /// Trim/GIF Export unusable. <see cref="OnMediaOpened"/> stays as the fallback for anything the
     /// probe can't read.
     /// </summary>
     private async Task InitializeTrimRangeAsync()
     {
-        var duration = await MediaDurationProbe.TryGetDurationAsync(_filePath);
-        if (duration is not { TotalSeconds: > 0 } value) return;
+        // Kept for OnMediaFailed, which needs the pixel format to tell an unplayable file apart from a
+        // perfectly good one Windows merely can't decode — and which may well fire before this returns.
+        _probe = await MediaProbe.ProbeAsync(_filePath);
 
-        DispatcherQueue.TryEnqueue(() => ApplyDuration(value.TotalSeconds));
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            if (_pendingPlaybackError) ShowPlaybackError();
+            if (_probe.Duration is { TotalSeconds: > 0 } value) ApplyDuration(value.TotalSeconds);
+        });
+    }
+
+    /// <summary>
+    /// Playback failed. The element's own error text ("Video could not be decoded") is the same whether
+    /// the file is truncated or merely encoded in something Media Foundation doesn't implement, so it is
+    /// replaced with a message that says which — and, when the recording is fine, says so plainly rather
+    /// than letting the user assume they just lost a take.
+    /// </summary>
+    private void OnMediaFailed(MediaPlayer sender, MediaPlayerFailedEventArgs args)
+    {
+        // Fires on MediaPlayer's own thread, and can beat the ffmpeg probe that decides *which* message
+        // to show — in that case the flag defers it to InitializeTrimRangeAsync's continuation.
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            if (_probe is null)
+            {
+                _pendingPlaybackError = true;
+                return;
+            }
+
+            ShowPlaybackError();
+        });
+    }
+
+    private void ShowPlaybackError()
+    {
+        _pendingPlaybackError = false;
+        Player.Visibility = Visibility.Collapsed;
+        PlaybackErrorPanel.Visibility = Visibility.Visible;
+
+        if (_probe?.IsUndecodableByWindows == true)
+        {
+            PlaybackErrorTitle.Text = "Your recording is fine — Windows just can't preview it";
+            PlaybackErrorDetail.Text =
+                "It was recorded with 4:4:4 color, which Windows' built-in video decoder doesn't support, " +
+                "so it won't play here, in Movies & TV, or in Photos. VLC and most editors open it normally, " +
+                "and Export GIF below still works.\n\n" +
+                "Recordings made from version 2.6.2 onward play everywhere — turn off \"Maximize text " +
+                "clarity\" on the Capture tab if this one was made with it on.";
+        }
+        else
+        {
+            PlaybackErrorTitle.Text = "This recording couldn't be previewed";
+            PlaybackErrorDetail.Text =
+                "Windows couldn't decode the video for playback. The file is still on disk and Export GIF " +
+                "may still work — it decodes with FFmpeg rather than the Windows player.";
+        }
     }
 
     private void ApplyDuration(double totalSeconds)

@@ -248,11 +248,16 @@ public sealed class FFmpegEncoderService : IDisposable
             sb.Append($"-vf \"scale=-2:{th}:flags=lanczos\" ");
         }
 
-        // The yuv444p "maximize text clarity" path only exists for libx264 — hardware encoders don't
-        // reliably support 4:4:4 in consumer ffmpeg builds, so it silently has no effect there.
+        // Everything encodes 4:2:0, including the "maximize text clarity" path, which used to switch
+        // libx264 to yuv444p/high444. That produced recordings Windows itself cannot play: Media
+        // Foundation's H.264 decoder tops out at High profile 4:2:0, so a 4:4:4 file failed to decode in
+        // this app's own review window ("Video could not be decoded"), in Movies & TV and in Photos —
+        // only ffmpeg-based players like VLC would open it. The extra sharpness was real, but paying for
+        // it with the recording's playability is a bad trade for a screen recorder whose whole point is
+        // producing a file you can hand to someone. The setting now spends its budget on quality knobs
+        // that stay universally decodable instead — see BuildEncoderTuning.
         var useTextClarity = settings.MaximizeTextClarity && encoder == "libx264";
-        var pixFmt = useTextClarity ? "yuv444p" : "yuv420p";
-        sb.Append($"-c:v {encoder} -pix_fmt {pixFmt} ");
+        sb.Append($"-c:v {encoder} -pix_fmt yuv420p ");
         sb.Append(BuildEncoderTuning(encoder, settings.VideoBitrateKbps, useTextClarity));
 
         if (audioPipeName is not null)
@@ -298,7 +303,16 @@ public sealed class FFmpegEncoderService : IDisposable
             // "veryfast" stays the default preset to keep a safety margin against falling behind
             // real-time at high resolutions/framerates; the text-clarity path trades that margin for
             // quality deliberately, since the user has explicitly opted into it.
-            _ when useTextClarity => $"-profile:v high444 -preset medium -crf 16 -maxrate {(int)(bitrateKbps * 1.8)}k -bufsize {bitrateKbps * 2}k ",
+            //
+            // That path is text clarity minus the 4:4:4 that made the output undecodable (see
+            // BuildArguments): a slower preset and a lower CRF for detail generally, plus a negative
+            // chroma QP offset. The offset is the part that actually targets what 4:4:4 was there to fix
+            // — colored-text fringing is a chroma-subsampling artifact, and chroma-qp-offset is the one
+            // knob that hands the chroma planes more bits without leaving High profile 4:2:0. "medium"
+            // rather than something slower keeps the real-time margin about where the old 4:4:4 path had
+            // it: 4:2:0 carries a quarter of the chroma samples, so medium here is cheaper than medium
+            // was there, not more expensive.
+            _ when useTextClarity => $"-profile:v high -preset medium -crf 15 -x264-params chroma-qp-offset=-2 -maxrate {(int)(bitrateKbps * 1.5)}k -bufsize {bitrateKbps * 2}k ",
             _ => $"-preset veryfast -crf 18 -maxrate {bitrateKbps}k -bufsize {bitrateKbps * 2}k ",
         };
     }

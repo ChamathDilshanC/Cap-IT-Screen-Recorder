@@ -18,10 +18,28 @@
             <TextBlock x:Name="FilePathText" Opacity="0.7" TextTrimming="CharacterEllipsis" />
         </StackPanel>
 
-        <MediaPlayerElement x:Name="Player" Grid.Row="1"
-                             AreTransportControlsEnabled="True"
-                             Stretch="Uniform"
-                             MinHeight="320" />
+        <Grid Grid.Row="1" MinHeight="320">
+            <MediaPlayerElement x:Name="Player"
+                                 AreTransportControlsEnabled="True"
+                                 Stretch="Uniform" />
+
+            <!-- Replaces the player outright when playback fails, rather than sitting on top of it: the
+                 element renders its own bare "Error: Video could not be decoded" text, which says nothing
+                 about whether the recording is actually usable. See ShowPlaybackError. -->
+            <Border x:Name="PlaybackErrorPanel" Visibility="Collapsed"
+                    Background="{ThemeResource LayerFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1" CornerRadius="8" Padding="28">
+                <StackPanel Spacing="10" VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="620">
+                    <FontIcon Glyph="&#xE7BA;" FontSize="28" HorizontalAlignment="Left" />
+                    <TextBlock x:Name="PlaybackErrorTitle"
+                               Style="{StaticResource SubtitleTextBlockStyle}"
+                               TextWrapping="Wrap" />
+                    <TextBlock x:Name="PlaybackErrorDetail"
+                               Opacity="0.8" TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+        </Grid>
 
         <StackPanel Grid.Row="2" Spacing="4">
             <Grid ColumnSpacing="12">

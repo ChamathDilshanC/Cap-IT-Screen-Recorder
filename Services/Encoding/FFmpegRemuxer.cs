@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 
 namespace ScreenRecorderApp.Services.Encoding;
 
@@ -13,7 +13,7 @@ namespace ScreenRecorderApp.Services.Encoding;
 /// expensive rewrite-on-stop that <c>+faststart</c> would force during capture. The cost is that
 /// Windows Media Foundation (which backs <see cref="Windows.Media.Playback.MediaPlayer"/> in the
 /// Review &amp; Export window) can't reliably decode an <c>empty_moov</c> fragmented MP4 — it already
-/// can't read its duration (see <see cref="MediaDurationProbe"/>) and often fails the video track
+/// can't read its duration (see <see cref="MediaProbe"/>) and often fails the video track
 /// outright with "Video could not be decoded".
 ///
 /// So once recording has actually stopped and there's time to spare, the fragmented file is remuxed

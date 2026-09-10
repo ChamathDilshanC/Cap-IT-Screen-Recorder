@@ -91,7 +91,7 @@
                     </ctcontrols:SettingsCard>
 
                     <ctcontrols:SettingsCard Header="Maximize text clarity"
-                                              Description="4:4:4 color (no blur/fringing around text edges) at a higher preset for sharper detail. Noticeably larger files; only applies with Auto/Software (x264) — hardware encoders don't support it."
+                                              Description="Spends extra bitrate on fine detail and on the color channels, where the fringing around text edges comes from — a slower preset, a lower CRF and a chroma bitrate boost. Noticeably larger files. Plays everywhere; only applies with Auto/Software (x264)."
                                               Visibility="{x:Bind ViewModel.CanMaximizeTextClarity, Mode=OneWay}">
                         <ToggleSwitch OnContent="On" OffContent="Off"
                                       IsOn="{x:Bind ViewModel.MaximizeTextClarity, Mode=TwoWay}"
