@@ -1,6 +1,8 @@
 ﻿using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.WindowsRuntime;
+using System.Runtime.Intrinsics;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.UI.Dispatching;
@@ -1281,6 +1283,45 @@ public partial class MainViewModel : BaseViewModel
         SpeakerLevel = raw > SpeakerLevel ? raw : SpeakerLevel * 0.72;
     }
 
+    /// <summary>
+    /// Sets every pixel's alpha byte to 255, in place.
+    /// </summary>
+    /// <remarks>
+    /// Desktop-duplication frames carry a BGRA alpha channel that's usually 0 for otherwise-opaque
+    /// desktop content (it's not meaningful — ffmpeg's rawvideo->yuv420p path ignores it entirely).
+    /// WriteableBitmap treats source pixels as premultiplied alpha though, so alpha=0 would render as
+    /// fully transparent/black; this forces it opaque for display purposes only.
+    ///
+    /// Done a vector at a time rather than a byte at a time because the scalar loop this replaces
+    /// touched every fourth byte of an 8MB buffer (33MB at 4K) with a dependent store per pixel, on the
+    /// UI thread, for every preview refresh. Reinterpreting the frame as 32-bit pixels turns "write one
+    /// byte per pixel" into "OR one mask across eight pixels at a time", which is both wider and
+    /// cheaper per pixel. The scalar tail below also covers machines without hardware vectors, so this
+    /// stays correct everywhere.
+    /// </remarks>
+    private static void ForceOpaque(byte[] bgra)
+    {
+        var pixels = MemoryMarshal.Cast<byte, uint>(bgra.AsSpan());
+        const uint OpaqueAlpha = 0xFF000000u;
+
+        int i = 0;
+        if (Vector256.IsHardwareAccelerated && pixels.Length >= Vector256<uint>.Count)
+        {
+            ref uint origin = ref MemoryMarshal.GetReference(pixels);
+            var mask = Vector256.Create(OpaqueAlpha);
+            int limit = pixels.Length - Vector256<uint>.Count;
+            for (; i <= limit; i += Vector256<uint>.Count)
+            {
+                (Vector256.LoadUnsafe(ref origin, (nuint)i) | mask).StoreUnsafe(ref origin, (nuint)i);
+            }
+        }
+
+        for (; i < pixels.Length; i++)
+        {
+            pixels[i] |= OpaqueAlpha;
+        }
+    }
+
     private void UpdatePreview()
     {
         // No state guard: video capture (and therefore a frame to show) may be active before recording
@@ -1296,14 +1337,7 @@ public partial class MainViewModel : BaseViewModel
 
         if (!_manager.TryGetPreviewFrame(_previewBuffer)) return;
 
-        // Desktop-duplication frames carry a BGRA alpha channel that's usually 0 for otherwise-opaque
-        // desktop content (it's not meaningful — ffmpeg's rawvideo->yuv420p path ignores it entirely).
-        // WriteableBitmap treats source pixels as premultiplied alpha though, so alpha=0 would render as
-        // fully transparent/black; force it opaque for display purposes only.
-        for (int i = 3; i < _previewBuffer.Length; i += 4)
-        {
-            _previewBuffer[i] = 255;
-        }
+        ForceOpaque(_previewBuffer);
 
         if (PreviewSource is null || PreviewSource.PixelWidth != w || PreviewSource.PixelHeight != h)
         {

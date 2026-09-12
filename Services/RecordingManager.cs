@@ -1,4 +1,6 @@
-﻿using ScreenRecorderApp.Models;
+﻿using System.Collections.Concurrent;
+using System.Threading.Channels;
+using ScreenRecorderApp.Models;
 using ScreenRecorderApp.Services.Capture;
 using ScreenRecorderApp.Services.Encoding;
 
@@ -17,10 +19,29 @@ public sealed class RecordingManager : IDisposable
     private readonly FFmpegEncoderService _ffmpeg = new();
     private readonly object _videoLock = new();
 
-    private byte[] _frameBuffer = [];
     private byte[] _blackFrame = [];
     private CancellationTokenSource? _pacerCts;
     private Task? _pacerTask;
+    private Task? _writerTask;
+    private Channel<byte[]?>? _frameQueue;
+    private TimerResolutionScope? _timerResolution;
+    private readonly ConcurrentQueue<byte[]> _framePool = new();
+    private long _repeatedFrameCount;
+
+    /// <summary>
+    /// How many frame buffers circulate between the pacer and the pipe writer. Three is enough to
+    /// absorb the encoder's normal hiccups (a keyframe, a disk flush) without the pacer ever waiting,
+    /// and small enough that the memory cost stays bounded — at 4K each NV12 buffer is 12.4MB.
+    /// </summary>
+    private const int FramePoolSize = 3;
+
+    /// <summary>
+    /// Frames the pacer had to emit as a repeat of the previous one because every pooled buffer was
+    /// still in flight, i.e. the encoder could not keep up. The recording's length and audio sync are
+    /// unaffected (a repeat still advances the timeline by exactly one frame); this is purely a measure
+    /// of how much motion detail was lost to the encoder falling behind.
+    /// </summary>
+    public long RepeatedFrameCount => Interlocked.Read(ref _repeatedFrameCount);
 
     // The path ffmpeg actually writes to during capture (a fragmented ".part.mp4"), and the final
     // path the user asked for. For MP4 output these differ: on stop the fragmented file is remuxed
@@ -308,13 +329,36 @@ public sealed class RecordingManager : IDisposable
             // for both pipes up front deadlocks since nothing is writing yet.
             await _ffmpeg.StartAsync(settings, _video.Width, _video.Height, audioRequested, outputPath);
 
-            _frameBuffer = new byte[_video.FrameByteSize];
-            _blackFrame = new byte[_video.FrameByteSize];
+            // NV12, not BGRA: every buffer from here to the pipe is 1.5 bytes per pixel. The black
+            // frame has to be filled rather than merely allocated, because all-zero is not black in
+            // NV12 — see Nv12Converter.FillBlack.
+            int frameBytes = _video.Nv12FrameByteSize;
+            _blackFrame = new byte[frameBytes];
+            Nv12Converter.FillBlack(_blackFrame, _video.Width, _video.Height);
+            _framePool.Clear();
+            for (int i = 0; i < FramePoolSize; i++)
+            {
+                var pooled = new byte[frameBytes];
+                Nv12Converter.FillBlack(pooled, _video.Width, _video.Height);
+                _framePool.Enqueue(pooled);
+            }
+            Interlocked.Exchange(ref _repeatedFrameCount, 0);
 
             lock (_videoLock) { _video.BeginCapture(); }
 
+            // Held for the recording only — see TimerResolutionScope for why a 60fps pacer is not
+            // actually a 60fps pacer without it.
+            _timerResolution = new TimerResolutionScope();
+
+            _frameQueue = Channel.CreateUnbounded<byte[]?>(
+                // SingleWriter stays false even though the pacer is the only thing that enqueues frames:
+                // completion is a write too, and both the pacer's finally block and a failure/dispose
+                // path off another thread can reach TryComplete for the same queue.
+                new UnboundedChannelOptions { SingleReader = true, SingleWriter = false });
+
             _pacerCts = new CancellationTokenSource();
-            _pacerTask = Task.Run(() => PacerLoopAsync(settings.Fps, _pacerCts.Token));
+            _writerTask = Task.Run(() => WriterLoopAsync(_frameQueue.Reader));
+            _pacerTask = Task.Run(() => PacerLoopAsync(settings.Fps, _frameQueue.Writer, _pacerCts.Token));
 
             if (audioRequested)
             {
@@ -352,7 +396,20 @@ public sealed class RecordingManager : IDisposable
         }
     }
 
-    private async Task PacerLoopAsync(int fps, CancellationToken ct)
+    /// <summary>
+    /// Samples the latest captured frame once per output frame interval and hands it to
+    /// <see cref="WriterLoopAsync"/>. Deliberately does no I/O itself — see the remarks.
+    /// </summary>
+    /// <remarks>
+    /// The pipe write used to happen inline, on this loop, which made the pacer's cadence hostage to the
+    /// encoder's: any time ffmpeg stalled (a keyframe, a disk flush, a slow software preset at 4K) the
+    /// await blocked past the next tick, and PeriodicTimer does not make up missed ticks. Because ffmpeg
+    /// is fed fixed-rate rawvideo with no timestamps, a missed tick is not a late frame — it is a frame
+    /// that never exists, so the finished video runs short while the audio, which never stalls, does
+    /// not. That is the drift this split removes: the pacer now always emits exactly one frame per tick,
+    /// and a slow encoder costs motion detail (a repeated frame) instead of timeline.
+    /// </remarks>
+    private async Task PacerLoopAsync(int fps, ChannelWriter<byte[]?> queue, CancellationToken ct)
     {
         using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(1000.0 / fps));
         try
@@ -368,16 +425,61 @@ public sealed class RecordingManager : IDisposable
                 if (State == RecordingState.Paused) continue;
 
                 // Screen pause is deliberately different: frames keep flowing at full rate, they're
-                // just the same (frozen) frame, so audio and the timeline carry on normally.
-                if (!IsScreenFrozen)
+                // just the same (frozen) frame, so audio and the timeline carry on normally. A null is
+                // precisely that instruction to the writer, and costs neither a buffer nor a copy.
+                if (IsScreenFrozen)
                 {
-                    _video.TryGetLatestFrame(_frameBuffer);
+                    queue.TryWrite(null);
+                    continue;
                 }
 
+                if (!_framePool.TryDequeue(out var buffer))
+                {
+                    // Every pooled buffer is still queued or in flight: the encoder is behind. Emit a
+                    // repeat rather than skipping the tick, so the frame count still matches elapsed
+                    // time — see this method's remarks.
+                    queue.TryWrite(null);
+                    Interlocked.Increment(ref _repeatedFrameCount);
+                    continue;
+                }
+
+                _video.TryGetLatestFrameNv12(buffer);
+                queue.TryWrite(buffer);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Normal shutdown.
+        }
+        finally
+        {
+            queue.TryComplete();
+        }
+    }
+
+    /// <summary>
+    /// Drains the pacer's queue into ffmpeg's video pipe. Runs without a cancellation token on purpose:
+    /// on stop it finishes whatever the pacer already queued rather than truncating it, and a genuinely
+    /// wedged encoder still unblocks it, since <see cref="FFmpegEncoderService.StopAsync"/> disposes the
+    /// pipe (and ultimately kills the process), which surfaces here as the IO exceptions caught below.
+    /// </summary>
+    private async Task WriterLoopAsync(ChannelReader<byte[]?> queue)
+    {
+        // The most recently written frame, held back from the pool so a repeat marker has something to
+        // re-send. The pool gets the frame before it instead, one write behind.
+        byte[]? lastWritten = null;
+        try
+        {
+            await foreach (var frame in queue.ReadAllAsync().ConfigureAwait(false))
+            {
                 var pipe = _ffmpeg.VideoPipe;
                 if (pipe is null) return;
 
-                await pipe.WriteAsync(_frameBuffer.Length > 0 ? _frameBuffer : _blackFrame, ct).ConfigureAwait(false);
+                await pipe.WriteAsync(frame ?? lastWritten ?? _blackFrame).ConfigureAwait(false);
+
+                if (frame is null) continue;
+                if (lastWritten is not null) _framePool.Enqueue(lastWritten);
+                lastWritten = frame;
             }
         }
         catch (OperationCanceledException)
@@ -424,6 +526,17 @@ public sealed class RecordingManager : IDisposable
             try { await _pacerTask; } catch { /* already logged inside the loop */ }
         }
 
+        // The pacer completes the queue on its way out, so the writer finishes the last few frames it
+        // was already handed rather than truncating them. Bounded, because a wedged ffmpeg must not be
+        // able to hang Stop — StopAsync below kills it either way, which unblocks the writer for good.
+        if (_writerTask is not null)
+        {
+            try { await _writerTask.WaitAsync(TimeSpan.FromSeconds(5)); } catch { /* drained or gave up */ }
+        }
+
+        _timerResolution?.Dispose();
+        _timerResolution = null;
+
         _audio.Stop();
         lock (_videoLock) { _video.Stop(); }
 
@@ -465,6 +578,9 @@ public sealed class RecordingManager : IDisposable
     private async Task CleanupAfterFailureAsync()
     {
         _pacerCts?.Cancel();
+        _frameQueue?.Writer.TryComplete();
+        _timerResolution?.Dispose();
+        _timerResolution = null;
         _audio.Stop();
         lock (_videoLock) { _video.Stop(); }
         try { await _ffmpeg.StopAsync(); } catch { /* best effort */ }
@@ -483,6 +599,9 @@ public sealed class RecordingManager : IDisposable
     public void Dispose()
     {
         _pacerCts?.Cancel();
+        _frameQueue?.Writer.TryComplete();
+        _timerResolution?.Dispose();
+        _timerResolution = null;
         _audio.Dispose();
         lock (_videoLock) { _video.Dispose(); }
         _ffmpeg.Dispose();

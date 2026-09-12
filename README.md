@@ -9,7 +9,7 @@ tutorial for you** — pick what to record from live thumbnails, let smart zoom 
 actually doing, draw on your screen while you talk, clean up your mic, and export a trimmed GIF, all
 without leaving the app.
 
-[![Release](https://img.shields.io/badge/release-v2.6.2-success?logo=github)](../../releases/latest)
+[![Release](https://img.shields.io/badge/release-v2.7.0-success?logo=github)](../../releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/ChamathDilshanC/Cap-IT-Screen-Recorder/total?color=blue&logo=github)](../../releases)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-0078D6?logo=windows&logoColor=white)](#-installation)
 [![.NET](https://img.shields.io/badge/.NET-8-512BD4?logo=dotnet&logoColor=white)](#%EF%B8%8F-tech-stack)
@@ -18,7 +18,7 @@ without leaving the app.
 
 ### [**⬇ Download for Windows**](../../releases/latest)
 
-[What's new](#-whats-new-in-v262) · [Features](#-features) · [Screenshots](#-screenshots) · [Install](#-installation) · [Shortcuts](#%EF%B8%8F-keyboard-shortcuts) · [Build from source](#-building-from-source)
+[What's new](#-whats-new-in-v270) · [Features](#-features) · [Screenshots](#-screenshots) · [Install](#-installation) · [Shortcuts](#%EF%B8%8F-keyboard-shortcuts) · [Build from source](#-building-from-source)
 
 <br/>
 
@@ -28,7 +28,68 @@ without leaving the app.
 
 ---
 
-## 🆕 What's new in v2.6.2
+## 🆕 What's new in v2.7.0
+
+A performance release. The capture pipeline moved onto the GPU, the encoder stopped being able to drag
+the recording out of sync, and the colours are finally tagged correctly.
+
+| | |
+|---|---|
+| 🚀 **The whole frame pipeline runs on the GPU** | Cursor, smart zoom, sharpening, click ripples, spotlight and the webcam/keystroke overlays are now shader passes on the frame the capture API already handed us on the GPU, instead of vector code walking 8MB of system memory. Monitor capture only for now — single-window capture keeps the CPU path. |
+| 🎨 **1.5 bytes per pixel to the encoder, not 4** | The colour conversion FFmpeg used to redo on every single frame now happens on the GPU as the last step before the frame comes back, so what crosses the pipe is 4:2:0 rather than raw BGRA — **62% less data**, and FFmpeg's conversion pass disappears rather than moving somewhere else. |
+| ⚡ **~3× faster zoom, even without a GPU** | The CPU kernels were rewritten too, so machines that fall back still gain: the resampler's per-pixel bookkeeping is hoisted into a table computed once per frame, the arithmetic is SIMD, and the alpha channel is no longer computed just to be discarded. A zoomed 1080p frame went from **40.2ms to 12.5ms** — the difference between not holding 30fps and fitting inside a 60fps budget. |
+| ⏱️ **A recording that stays in sync** | The frame pacer used to do the pipe write itself, so any time FFmpeg stalled — a keyframe, a disk flush, a slow preset at 4K — the tick was simply missed. Because the encoder is fed at a fixed rate, a missed tick is not a late frame, it is a frame that never exists: the video came out short while the audio, which never stalls, did not. Writing now happens on its own thread, and a slow encoder costs a repeated frame instead of drifting the timeline. |
+| 🎯 **60fps that is actually 60fps** | Windows' default timer granularity is ~15.6ms, so a 16.67ms pacer was really getting 15.6 and 31.2 alternating — a ±50% error on every frame interval, visible as uneven motion even though the file's framerate was exactly right. The recorder now raises the timer resolution for the duration of a recording, and drops it again afterwards so it costs nothing on battery. |
+| 🌈 **Correct colour, finally** | Recordings are now converted **and tagged** BT.709. Every previous release converted as BT.601 and tagged the file with nothing at all, so players fell back to guessing from the frame size and decoded HD footage as 709 — a real, if mild, hue and saturation error that had been there the whole time. |
+| 🧹 **No more allocation churn in window capture** | Single-window recording allocated two full frames per frame — about **1GB/s** onto the Large Object Heap at 1080p, with the GC pauses that implies. Both buffers are now reused. |
+
+> **Recordings will look slightly different** — very slightly. The colour fix above changes hue and
+> saturation by a small amount on every recording made from this version on. It is a correction, not a
+> regression: what you get now is what your screen actually looked like.
+
+Your saved settings are **not** affected by updating. They live in
+`%LocalAppData%\Cap-IT Screen Recorder\settings.json`, outside the install folder — an in-place
+upgrade only overwrites the program files and never runs the uninstaller.
+
+<details>
+<summary><strong>What it actually measures — and where it still does not fit</strong></summary>
+
+<br/>
+
+Every kernel that moved to the GPU was held against the CPU one it replaced, pixel for pixel, across
+zoom levels from 1.2× to 3×: the largest disagreement anywhere is **2 of 255** on any colour channel,
+which is float-versus-double rounding, not a visible difference. The colour conversion was separately
+checked against FFmpeg's own BT.709 output (largest luma difference: **1**) and then end to end, by
+encoding real captured frames and decoding them back.
+
+Timings on the development machine, for a zoomed frame including the read back to system memory:
+
+| | GPU | CPU |
+|---|---|---|
+| 720p | 2.7–3.0 ms | 6.1–8.5 ms |
+| 1080p | 5.3–7.2 ms | 9.4–11.3 ms |
+| 4K | 20.5–24.6 ms | 33.5–36.3 ms |
+
+The CPU column **excludes** the frame download it also has to pay, so the real gap is wider than it
+looks. 1080p60 now sits comfortably inside its 16.67ms budget. **4K60 with the zoom active still does
+not fit** — it got about 1.5× faster, not free. The remaining cost is dominated by reading the frame
+back across the bus, which is bandwidth-bound; encoding directly from the GPU texture is what would
+actually close that gap.
+
+Where a GPU cannot run the pipeline — an unsupported driver, a shader that will not compile, odd
+capture dimensions — the recorder silently uses the CPU path instead. A GPU that cannot do this means
+a slower recording, never a failed one.
+
+</details>
+
+---
+
+<details>
+<summary><strong>Previously, in v2.6.2</strong></summary>
+
+<br/>
+
+### v2.6.2
 
 The zoom no longer freezes mid-move, and zoomed footage looks far sharper.
 
@@ -89,7 +150,7 @@ per-frame cost and is the obvious next step if this proves tight on slower machi
 
 </details>
 
----
+</details>
 
 <details>
 <summary><strong>Previously, in v2.6.0</strong></summary>
@@ -282,7 +343,7 @@ that can't lose a leg mid-stream.
 
 ## 📦 Installation
 
-Grab **`CapIT-Screen-Recorder-Setup-2.6.2.exe`** from
+Grab **`CapIT-Screen-Recorder-Setup-2.7.0.exe`** from
 **[Releases](../../releases/latest)** and run it. It's a normal Windows installer (built with Inno
 Setup) and it's fully self-contained — no separate .NET runtime, no Windows App SDK runtime, and no
 manual FFmpeg download.

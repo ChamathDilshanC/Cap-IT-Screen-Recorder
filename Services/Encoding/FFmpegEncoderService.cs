@@ -211,7 +211,16 @@ public sealed class FFmpegEncoderService : IDisposable
         // Video input: raw BGRA frames pushed by VideoCaptureService at a fixed pace. The format is
         // fully specified via -pix_fmt/-s/-r, so probesize/analyzeduration are forced to the minimum
         // to avoid ffmpeg buffering more than it needs to before it considers the stream "found".
-        sb.Append($"-probesize 32 -analyzeduration 0 -thread_queue_size 1024 -f rawvideo -pix_fmt bgra -s {videoWidth}x{videoHeight} -r {settings.Fps} -i \\\\.\\pipe\\{videoPipeName} ");
+        // NV12, not BGRA. The capture pipeline now does the RGB->YCbCr conversion itself (on the GPU
+        // where one is available, see Capture.Nv12Converter for the reasoning and the colour matrix), so
+        // what arrives here is already 4:2:0 at 1.5 bytes per pixel instead of 4. That removes ffmpeg's
+        // own per-frame swscale conversion pass and cuts what the named pipe has to carry by 62% — at
+        // 4K60 the difference between ~2GB/s and ~750MB/s through a single pipe.
+        //
+        // The range/matrix are stated explicitly rather than left to ffmpeg's defaults, which is the
+        // whole point: the converter emits BT.709 studio swing, and saying so here is what keeps the
+        // encode from re-interpreting it as something else.
+        sb.Append($"-probesize 32 -analyzeduration 0 -thread_queue_size 1024 -f rawvideo -pix_fmt nv12 -color_range tv -colorspace bt709 -color_primaries bt709 -color_trc bt709 -s {videoWidth}x{videoHeight} -r {settings.Fps} -i \\\\.\\pipe\\{videoPipeName} ");
 
         if (audioPipeName is not null)
         {
@@ -241,7 +250,9 @@ public sealed class FFmpegEncoderService : IDisposable
         // high-quality scaler here, on the encode side only. "-2" keeps the width proportional to the
         // requested height and rounds to the nearest even number (required for yuv420p). flags=lanczos
         // asks swscale for its sharpest resampling kernel — ffmpeg's own SIMD-optimized scaler, so unlike
-        // a hand-rolled per-frame filter this costs nothing worth worrying about.
+        // a hand-rolled per-frame filter this costs nothing worth worrying about. Since the input is now
+        // already YCbCr, this scale runs entirely in YUV and no longer drags a colour conversion along
+        // with it.
         var targetHeight = TargetHeight(settings.Resolution);
         if (targetHeight is int th && th != videoHeight)
         {
@@ -257,7 +268,14 @@ public sealed class FFmpegEncoderService : IDisposable
         // producing a file you can hand to someone. The setting now spends its budget on quality knobs
         // that stay universally decodable instead — see BuildEncoderTuning.
         var useTextClarity = settings.MaximizeTextClarity && encoder == "libx264";
+        // yuv420p rather than passing nv12 straight through, because libx264 only accepts planar 4:2:0.
+        // This is a plane de-interleave, not a colour conversion — a memcpy-class cost, unlike the full
+        // RGB->YCbCr pass that used to happen here.
         sb.Append($"-c:v {encoder} -pix_fmt yuv420p ");
+        // Tag the encoded stream with the matrix the frames were actually built in. Without this the
+        // file carries no colour metadata at all and every player falls back to guessing from the frame
+        // size, which is precisely the mismatch that made the old BGRA path's colours subtly wrong.
+        sb.Append("-colorspace bt709 -color_primaries bt709 -color_trc bt709 -color_range tv ");
         sb.Append(BuildEncoderTuning(encoder, settings.VideoBitrateKbps, useTextClarity));
 
         if (audioPipeName is not null)

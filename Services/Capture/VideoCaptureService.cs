@@ -1,6 +1,9 @@
+using System.Buffers;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Runtime.Intrinsics;
 using ScreenRecorderApp.Models;
+using ScreenRecorderApp.Services.Capture.Gpu;
 using ScreenRecorderApp.Services.Capture.Interop;
 using ScreenRecorderApp.Services.Tracking;
 using SharpGen.Runtime;
@@ -56,6 +59,7 @@ public sealed class VideoCaptureService : IDisposable
     private ID3D11Texture2D? _wgcStagingTexture;
     private int _wgcStagingWidth;
     private int _wgcStagingHeight;
+    private byte[]? _wgcSrcBuffer;
     private SizeInt32 _wgcPoolSize;
 
     // GraphicsCaptureItem.Closed turns out not to be a reliable signal in practice here: WGC simply stops
@@ -173,6 +177,24 @@ public sealed class VideoCaptureService : IDisposable
     // The swap is safe because readers only ever touch _latestFrame while holding _frameLock, and they
     // copy out before releasing it, so the buffer handed back here is guaranteed to have no reader left.
     private byte[]? _composeBuffer;
+
+    // The GPU pipeline, when one could be built. Monitor capture only: window capture's letterbox
+    // resample has no shader counterpart yet, and it is not where the frame budget actually hurts.
+    // Null means every frame goes through the CPU kernels, which remain the complete, correct path —
+    // see GpuFrameProcessor for what it does and why the readback format is the reason it exists.
+    private GpuFrameProcessor? _gpu;
+    private byte[]? _gpuNv12Frame;      // published NV12, what the pacer copies out
+    private byte[]? _gpuPreviewFrame;   // published BGRA, only refreshed when the preview asks
+    private bool _gpuHasFrame;
+    private bool _gpuPreviewHasFrame;
+    private readonly object _gpuFrameLock = new();
+
+    // The preview lives on the UI thread and must not touch D3D, so it leaves a request here and the
+    // capture thread produces its BGRA copy on the next frame. One frame of staleness at ~60Hz, for a
+    // surface that repaints six times a second.
+    private volatile bool _gpuPreviewWanted;
+
+    private GpuRipple[]? _gpuRippleScratch;
     private readonly Stopwatch _zoomClock = Stopwatch.StartNew();
     private double _lastZoomFrameSeconds;
 
@@ -442,6 +464,17 @@ public sealed class VideoCaptureService : IDisposable
         var desc = _duplication.Description;
         Width = (int)desc.ModeDescription.Width;
         Height = (int)desc.ModeDescription.Height;
+
+        // Built on the duplication device itself, so the captured texture never leaves the GPU it was
+        // produced on. Returns null on anything unsupported, which simply leaves the CPU path in charge.
+        _gpu = GpuFrameProcessor.TryCreate(_device!, _context!, Width, Height);
+        if (_gpu is not null)
+        {
+            _gpuNv12Frame = new byte[Nv12Converter.FrameByteSize(Width, Height)];
+            Nv12Converter.FillBlack(_gpuNv12Frame, Width, Height);
+            _gpuPreviewFrame = new byte[Width * Height * 4];
+            _gpuHasFrame = false;
+        }
     }
 
     /// <summary>
@@ -783,7 +816,11 @@ public sealed class VideoCaptureService : IDisposable
                     //
                     // Either way, a zoom that is still moving has to keep moving, so re-composite the
                     // last raw frame with the eased crop advanced to now.
-                    if (NeedsAnimationTick()) ComposeAndPublish();
+                    if (NeedsAnimationTick())
+                    {
+                        if (_gpu is not null) ComposeOnGpu(null);
+                        else ComposeAndPublish();
+                    }
                     continue;
                 }
 
@@ -823,7 +860,8 @@ public sealed class VideoCaptureService : IDisposable
                 using (desktopResource)
                 {
                     using var texture = desktopResource.QueryInterface<ID3D11Texture2D>();
-                    CopyFrameToBuffer(texture);
+                    if (_gpu is not null) ComposeOnGpu(texture);
+                    else CopyFrameToBuffer(texture);
                 }
 
                 _duplication.ReleaseFrame();
@@ -909,7 +947,22 @@ public sealed class VideoCaptureService : IDisposable
     /// </summary>
     private bool NeedsAnimationTick()
     {
-        if (_rawFrame is null) return false;
+        if (_gpu is not null)
+        {
+            // The GPU path composites the whole stack here rather than at pull time, so anything that
+            // animates independently of the screen — a webcam feed, a ripple mid-flight, the spotlight
+            // tracking the cursor, a keystroke toast — needs a tick of its own even when the desktop is
+            // perfectly still. Without this they would only advance when something else happened to
+            // change on screen.
+            if (!_gpuHasFrame) return false;
+            if (_webcam is not null || _keystrokeOverlay is not null || _spotlightEnabled) return true;
+            lock (_rippleLock) { if (_activeRipples.Count > 0) return true; }
+            if (_gpuPreviewWanted) return true;
+        }
+        else if (_rawFrame is null)
+        {
+            return false;
+        }
 
         var target = CurrentZoomTargetFactor();
 
@@ -979,6 +1032,119 @@ public sealed class VideoCaptureService : IDisposable
             _frameHeight = height;
             _hasFrame = true;
         }
+    }
+
+    /// <summary>
+    /// The GPU path's counterpart to <see cref="ComposeAndPublish"/>: runs the whole effects stack and
+    /// the NV12 conversion as shader passes and publishes the result for the pacer to pick up.
+    /// </summary>
+    /// <param name="texture">
+    /// The freshly acquired desktop frame, or null on an animation tick, where the processor re-composes
+    /// its cached copy of the last captured frame — the zoom springs, ripples and webcam all advance on a
+    /// clock, and the moments they most need to keep moving are exactly the moments the desktop is still.
+    /// </param>
+    /// <remarks>
+    /// Unlike the CPU path, this composites everything here rather than splitting the stack between
+    /// capture time and pull time. It has to: once the frame has been converted to NV12 there is no
+    /// sensible way to blend a BGRA overlay onto it, so the overlays must go on before the conversion,
+    /// and the conversion is the whole reason the GPU path pays off. <see cref="NeedsAnimationTick"/>
+    /// takes over the job the pacer cadence used to do for those effects.
+    ///
+    /// A failed frame falls back to the CPU path for that frame alone rather than tearing anything down:
+    /// a transient device hiccup should cost one frame, not the recording.
+    /// </remarks>
+    private void ComposeOnGpu(ID3D11Texture2D? texture)
+    {
+        var gpu = _gpu;
+        var nv12 = _gpuNv12Frame;
+        if (gpu is null || nv12 is null) return;
+
+        AdvanceZoomCamera(Width, Height, out double cropX, out double cropY, out double cropW, out double cropH);
+
+        gpu.SetCursor(_captureCursor && _cursorVisible
+            ? (_cursorStyle == CursorStyle.SystemDefault ? _systemCursorIcon : CursorIcons.Get(_cursorStyle))
+            : null);
+
+        var webcam = _webcam;
+        if (webcam is not null && webcam.TryGetOverlay(out var webcamBgra, out int webcamSize)) gpu.SetWebcam(webcamBgra, webcamSize);
+        else gpu.SetWebcam(null, 0);
+
+        if (_keystrokeOverlay is not null && _keystrokeOverlay.TryGetOverlay(out var keysBgra, out int keysW, out int keysH)) gpu.SetKeystroke(keysBgra, keysW, keysH);
+        else gpu.SetKeystroke(null, 0, 0);
+
+        var ripples = SnapshotRipplesForGpu();
+
+        var prm = new GpuFrameParams(
+            DrawCursor: _captureCursor && _cursorVisible,
+            CursorX: _cursorX,
+            CursorY: _cursorY,
+            CropX: cropX,
+            CropY: cropY,
+            CropWidth: cropW,
+            CropHeight: cropH,
+            SharpenAmount: SharpenAmountFor(_zoomCurrentFactor),
+            SpotlightEnabled: _spotlightEnabled && _spotlightRadius > 0,
+            SpotlightRadius: _spotlightRadius,
+            SpotlightFeather: SpotlightFeatherPx,
+            SpotlightDimAlpha: (float)SpotlightDimAlpha,
+            RippleThickness: (float)RippleThicknessPx);
+
+        bool wantPreview = _gpuPreviewWanted;
+        var previewBuffer = wantPreview ? _gpuPreviewFrame : null;
+
+        if (!gpu.Process(texture, prm, ripples, nv12, previewBuffer))
+        {
+            // Fall back for this frame only. The CPU path needs the frame in system memory, which it
+            // only has if a real texture arrived — on an animation tick there is nothing to fall back to,
+            // so the previously published frame simply stands for one more tick.
+            if (texture is not null)
+            {
+                CopyFrameToBuffer(texture);
+            }
+            return;
+        }
+
+        if (wantPreview) _gpuPreviewWanted = false;
+
+        lock (_gpuFrameLock)
+        {
+            _gpuHasFrame = true;
+            if (wantPreview) _gpuPreviewHasFrame = true;
+        }
+
+        lock (_frameLock)
+        {
+            _frameWidth = Width;
+            _frameHeight = Height;
+            _hasFrame = true;
+        }
+    }
+
+    /// <summary>
+    /// Prunes expired ripples and converts the survivors to the shader's units — radius and opacity
+    /// already evaluated at the current time, since the shader has no clock of its own.
+    /// </summary>
+    private ReadOnlySpan<GpuRipple> SnapshotRipplesForGpu()
+    {
+        if (!_clickRipplesEnabled) return ReadOnlySpan<GpuRipple>.Empty;
+
+        double now = _zoomClock.Elapsed.TotalSeconds;
+        var scratch = _gpuRippleScratch ??= new GpuRipple[GpuFrameProcessor.MaxRipples];
+
+        int count = 0;
+        lock (_rippleLock)
+        {
+            _activeRipples.RemoveAll(r => now - r.StartSeconds > RippleDurationSeconds);
+            foreach (var ripple in _activeRipples)
+            {
+                if (count >= scratch.Length) break;
+                double t = (now - ripple.StartSeconds) / RippleDurationSeconds;
+                if (t is < 0 or > 1) continue;
+                scratch[count++] = new GpuRipple(
+                    (float)ripple.X, (float)ripple.Y, (float)(RippleMaxRadiusPx * t), (float)(1.0 - t));
+            }
+        }
+        return scratch.AsSpan(0, count);
     }
 
     /// <summary>
@@ -1063,7 +1229,15 @@ public sealed class VideoCaptureService : IDisposable
         try
         {
             int rowBytes = srcWidth * 4;
-            var srcBuffer = new byte[rowBytes * srcHeight];
+            // Reused, not reallocated per frame — same reasoning as _rawFrame/_composeBuffer on the DXGI
+            // path: at 1080p this and the canvas below are 8MB each, so allocating both every frame meant
+            // ~1GB/s of Large Object Heap churn in window mode and the GC pauses that come with it.
+            var srcBuffer = _wgcSrcBuffer;
+            if (srcBuffer is null || srcBuffer.Length != rowBytes * srcHeight)
+            {
+                srcBuffer = new byte[rowBytes * srcHeight];
+                _wgcSrcBuffer = srcBuffer;
+            }
             nint srcPtr = mapped.DataPointer;
             int rowPitch = (int)mapped.RowPitch;
             for (int y = 0; y < srcHeight; y++)
@@ -1076,7 +1250,6 @@ public sealed class VideoCaptureService : IDisposable
             // be resized live without ever changing the frame size ffmpeg was told to expect. The system
             // cursor is already baked into srcBuffer by WGC itself (IsCursorCaptureEnabled), so this is a
             // plain resample, not a composite.
-            var canvas = new byte[Width * Height * 4]; // zero-initialized = black; alpha unused downstream
             double scale = Math.Min((double)Width / srcWidth, (double)Height / srcHeight);
             int destRectW = Math.Max(1, (int)Math.Round(srcWidth * scale));
             int destRectH = Math.Max(1, (int)Math.Round(srcHeight * scale));
@@ -1085,6 +1258,19 @@ public sealed class VideoCaptureService : IDisposable
             _letterboxScale = scale;
             _letterboxOffsetX = destRectX;
             _letterboxOffsetY = destRectY;
+
+            int canvasBytes = Width * Height * 4;
+            var canvas = _composeBuffer;
+            if (canvas is null || canvas.Length != canvasBytes)
+            {
+                canvas = new byte[canvasBytes];
+            }
+
+            // The bars are exactly the part of the canvas the resample never writes, so a reused buffer
+            // has to have them cleared explicitly — every frame, not just when the window is resized,
+            // because a zoomed frame's ApplyZoom fills the whole canvas including the bar region, and
+            // that buffer comes back around two frames later still carrying it.
+            ClearLetterboxBars(canvas, Width, Height, destRectX, destRectY, destRectW, destRectH);
 
             ResampleCatmullRomInto(srcBuffer, srcWidth, srcHeight, 0, 0, srcWidth, srcHeight,
                 canvas, Width, Height, destRectX, destRectY, destRectW, destRectH);
@@ -1098,6 +1284,9 @@ public sealed class VideoCaptureService : IDisposable
 
             lock (_frameLock)
             {
+                // Swap rather than assign, exactly as ComposeAndPublish does: the outgoing frame becomes
+                // the next compose target, so neither buffer is reallocated once the pipeline is warm.
+                _composeBuffer = _latestFrame;
                 _latestFrame = canvas;
                 _frameWidth = Width;
                 _frameHeight = Height;
@@ -1107,6 +1296,34 @@ public sealed class VideoCaptureService : IDisposable
         finally
         {
             _context.Unmap(_wgcStagingTexture, 0);
+        }
+    }
+
+    /// <summary>
+    /// Blacks out the letterbox bars — everything in the canvas outside the image rectangle the
+    /// resample is about to fill. Clears the full-width bands above and below in one contiguous write
+    /// each, then the side bars row by row; scale-to-fit only ever produces one orientation of bar, so
+    /// in practice exactly one of those two paths does any work.
+    /// </summary>
+    private static void ClearLetterboxBars(byte[] canvas, int width, int height, int rectX, int rectY, int rectW, int rectH)
+    {
+        int stride = width * 4;
+        int top = Math.Clamp(rectY, 0, height);
+        int bottom = Math.Clamp(rectY + rectH, 0, height);
+        int left = Math.Clamp(rectX, 0, width);
+        int right = Math.Clamp(rectX + rectW, 0, width);
+
+        if (top > 0) Array.Clear(canvas, 0, top * stride);
+        if (bottom < height) Array.Clear(canvas, bottom * stride, (height - bottom) * stride);
+
+        if (left > 0 || right < width)
+        {
+            for (int y = top; y < bottom; y++)
+            {
+                int rowBase = y * stride;
+                if (left > 0) Array.Clear(canvas, rowBase, left * 4);
+                if (right < width) Array.Clear(canvas, rowBase + right * 4, (width - right) * 4);
+            }
         }
     }
 
@@ -1322,7 +1539,59 @@ public sealed class VideoCaptureService : IDisposable
     /// the first-order lag this used to use — see the easing constants' remarks for why that is what
     /// produces motion with a soft start as well as a soft stop.
     /// </summary>
+    /// <summary>
+    /// Steps the zoom springs to now and reports the crop rectangle they land on, in source pixels.
+    /// Returns false when the camera is parked at 1x, in which case the crop is the whole frame and
+    /// callers should skip resampling entirely.
+    /// </summary>
+    /// <remarks>
+    /// Split out of <see cref="ApplyZoom"/> so the CPU and GPU paths share one camera: the springs,
+    /// the dead zone and the activity gating are all state that has to advance exactly once per frame
+    /// regardless of who does the pixel work, and duplicating any of it would let the two paths drift
+    /// into different camera motion for the same input.
+    /// </remarks>
+    private bool AdvanceZoomCamera(int width, int height, out double cropX, out double cropY,
+        out double cropWidth, out double cropHeight)
+    {
+        cropX = 0;
+        cropY = 0;
+        cropWidth = width;
+        cropHeight = height;
+        AdvanceZoomSprings(width, height);
+
+        if (_zoomCurrentFactor <= 1.001) return false;
+
+        cropWidth = width / _zoomCurrentFactor;
+        cropHeight = height / _zoomCurrentFactor;
+        cropX = Math.Clamp(_zoomCenterX - cropWidth / 2, 0, width - cropWidth);
+        cropY = Math.Clamp(_zoomCenterY - cropHeight / 2, 0, height - cropHeight);
+        return true;
+    }
+
     private void ApplyZoom(byte[] frame, int width, int height)
+    {
+        if (!AdvanceZoomCamera(width, height, out double cropX, out double cropY, out double cropWidth, out double cropHeight))
+        {
+            return;
+        }
+
+        if (_zoomScratchBuffer is null || _zoomScratchBuffer.Length != frame.Length)
+        {
+            _zoomScratchBuffer = new byte[frame.Length];
+        }
+        var dst = _zoomScratchBuffer;
+
+        ResampleCatmullRomInto(frame, width, height, cropX, cropY, cropWidth, cropHeight,
+            dst, width, height, 0, 0, width, height);
+
+        // Sharpen in place on the scratch buffer, reading from it and writing into `frame` (which is
+        // about to be overwritten anyway and is exactly the right size) — that avoids a third full-frame
+        // allocation per zoomed frame on the capture thread's hot path.
+        SharpenInto(dst, frame, width, height, SharpenAmountFor(_zoomCurrentFactor));
+    }
+
+    /// <summary>Advances the zoom factor and pan springs to the current clock time. See <see cref="AdvanceZoomCamera"/>.</summary>
+    private void AdvanceZoomSprings(int width, int height)
     {
         var nowSeconds = _zoomClock.Elapsed.TotalSeconds;
         // Clamped, not just floored at zero: a capture hitch (a long GC, a display-mode change) would
@@ -1382,26 +1651,6 @@ public sealed class VideoCaptureService : IDisposable
         _zoomCenterX = SmoothDamp(_zoomCenterX, _panAnchorX, ref _zoomCenterVelocityX, ZoomPanSmoothTime, dt);
         _zoomCenterY = SmoothDamp(_zoomCenterY, _panAnchorY, ref _zoomCenterVelocityY, ZoomPanSmoothTime, dt);
 
-        if (_zoomCurrentFactor <= 1.001) return;
-
-        double cropWidth = width / _zoomCurrentFactor;
-        double cropHeight = height / _zoomCurrentFactor;
-        double cropX = Math.Clamp(_zoomCenterX - cropWidth / 2, 0, width - cropWidth);
-        double cropY = Math.Clamp(_zoomCenterY - cropHeight / 2, 0, height - cropHeight);
-
-        if (_zoomScratchBuffer is null || _zoomScratchBuffer.Length != frame.Length)
-        {
-            _zoomScratchBuffer = new byte[frame.Length];
-        }
-        var dst = _zoomScratchBuffer;
-
-        ResampleCatmullRomInto(frame, width, height, cropX, cropY, cropWidth, cropHeight,
-            dst, width, height, 0, 0, width, height);
-
-        // Sharpen in place on the scratch buffer, reading from it and writing into `frame` (which is
-        // about to be overwritten anyway and is exactly the right size) — that avoids a third full-frame
-        // allocation per zoomed frame on the capture thread's hot path.
-        SharpenInto(dst, frame, width, height, SharpenAmountFor(_zoomCurrentFactor));
     }
 
     /// <summary>
@@ -1426,7 +1675,7 @@ public sealed class VideoCaptureService : IDisposable
     /// copied through untouched: DXGI frames carry alpha=0 for opaque content and sharpening it would be
     /// meaningless either way. Parallelized per row, like the resampler it follows.
     /// </remarks>
-    private static void SharpenInto(byte[] src, byte[] dst, int width, int height, double amount)
+    private static unsafe void SharpenInto(byte[] src, byte[] dst, int width, int height, double amount)
     {
         if (amount <= 0.001)
         {
@@ -1436,34 +1685,45 @@ public sealed class VideoCaptureService : IDisposable
 
         int maxX = width - 1;
         int maxY = height - 1;
+        int stride = width * 4;
 
-        Parallel.For(0, height, y =>
+        var vAmount = Vector128.Create((float)amount);
+        var vTwo = Vector128.Create(2f);
+        var vFour = Vector128.Create(4f);
+        // The blur's kernel sums to 16 and every tap is a byte, so the weighted sum tops out at 4080 —
+        // exactly representable in float, and 1/16 is a power of two, so this reproduces the scalar
+        // version's integer sum followed by a divide by 16.0 bit for bit rather than approximating it.
+        var vInv16 = Vector128.Create(1f / 16f);
+
+        ForEachRowBand(height, (rowStart, rowEnd) =>
         {
-            int y0 = Math.Max(y - 1, 0) * width * 4;
-            int y1 = y * width * 4;
-            int y2 = Math.Min(y + 1, maxY) * width * 4;
-
-            for (int x = 0; x < width; x++)
+            fixed (byte* srcBase = src)
+            fixed (byte* dstBase = dst)
             {
-                int x0 = Math.Max(x - 1, 0) * 4;
-                int x1 = x * 4;
-                int x2 = Math.Min(x + 1, maxX) * 4;
-                int idx = y1 + x1;
-
-                for (int c = 0; c < 3; c++)
+                for (int y = rowStart; y < rowEnd; y++)
                 {
-                    // 1-2-1 / 2-4-2 / 1-2-1, sum 16.
-                    int blur =
-                        src[y0 + x0 + c] + 2 * src[y0 + x1 + c] + src[y0 + x2 + c] +
-                        2 * src[y1 + x0 + c] + 4 * src[y1 + x1 + c] + 2 * src[y1 + x2 + c] +
-                        src[y2 + x0 + c] + 2 * src[y2 + x1 + c] + src[y2 + x2 + c];
+                    byte* r0 = srcBase + (long)Math.Max(y - 1, 0) * stride;
+                    byte* r1 = srcBase + (long)y * stride;
+                    byte* r2 = srcBase + (long)Math.Min(y + 1, maxY) * stride;
+                    byte* d = dstBase + (long)y * stride;
 
-                    double center = src[idx + c];
-                    double sharpened = center + amount * (center - blur / 16.0);
-                    dst[idx + c] = (byte)Math.Clamp(sharpened + 0.5, 0.0, 255.0);
+                    for (int x = 0; x < width; x++)
+                    {
+                        int x0 = Math.Max(x - 1, 0) * 4;
+                        int x1 = x * 4;
+                        int x2 = Math.Min(x + 1, maxX) * 4;
+
+                        var center = LoadPixel(r1 + x1);
+
+                        // 1-2-1 / 2-4-2 / 1-2-1, sum 16.
+                        var corners = LoadPixel(r0 + x0) + LoadPixel(r0 + x2) + LoadPixel(r2 + x0) + LoadPixel(r2 + x2);
+                        var edges = LoadPixel(r0 + x1) + LoadPixel(r1 + x0) + LoadPixel(r1 + x2) + LoadPixel(r2 + x1);
+                        var blur = (corners + edges * vTwo + center * vFour) * vInv16;
+
+                        StoreBgr(d + x1, center + vAmount * (center - blur));
+                        d[x1 + 3] = r1[x1 + 3]; // alpha copied through, as before
+                    }
                 }
-
-                dst[idx + 3] = src[idx + 3];
             }
         });
     }
@@ -1517,57 +1777,177 @@ public sealed class VideoCaptureService : IDisposable
     /// bilinear's per-pixel cost (16 taps vs 4), which is a bounded, real-time-safe increase given
     /// bilinear was already proven fast enough here.
     /// </summary>
-    internal static void ResampleCatmullRomInto(byte[] src, int srcW, int srcH, double srcX, double srcY, double srcRectW, double srcRectH,
+    internal static unsafe void ResampleCatmullRomInto(byte[] src, int srcW, int srcH, double srcX, double srcY, double srcRectW, double srcRectH,
         byte[] dst, int dstW, int dstH, int dstX, int dstY, int dstRectW, int dstRectH)
     {
+        if (dstRectW <= 0 || dstRectH <= 0 || srcW <= 0 || srcH <= 0) return;
+
         int maxX = srcW - 1;
         int maxY = srcH - 1;
         double scaleX = srcRectW / dstRectW;
         double scaleY = srcRectH / dstRectH;
 
-        Parallel.For(0, dstRectH, row =>
+        // Horizontal clipping resolved once for the whole call rather than per pixel: every output row
+        // covers exactly the same destination columns, so the old per-pixel bounds test was re-deciding
+        // an answer that cannot change between rows.
+        int colStart = Math.Max(0, -dstX);
+        int colEnd = Math.Min(dstRectW, dstW - dstX);
+        if (colEnd <= colStart) return;
+        int colCount = colEnd - colStart;
+
+        // The four source-column offsets and their four weights are a function of the output column
+        // alone, so they repeat identically on every one of the ~1000+ output rows. Hoisting them into a
+        // table built once per call replaces, per pixel, four CatmullRomWeight evaluations, four
+        // Floor/Clamp pairs and four scale-by-4 multiplies with two sequential table reads. That
+        // bookkeeping used to cost more than the filter arithmetic it existed to feed, which is what
+        // made this the single biggest win available inside the kernel.
+        var colOffsets = ArrayPool<int>.Shared.Rent(colCount * 4);
+        var colWeights = ArrayPool<float>.Shared.Rent(colCount * 4);
+        try
         {
-            int y = dstY + row;
-            if (y < 0 || y >= dstH) return;
-
-            double srcYf = srcY + row * scaleY;
-            int iy = (int)Math.Floor(srcYf);
-            double ty = srcYf - iy;
-            double wy0 = CatmullRomWeight(ty + 1), wy1 = CatmullRomWeight(ty), wy2 = CatmullRomWeight(ty - 1), wy3 = CatmullRomWeight(ty - 2);
-            int ry0 = Math.Clamp(iy - 1, 0, maxY) * srcW * 4;
-            int ry1 = Math.Clamp(iy, 0, maxY) * srcW * 4;
-            int ry2 = Math.Clamp(iy + 1, 0, maxY) * srcW * 4;
-            int ry3 = Math.Clamp(iy + 2, 0, maxY) * srcW * 4;
-            int dstRow = y * dstW * 4;
-
-            for (int col = 0; col < dstRectW; col++)
+            for (int i = 0; i < colCount; i++)
             {
-                int x = dstX + col;
-                if (x < 0 || x >= dstW) continue;
-
-                double srcXf = srcX + col * scaleX;
+                double srcXf = srcX + (colStart + i) * scaleX;
                 int ix = (int)Math.Floor(srcXf);
-                double tx = srcXf - ix;
-                double wx0 = CatmullRomWeight(tx + 1), wx1 = CatmullRomWeight(tx), wx2 = CatmullRomWeight(tx - 1), wx3 = CatmullRomWeight(tx - 2);
-                int cx0 = Math.Clamp(ix - 1, 0, maxX) * 4;
-                int cx1 = Math.Clamp(ix, 0, maxX) * 4;
-                int cx2 = Math.Clamp(ix + 1, 0, maxX) * 4;
-                int cx3 = Math.Clamp(ix + 2, 0, maxX) * 4;
-
-                int dstIdx = dstRow + x * 4;
-                for (int c = 0; c < 4; c++)
-                {
-                    double r0 = wx0 * src[ry0 + cx0 + c] + wx1 * src[ry0 + cx1 + c] + wx2 * src[ry0 + cx2 + c] + wx3 * src[ry0 + cx3 + c];
-                    double r1 = wx0 * src[ry1 + cx0 + c] + wx1 * src[ry1 + cx1 + c] + wx2 * src[ry1 + cx2 + c] + wx3 * src[ry1 + cx3 + c];
-                    double r2 = wx0 * src[ry2 + cx0 + c] + wx1 * src[ry2 + cx1 + c] + wx2 * src[ry2 + cx2 + c] + wx3 * src[ry2 + cx3 + c];
-                    double r3 = wx0 * src[ry3 + cx0 + c] + wx1 * src[ry3 + cx1 + c] + wx2 * src[ry3 + cx2 + c] + wx3 * src[ry3 + cx3 + c];
-                    double sum = wy0 * r0 + wy1 * r1 + wy2 * r2 + wy3 * r3;
-                    // Unlike bilinear, cubic weights can be negative and the weighted sum can overshoot
-                    // past [0, 255] at hard edges — has to be clamped, not just cast.
-                    dst[dstIdx + c] = (byte)Math.Clamp(sum + 0.5, 0.0, 255.0);
-                }
+                float tx = (float)(srcXf - ix);
+                int b = i * 4;
+                colWeights[b + 0] = CatmullRomWeight(tx + 1f);
+                colWeights[b + 1] = CatmullRomWeight(tx);
+                colWeights[b + 2] = CatmullRomWeight(tx - 1f);
+                colWeights[b + 3] = CatmullRomWeight(tx - 2f);
+                colOffsets[b + 0] = Math.Clamp(ix - 1, 0, maxX) * 4;
+                colOffsets[b + 1] = Math.Clamp(ix, 0, maxX) * 4;
+                colOffsets[b + 2] = Math.Clamp(ix + 1, 0, maxX) * 4;
+                colOffsets[b + 3] = Math.Clamp(ix + 2, 0, maxX) * 4;
             }
+
+            int srcStride = srcW * 4;
+            int dstStride = dstW * 4;
+
+            ForEachRowBand(dstRectH, (rowStart, rowEnd) =>
+            {
+                fixed (byte* srcBase = src)
+                fixed (byte* dstBase = dst)
+                fixed (int* offBase = colOffsets)
+                fixed (float* weightBase = colWeights)
+                {
+                    for (int row = rowStart; row < rowEnd; row++)
+                    {
+                        int y = dstY + row;
+                        if (y < 0 || y >= dstH) continue;
+
+                        double srcYf = srcY + row * scaleY;
+                        int iy = (int)Math.Floor(srcYf);
+                        float ty = (float)(srcYf - iy);
+                        var wy0 = Vector128.Create(CatmullRomWeight(ty + 1f));
+                        var wy1 = Vector128.Create(CatmullRomWeight(ty));
+                        var wy2 = Vector128.Create(CatmullRomWeight(ty - 1f));
+                        var wy3 = Vector128.Create(CatmullRomWeight(ty - 2f));
+
+                        byte* r0 = srcBase + (long)Math.Clamp(iy - 1, 0, maxY) * srcStride;
+                        byte* r1 = srcBase + (long)Math.Clamp(iy, 0, maxY) * srcStride;
+                        byte* r2 = srcBase + (long)Math.Clamp(iy + 1, 0, maxY) * srcStride;
+                        byte* r3 = srcBase + (long)Math.Clamp(iy + 2, 0, maxY) * srcStride;
+                        byte* dstRow = dstBase + (long)y * dstStride + (long)(dstX + colStart) * 4;
+
+                        for (int i = 0; i < colCount; i++)
+                        {
+                            int* off = offBase + i * 4;
+                            float* w = weightBase + i * 4;
+                            var wx0 = Vector128.Create(w[0]);
+                            var wx1 = Vector128.Create(w[1]);
+                            var wx2 = Vector128.Create(w[2]);
+                            var wx3 = Vector128.Create(w[3]);
+                            int c0 = off[0], c1 = off[1], c2 = off[2], c3 = off[3];
+
+                            var acc = FilterRow(r0, c0, c1, c2, c3, wx0, wx1, wx2, wx3) * wy0
+                                    + FilterRow(r1, c0, c1, c2, c3, wx0, wx1, wx2, wx3) * wy1
+                                    + FilterRow(r2, c0, c1, c2, c3, wx0, wx1, wx2, wx3) * wy2
+                                    + FilterRow(r3, c0, c1, c2, c3, wx0, wx1, wx2, wx3) * wy3;
+
+                            StoreBgr(dstRow + i * 4, acc);
+                        }
+                    }
+                }
+            });
+        }
+        finally
+        {
+            ArrayPool<int>.Shared.Return(colOffsets);
+            ArrayPool<float>.Shared.Return(colWeights);
+        }
+    }
+
+    /// <summary>
+    /// Splits <paramref name="rowCount"/> output rows into bands and runs <paramref name="body"/> over
+    /// each band's [start, end) range in parallel.
+    /// </summary>
+    /// <remarks>
+    /// The pixel kernels used to hand <c>Parallel.For</c> one work item per row, which at 1080p60 is
+    /// ~65,000 task dispatches a second per filter — real overhead next to a row that takes tens of
+    /// microseconds, and it also forces the <c>fixed</c> pins inside the kernels to be re-taken per row.
+    /// Banding amortizes both. Four bands per core rather than exactly one keeps the work stealable, so
+    /// a core that finishes early (or gets descheduled) does not strand a whole slice of the frame.
+    /// </remarks>
+    private static void ForEachRowBand(int rowCount, Action<int, int> body)
+    {
+        if (rowCount <= 0) return;
+
+        int bands = Math.Clamp(Environment.ProcessorCount * 4, 1, rowCount);
+        if (bands == 1)
+        {
+            body(0, rowCount);
+            return;
+        }
+
+        int rowsPerBand = (rowCount + bands - 1) / bands;
+        Parallel.For(0, bands, band =>
+        {
+            int start = band * rowsPerBand;
+            if (start >= rowCount) return;
+            body(start, Math.Min(start + rowsPerBand, rowCount));
         });
+    }
+
+    /// <summary>
+    /// Loads one BGRA pixel as four floats — the unit both pixel kernels work in. Lane 3 (alpha) rides
+    /// along for free in the fourth SIMD lane; whether it means anything is the <em>store</em> side's
+    /// problem (see <see cref="StoreBgr"/>), not this one's.
+    /// </summary>
+    private static unsafe Vector128<float> LoadPixel(byte* p)
+    {
+        var bytes = Vector128.CreateScalarUnsafe(*(uint*)p).AsByte();
+        return Vector128.ConvertToSingle(Vector128.WidenLower(Vector128.WidenLower(bytes)).AsInt32());
+    }
+
+    /// <summary>One output pixel's horizontal 4-tap pass over a single source row.</summary>
+    private static unsafe Vector128<float> FilterRow(byte* row, int c0, int c1, int c2, int c3,
+        Vector128<float> w0, Vector128<float> w1, Vector128<float> w2, Vector128<float> w3)
+        => LoadPixel(row + c0) * w0 + LoadPixel(row + c1) * w1 + LoadPixel(row + c2) * w2 + LoadPixel(row + c3) * w3;
+
+    /// <summary>
+    /// Rounds, clamps and writes the B, G and R lanes of <paramref name="value"/>, leaving the
+    /// destination's alpha byte untouched.
+    /// </summary>
+    /// <remarks>
+    /// Alpha is deliberately not written. Nothing downstream of these kernels reads it — ffmpeg's
+    /// rawvideo-to-yuv420p path drops it, and the live preview forces it opaque itself — while DXGI
+    /// hands out alpha=0 even for fully opaque desktop content, so resampling it would be work spent
+    /// propagating a value that is already meaningless. The one call site that *does* care about alpha
+    /// (WebcamCaptureService's circular mask) is unaffected, since it overwrites alpha outright
+    /// immediately afterwards.
+    ///
+    /// Unlike bilinear, cubic weights can be negative and the weighted sum can overshoot past [0, 255]
+    /// at hard edges, so the clamp is load-bearing rather than a formality. ConvertToInt32 truncates
+    /// toward zero, which combined with the +0.5 is the same round-half-up the scalar version did.
+    /// </remarks>
+    private static unsafe void StoreBgr(byte* p, Vector128<float> value)
+    {
+        var q = Vector128.ConvertToInt32(
+            Vector128.Min(Vector128.Max(value + Vector128.Create(0.5f), Vector128<float>.Zero), Vector128.Create(255f)));
+        p[0] = (byte)q.GetElement(0);
+        p[1] = (byte)q.GetElement(1);
+        p[2] = (byte)q.GetElement(2);
     }
 
     /// <summary>
@@ -1576,12 +1956,12 @@ public sealed class VideoCaptureService : IDisposable
     /// wider-support/less-damped cubic. <paramref name="t"/> is the distance from the sample point in
     /// source-pixel units; zero outside [-2, 2].
     /// </summary>
-    private static double CatmullRomWeight(double t)
+    private static float CatmullRomWeight(float t)
     {
         t = Math.Abs(t);
-        if (t <= 1.0) return 1.5 * t * t * t - 2.5 * t * t + 1.0;
-        if (t < 2.0) return -0.5 * t * t * t + 2.5 * t * t - 4.0 * t + 2.0;
-        return 0.0;
+        if (t <= 1f) return 1.5f * t * t * t - 2.5f * t * t + 1f;
+        if (t < 2f) return -0.5f * t * t * t + 2.5f * t * t - 4f * t + 2f;
+        return 0f;
     }
 
     private void ApplyKeystrokeOverlay(byte[] frame, int width, int height)
@@ -1885,10 +2265,80 @@ public sealed class VideoCaptureService : IDisposable
     /// </remarks>
     public bool TryGetLatestFrame(byte[] destination)
     {
-        int width, height;
+        if (_gpu is not null)
+        {
+            // The preview cannot run the GPU from its own thread, so it asks the capture thread for a
+            // BGRA copy and takes whatever the last one produced. See _gpuPreviewWanted.
+            _gpuPreviewWanted = true;
+            lock (_gpuFrameLock)
+            {
+                if (!_gpuPreviewHasFrame || _gpuPreviewFrame is null) return false;
+                if (destination.Length < _gpuPreviewFrame.Length) return false;
+                Buffer.BlockCopy(_gpuPreviewFrame, 0, destination, 0, _gpuPreviewFrame.Length);
+            }
+            return true;
+        }
+
+        return ComposeEffectsInto(destination, out _, out _);
+    }
+
+    /// <summary>
+    /// The encoder's counterpart to <see cref="TryGetLatestFrame"/>: composites the same effects stack,
+    /// then converts the result to NV12 in place of handing back BGRA. <paramref name="destination"/>
+    /// must be at least <see cref="Nv12FrameByteSize"/> bytes.
+    /// </summary>
+    /// <remarks>
+    /// Split from the BGRA overload rather than replacing it because the two consumers want different
+    /// things: ffmpeg wants 4:2:0 (and is the only caller on the per-frame hot path), while the live
+    /// preview needs BGRA for WriteableBitmap and runs a few times a second. See
+    /// <see cref="Nv12Converter"/> for why the conversion belongs on this side of the pipe at all.
+    /// Called only from the pacer thread, which is what makes the shared scratch buffer safe.
+    /// </remarks>
+    public bool TryGetLatestFrameNv12(byte[] destination)
+    {
+        if (_gpu is not null)
+        {
+            // Already NV12, already composited — the GPU path does the whole stack at capture time, so
+            // this is a straight copy of the published frame.
+            lock (_gpuFrameLock)
+            {
+                if (!_gpuHasFrame || _gpuNv12Frame is null) return false;
+                if (destination.Length < _gpuNv12Frame.Length) return false;
+                Buffer.BlockCopy(_gpuNv12Frame, 0, destination, 0, _gpuNv12Frame.Length);
+            }
+            return true;
+        }
+
+        var scratch = _nv12Scratch;
+        int needed = Width * Height * 4;
+        if (scratch is null || scratch.Length != needed)
+        {
+            scratch = new byte[needed];
+            _nv12Scratch = scratch;
+        }
+
+        if (!ComposeEffectsInto(scratch, out int width, out int height)) return false;
+
+        Nv12Converter.Convert(scratch, destination, width, height);
+        return true;
+    }
+
+    /// <summary>Bytes one NV12 frame occupies at this capture's dimensions — what the encoder's buffers are sized to.</summary>
+    public int Nv12FrameByteSize => Nv12Converter.FrameByteSize(Width, Height);
+
+    /// <summary>Shared by the whole effects stack; see <see cref="TryGetLatestFrameNv12"/> for the threading note.</summary>
+    private byte[]? _nv12Scratch;
+
+    /// <summary>Copies the latest composed frame into <paramref name="destination"/> and runs the pull-time effects over it.</summary>
+    private bool ComposeEffectsInto(byte[] destination, out int width, out int height)
+    {
         lock (_frameLock)
         {
-            if (!_hasFrame || _latestFrame is null) return false;
+            if (!_hasFrame || _latestFrame is null)
+            {
+                width = height = 0;
+                return false;
+            }
             Buffer.BlockCopy(_latestFrame, 0, destination, 0, _latestFrame.Length);
             width = _frameWidth;
             height = _frameHeight;
@@ -1915,6 +2365,15 @@ public sealed class VideoCaptureService : IDisposable
         _running = false;
         _captureThread?.Join(1000);
         _captureThread = null;
+
+        // After the capture thread has joined, so nothing can be mid-Process against these resources.
+        _gpu?.Dispose();
+        _gpu = null;
+        _gpuNv12Frame = null;
+        _gpuPreviewFrame = null;
+        _gpuHasFrame = false;
+        _gpuPreviewHasFrame = false;
+        _gpuPreviewWanted = false;
 
         // WGC teardown, in the documented-safe order: session first (stops new frames), then unhook
         // FrameArrived before disposing the pool (avoid a race where a frame arrives mid-dispose), then

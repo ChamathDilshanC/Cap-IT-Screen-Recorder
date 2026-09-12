@@ -18,14 +18,15 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <PublishReadyToRun>false</PublishReadyToRun>
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <TieredPGO>true</TieredPGO>
     <AssemblyName>ScreenRecorderApp</AssemblyName>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
 
     <!-- Single source of truth for the app version. UpdateService reads this back at runtime
          (Assembly version) and compares it against the latest GitHub release tag; the Inno Setup
          script's MyAppVersion must be kept in lockstep with it for each release. -->
-    <Version>2.6.2</Version>
+    <Version>2.7.0</Version>
   </PropertyGroup>
 
   <ItemGroup>
@@ -36,6 +37,7 @@
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.3.2" />
     <PackageReference Include="NAudio" Version="2.2.1" />
     <PackageReference Include="System.Drawing.Common" Version="8.0.10" />
+    <PackageReference Include="Vortice.D3DCompiler" Version="3.6.2" />
     <PackageReference Include="Vortice.Direct3D11" Version="3.6.2" />
     <PackageReference Include="Vortice.DXGI" Version="3.6.2" />
   </ItemGroup>
