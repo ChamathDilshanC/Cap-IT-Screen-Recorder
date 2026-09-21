@@ -19,12 +19,16 @@
             <TextBlock x:Name="FilePathText" Opacity="0.7" TextTrimming="CharacterEllipsis" />
         </StackPanel>
 
-        <Grid Grid.Row="1" MinHeight="320" x:Name="PreviewCanvas">
+        <Grid Grid.Row="1" MinHeight="320" x:Name="PreviewCanvas" Background="#15151A">
             <Image x:Name="PreviewBackground" Stretch="UniformToFill" Opacity="0.98" />
-            <Border x:Name="PreviewVideoFrame" HorizontalAlignment="Center" VerticalAlignment="Center"
-                    Background="Black" CornerRadius="0" Padding="0">
+            <Border x:Name="PreviewVideoFrame" Width="900" Height="506"
+                    MaxWidth="1200" MaxHeight="675" Margin="24,16"
+                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Background="Black" BorderBrush="#55FFFFFF" BorderThickness="1"
+                    CornerRadius="0" Padding="0">
                 <MediaPlayerElement x:Name="Player" AreTransportControlsEnabled="True"
-                                    Stretch="Uniform" />
+                                    Stretch="Uniform" HorizontalAlignment="Stretch"
+                                    VerticalAlignment="Stretch" />
             </Border>
 
             <!-- Replaces the player outright when playback fails, rather than sitting on top of it: the

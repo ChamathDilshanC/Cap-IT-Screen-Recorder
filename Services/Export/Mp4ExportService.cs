@@ -24,7 +24,8 @@ public static class Mp4ExportService
         var filter = BuildFilter(width, height, videoWidth, videoHeight, radius);
         var args = $"-y -hide_banner -loglevel warning -stats -ss {FormatTime(start)} -t {FormatTime(duration)} " +
                    $"-i \"{inputPath}\" -loop 1 -i \"{backgroundPath}\" " +
-                   $"-filter_complex \"{filter}\" -map \"[outv]\" -map 0:a? -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest \"{outputPath}\"";
+                   $"-filter_complex \"{filter}\" -map \"[outv]\" -map 0:a? -c:v libx264 -preset veryfast -crf 20 " +
+                   $"-pix_fmt yuv420p -c:a aac -shortest \"{outputPath}\"";
         progress?.Report(new GifExportProgress("Exporting MP4…", 5));
         await RunAsync(ffmpeg, args, cancellationToken).ConfigureAwait(false);
         progress?.Report(new GifExportProgress("Done", 100));
@@ -37,8 +38,13 @@ public static class Mp4ExportService
             : $"if(gt(abs(X-W/2),W/2-{radius.ToString(CultureInfo.InvariantCulture)})*gt(abs(Y-H/2),H/2-{radius.ToString(CultureInfo.InvariantCulture)}),if(lte((abs(X-W/2)-(W/2-{radius.ToString(CultureInfo.InvariantCulture)}))^2+(abs(Y-H/2)-(H/2-{radius.ToString(CultureInfo.InvariantCulture)}))^2,{radius.ToString(CultureInfo.InvariantCulture)}^2),255,0),255)";
         return $"[1:v]scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height},setsar=1[bg];" +
                $"[0:v]scale={videoWidth}:{videoHeight}:force_original_aspect_ratio=decrease,pad={videoWidth}:{videoHeight}:(ow-iw)/2:(oh-ih)/2:color=black,format=rgba," +
-               $"geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='{radiusExpression}'[fg];" +
-               $"[bg][fg]overlay=(W-w)/2:(H-h)/2:format=auto,format=yuv420p[outv]";
+               $"setpts=PTS-STARTPTS[fg];" +
+               // Build the rounded-corner mask once, then loop that single frame. Applying geq to the
+               // video itself made export needlessly evaluate the same geometry for every pixel/frame.
+               $"color=c=black:s={videoWidth}x{videoHeight}:d=1,trim=end_frame=1,format=gray,geq=lum='{radiusExpression}'," +
+               $"loop=loop=-1:size=1:start=0,setpts=N/FRAME_RATE/TB[mask];" +
+               $"[fg][mask]alphamerge[fgm];" +
+               $"[bg][fgm]overlay=(W-w)/2:(H-h)/2:format=auto,format=yuv420p[outv]";
     }
 
     private static string FormatTime(TimeSpan value) =>
