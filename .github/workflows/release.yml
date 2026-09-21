@@ -1,0 +1,42 @@
+name: Release installer
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build-installer:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Setup Inno Setup
+        uses: ConorMacBride/install-inno-action@v1
+
+      - name: Restore
+        run: dotnet restore -p:Platform=x64
+
+      - name: Publish self-contained app
+        run: dotnet publish ScreenRecorderApp.csproj -c Release -p:Platform=x64 -r win-x64 --self-contained true -o publish
+
+      - name: Build installer
+        run: iscc Installer\CapITScreenRecorder.iss
+
+      - name: Upload installer to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ github.event.release.tag_name }}" `
+            "Installer\Output\CapIT-Screen-Recorder-Setup-${{ github.event.release.tag_name }}.exe" `
+            --repo "${{ github.repository }}" --clobber
