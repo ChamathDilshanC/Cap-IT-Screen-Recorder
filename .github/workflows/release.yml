@@ -1,20 +1,47 @@
 name: Release installer
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - "v*"
 
 permissions:
   contents: write
 
 jobs:
-  build-installer:
+  release:
     runs-on: windows-latest
 
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.release.tag_name }}
+          fetch-depth: 0
+
+      - name: Validate tag and project versions
+        shell: pwsh
+        run: |
+          [xml]$project = Get-Content ScreenRecorderApp.csproj
+          $projectVersion = ($project.Project.PropertyGroup.Version | Select-Object -First 1).ToString()
+          $tagVersion = "${{ github.ref_name }}".TrimStart('v', 'V')
+          if ($projectVersion -ne $tagVersion) {
+            throw "Version mismatch: ScreenRecorderApp.csproj is $projectVersion but the pushed tag is ${{ github.ref_name }}."
+          }
+
+          $installer = Get-Content Installer\CapITScreenRecorder.iss |
+            Select-String '#define MyAppVersion "([^"]+)"'
+          $installerVersion = $installer.Matches[0].Groups[1].Value
+          if ($installerVersion -ne $projectVersion) {
+            throw "Version mismatch: Inno Setup script is $installerVersion but the project is $projectVersion."
+          }
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" `
+            --repo "${{ github.repository }}" `
+            --title "Cap-IT Screen Recorder ${{ github.ref_name }}" `
+            --generate-notes
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -36,8 +63,9 @@ jobs:
       - name: Upload installer to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
         run: |
-          $version = "${{ github.event.release.tag_name }}".TrimStart('v', 'V')
-          gh release upload "${{ github.event.release.tag_name }}" `
+          $version = "${{ github.ref_name }}".TrimStart('v', 'V')
+          gh release upload "${{ github.ref_name }}" `
             "Installer\Output\CapIT-Screen-Recorder-Setup-$version.exe" `
             --repo "${{ github.repository }}" --clobber
