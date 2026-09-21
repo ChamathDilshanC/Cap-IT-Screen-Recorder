@@ -1,10 +1,16 @@
 using CommunityToolkit.WinUI.Controls;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
+using Microsoft.UI.Xaml.Media;
 using ScreenRecorderApp.Services.Encoding;
 using ScreenRecorderApp.Services.Export;
+using Windows.Storage;
+using Windows.Storage.Pickers;
 using Windows.Media.Core;
 using Windows.Media.Playback;
+using Microsoft.UI.Xaml.Media.Imaging;
+using WinRT.Interop;
 
 namespace ScreenRecorderApp.Views;
 
@@ -28,6 +34,8 @@ namespace ScreenRecorderApp.Views;
 public sealed partial class TrimExportWindow : Window
 {
     private readonly string _filePath;
+    private string _backgroundPath = Path.Combine(AppContext.BaseDirectory, "assets", "Logo-CapIT.png");
+    private bool _hasCustomStyle;
 
     // What ffmpeg could read about the file. Null until the probe finishes; OnMediaFailed can fire first,
     // which is what _pendingPlaybackError defers.
@@ -47,6 +55,13 @@ public sealed partial class TrimExportWindow : Window
         // Without this a WinUI Window falls back to the literal string "WinUI Desktop" in the title bar
         // and the taskbar, which is what this window was shipping as.
         Title = "Review & Export — Cap-IT Screen Recorder";
+        BackgroundPresetComboBox.ItemsSource = new[]
+        {
+            new BackgroundPreset("Cap-IT logo", Path.Combine(AppContext.BaseDirectory, "assets", "Logo-CapIT.png")),
+            new BackgroundPreset("App icon", Path.Combine(AppContext.BaseDirectory, "assets", "AppIcon.ico"))
+        };
+        BackgroundPresetComboBox.SelectedIndex = 0;
+        UpdatePreviewStyle();
 
         // The MediaPlayer is created and owned explicitly here rather than read back off the element.
         // MediaPlayerElement.MediaPlayer is null until a Source has been assigned — it only auto-creates
@@ -164,6 +179,55 @@ public sealed partial class TrimExportWindow : Window
 
     private void TrimRange_ValueChanged(object sender, RangeChangedEventArgs e) => UpdateTrimLabels();
 
+    private void BackgroundPreset_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (BackgroundPresetComboBox.SelectedItem is BackgroundPreset preset)
+        {
+            _backgroundPath = preset.Path;
+            _hasCustomStyle = true;
+            UpdatePreviewStyle();
+        }
+    }
+
+    private async void OnChooseBackgroundClick(object sender, RoutedEventArgs e)
+    {
+        var picker = new FileOpenPicker();
+        picker.FileTypeFilter.Add(".png");
+        picker.FileTypeFilter.Add(".jpg");
+        picker.FileTypeFilter.Add(".jpeg");
+        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this));
+        var file = await picker.PickSingleFileAsync();
+        if (file is null) return;
+        _backgroundPath = file.Path;
+        _hasCustomStyle = true;
+        BackgroundPresetComboBox.SelectedItem = null;
+        PreviewBackground.Source = new BitmapImage(new Uri(file.Path));
+    }
+
+    private void VideoScale_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)
+    {
+        _hasCustomStyle = true;
+        UpdatePreviewStyle();
+    }
+
+    private void CornerRadius_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)
+    {
+        _hasCustomStyle = true;
+        UpdatePreviewStyle();
+    }
+
+    private void UpdatePreviewStyle()
+    {
+        if (!File.Exists(_backgroundPath)) return;
+        PreviewBackground.Source = new BitmapImage(new Uri(_backgroundPath));
+        PreviewVideoFrame.CornerRadius = new CornerRadius(CornerRadiusSlider?.Value ?? 18);
+        PreviewVideoFrame.RenderTransform = new CompositeTransform
+        {
+            ScaleX = VideoScaleSlider?.Value ?? .82,
+            ScaleY = VideoScaleSlider?.Value ?? .82
+        };
+    }
+
     private void UpdateTrimLabels()
     {
         var start = TimeSpan.FromSeconds(TrimRange.RangeStart);
@@ -192,7 +256,47 @@ public sealed partial class TrimExportWindow : Window
         CloseSafely();
     }
 
-    private void OnSaveClick(object sender, RoutedEventArgs e) => CloseSafely();
+    private async void OnSaveClick(object sender, RoutedEventArgs e)
+    {
+        if (!_hasCustomStyle && TrimRange.RangeStart <= 0.001 &&
+            Math.Abs(TrimRange.RangeEnd - TrimRange.Maximum) < 0.001)
+        {
+            CloseSafely();
+            return;
+        }
+
+        var outputPath = Path.Combine(Path.GetDirectoryName(_filePath)!,
+            $"{Path.GetFileNameWithoutExtension(_filePath)}_edited.mp4");
+        _exportCts = new CancellationTokenSource();
+        SetExportingState(true);
+        ExportStageText.Text = "Exporting MP4…";
+        ExportProgress.Value = 0;
+        try
+        {
+            var progress = new Progress<GifExportProgress>(p =>
+            {
+                ExportStageText.Text = p.Stage;
+                ExportProgress.Value = p.PercentComplete;
+            });
+            await Mp4ExportService.ExportAsync(_filePath, TimeSpan.FromSeconds(TrimRange.RangeStart),
+                TimeSpan.FromSeconds(TrimRange.RangeEnd - TrimRange.RangeStart), outputPath, _backgroundPath,
+                VideoScaleSlider.Value, CornerRadiusSlider.Value, progress, _exportCts.Token);
+            TrimStatusText.Text = $"Saved: {outputPath}";
+            CloseSafely();
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            ExportStageText.Text = "Export failed.";
+            TrimStatusText.Text = ex.Message;
+        }
+        finally
+        {
+            _exportCts?.Dispose();
+            _exportCts = null;
+            SetExportingState(false);
+        }
+    }
 
     /// <summary>
     /// Closes the window from a button handler without taking the process down with it.
@@ -294,8 +398,16 @@ public sealed partial class TrimExportWindow : Window
     {
         ExportProgressPanel.Visibility = exporting ? Visibility.Visible : Visibility.Collapsed;
         TrimRange.IsEnabled = !exporting;
+        BackgroundPresetComboBox.IsEnabled = !exporting;
+        VideoScaleSlider.IsEnabled = !exporting;
+        CornerRadiusSlider.IsEnabled = !exporting;
         ExportGifButton.IsEnabled = !exporting;
         DiscardButton.IsEnabled = !exporting;
         SaveButton.IsEnabled = !exporting;
+    }
+
+    private sealed record BackgroundPreset(string Name, string Path)
+    {
+        public override string ToString() => Name;
     }
 }

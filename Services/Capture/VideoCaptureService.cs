@@ -707,7 +707,7 @@ public sealed class VideoCaptureService : IDisposable
         }
     }
 
-    private void MarkActivity() => Volatile.Write(ref _lastActivityTicks, DateTime.UtcNow.Ticks);
+    private void MarkActivity() => Volatile.Write(ref _lastActivityTicks, Stopwatch.GetTimestamp());
 
     /// <summary>Mouse movement/click: the pan target goes back to following the cursor.</summary>
     private void OnMouseActivity()
@@ -729,7 +729,7 @@ public sealed class VideoCaptureService : IDisposable
         // Click-only zoom's trigger, recorded before the visibility test below so it is unconditional:
         // unlike a ripple (which has to be drawn *somewhere* and so needs a point inside the frame), the
         // zoom only needs to know that a click happened — it takes its aim from the cursor either way.
-        Volatile.Write(ref _lastClickTicks, DateTime.UtcNow.Ticks);
+        Volatile.Write(ref _lastClickTicks, Stopwatch.GetTimestamp());
 
         // The subscription is now permanent for the life of the hook (see Prepare), so the enabled check
         // that used to be implicit in "only subscribe when ripples are on" has to be explicit here —
@@ -1518,7 +1518,9 @@ public sealed class VideoCaptureService : IDisposable
         var clickOnly = _zoomOnClickOnly;
         var triggerTicks = clickOnly ? Volatile.Read(ref _lastClickTicks) : Volatile.Read(ref _lastActivityTicks);
         var holdSeconds = clickOnly ? ClickHoldSeconds : IdleTimeoutSeconds;
-        var idleSeconds = TimeSpan.FromTicks(DateTime.UtcNow.Ticks - triggerTicks).TotalSeconds;
+        var idleSeconds = triggerTicks == 0
+            ? double.PositiveInfinity
+            : (Stopwatch.GetTimestamp() - triggerTicks) / (double)Stopwatch.Frequency;
 
         return idleSeconds > holdSeconds ? 1.0 : _zoomTargetFactor;
     }
