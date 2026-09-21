@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to build"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -11,20 +17,23 @@ permissions:
 jobs:
   release:
     runs-on: windows-latest
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
 
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ inputs.tag || github.ref_name }}
 
       - name: Validate tag and project versions
         shell: pwsh
         run: |
           [xml]$project = Get-Content ScreenRecorderApp.csproj
           $projectVersion = ($project.Project.PropertyGroup.Version | Select-Object -First 1).ToString()
-          $tagVersion = "${{ github.ref_name }}".TrimStart('v', 'V')
+          $tagVersion = "${{ inputs.tag || github.ref_name }}".TrimStart('v', 'V')
           if ($projectVersion -ne $tagVersion) {
-            throw "Version mismatch: ScreenRecorderApp.csproj is $projectVersion but the pushed tag is ${{ github.ref_name }}."
+            throw "Version mismatch: ScreenRecorderApp.csproj is $projectVersion but the release tag is ${{ inputs.tag || github.ref_name }}."
           }
 
           $installer = Get-Content Installer\CapITScreenRecorder.iss |
@@ -34,14 +43,17 @@ jobs:
             throw "Version mismatch: Inno Setup script is $installerVersion but the project is $projectVersion."
           }
 
-      - name: Create GitHub release
+      - name: Create GitHub release if needed
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "${{ github.ref_name }}" `
-            --repo "${{ github.repository }}" `
-            --title "Cap-IT Screen Recorder ${{ github.ref_name }}" `
-            --generate-notes
+          gh release view "$env:RELEASE_TAG" --repo "${{ github.repository }}" 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create "$env:RELEASE_TAG" `
+              --repo "${{ github.repository }}" `
+              --title "Cap-IT Screen Recorder $env:RELEASE_TAG" `
+              --generate-notes
+          }
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -49,7 +61,8 @@ jobs:
           dotnet-version: 8.0.x
 
       - name: Setup Inno Setup
-        uses: ConorMacBride/install-inno-action@v1
+        shell: pwsh
+        run: choco install innosetup --no-progress --yes
 
       - name: Restore
         run: dotnet restore -p:Platform=x64
@@ -65,7 +78,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: pwsh
         run: |
-          $version = "${{ github.ref_name }}".TrimStart('v', 'V')
-          gh release upload "${{ github.ref_name }}" `
+          $version = "$env:RELEASE_TAG".TrimStart('v', 'V')
+          gh release upload "$env:RELEASE_TAG" `
             "Installer\Output\CapIT-Screen-Recorder-Setup-$version.exe" `
             --repo "${{ github.repository }}" --clobber
