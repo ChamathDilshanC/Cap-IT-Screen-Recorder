@@ -11,6 +11,8 @@ using Windows.Media.Core;
 using Windows.Media.Playback;
 using Microsoft.UI.Xaml.Media.Imaging;
 using WinRT.Interop;
+using Windows.Graphics.Imaging;
+using Windows.Storage.Streams;
 
 namespace ScreenRecorderApp.Views;
 
@@ -35,6 +37,8 @@ public sealed partial class TrimExportWindow : Window
 {
     private readonly string _filePath;
     private string _backgroundPath = Path.Combine(AppContext.BaseDirectory, "assets", "Logo-CapIT.png");
+    private readonly string _dotPatternPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CapIT", "dot-pattern.png");
+    private CanvasPreset _canvas = new("1920 × 1080 (Landscape)", 1920, 1080);
     private bool _hasCustomStyle;
 
     // What ffmpeg could read about the file. Null until the probe finishes; OnMediaFailed can fire first,
@@ -55,13 +59,22 @@ public sealed partial class TrimExportWindow : Window
         // Without this a WinUI Window falls back to the literal string "WinUI Desktop" in the title bar
         // and the taskbar, which is what this window was shipping as.
         Title = "Review & Export — Cap-IT Screen Recorder";
+        CanvasPresetComboBox.ItemsSource = new[]
+        {
+            new CanvasPreset("1920 × 1080 (Landscape)", 1920, 1080),
+            new CanvasPreset("1080 × 1080 (Square)", 1080, 1080),
+            new CanvasPreset("1080 × 1920 (Portrait)", 1080, 1920)
+        };
+        CanvasPresetComboBox.SelectedIndex = 0;
         BackgroundPresetComboBox.ItemsSource = new[]
         {
             new BackgroundPreset("Cap-IT logo", Path.Combine(AppContext.BaseDirectory, "assets", "Logo-CapIT.png")),
-            new BackgroundPreset("App icon", Path.Combine(AppContext.BaseDirectory, "assets", "AppIcon.ico"))
+            new BackgroundPreset("App icon", Path.Combine(AppContext.BaseDirectory, "assets", "AppIcon.ico")),
+            new BackgroundPreset("Dot pattern", _dotPatternPath)
         };
         BackgroundPresetComboBox.SelectedIndex = 0;
         UpdatePreviewStyle();
+        _ = EnsureDotPatternAsync();
 
         // The MediaPlayer is created and owned explicitly here rather than read back off the element.
         // MediaPlayerElement.MediaPlayer is null until a Source has been assigned — it only auto-creates
@@ -189,6 +202,16 @@ public sealed partial class TrimExportWindow : Window
         }
     }
 
+    private void CanvasPreset_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (CanvasPresetComboBox.SelectedItem is CanvasPreset preset)
+        {
+            _canvas = preset;
+            _hasCustomStyle = true;
+            UpdatePreviewLayout();
+        }
+    }
+
     private async void OnChooseBackgroundClick(object sender, RoutedEventArgs e)
     {
         var picker = new FileOpenPicker();
@@ -220,12 +243,74 @@ public sealed partial class TrimExportWindow : Window
     {
         if (!File.Exists(_backgroundPath)) return;
         PreviewBackground.Source = new BitmapImage(new Uri(_backgroundPath));
-        PreviewVideoFrame.CornerRadius = new CornerRadius(CornerRadiusSlider?.Value ?? 18);
+        UpdatePreviewLayout();
+    }
+
+    private void PreviewCanvas_SizeChanged(object sender, SizeChangedEventArgs e) => UpdatePreviewLayout();
+
+    private void UpdatePreviewLayout()
+    {
+        if (PreviewCanvas is null || PreviewVideoFrame is null || _canvas.Height <= 0) return;
+        var availableWidth = Math.Max(80, PreviewCanvas.ActualWidth - 48);
+        var availableHeight = Math.Max(80, PreviewCanvas.ActualHeight - 32);
+        var aspect = (double)_canvas.Width / _canvas.Height;
+        var width = Math.Min(availableWidth, availableHeight * aspect);
+        var height = width / aspect;
+        if (height > availableHeight)
+        {
+            height = availableHeight;
+            width = height * aspect;
+        }
+        PreviewVideoFrame.Width = width;
+        PreviewVideoFrame.Height = height;
+        var scale = VideoScaleSlider?.Value ?? .82;
+        PreviewVideoFrame.CornerRadius = new CornerRadius(
+            (CornerRadiusSlider?.Value ?? 18) * Math.Min(width / _canvas.Width, height / _canvas.Height));
         PreviewVideoFrame.RenderTransform = new CompositeTransform
         {
-            ScaleX = VideoScaleSlider?.Value ?? .82,
-            ScaleY = VideoScaleSlider?.Value ?? .82
+            ScaleX = scale,
+            ScaleY = scale
         };
+    }
+
+    private async Task EnsureDotPatternAsync()
+    {
+        try
+        {
+            if (!File.Exists(_dotPatternPath))
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(_dotPatternPath)!);
+                using var stream = await FileRandomAccessStream.OpenAsync(
+                    _dotPatternPath, FileAccessMode.ReadWrite, StorageOpenOptions.None,
+                    FileOpenDisposition.OpenAlways);
+                const uint width = 128;
+                var pixels = new byte[width * width * 4];
+                for (var y = 0; y < width; y++)
+                for (var x = 0; x < width; x++)
+                {
+                    var dot = Math.Abs((x % 32) - 16) <= 2 && Math.Abs((y % 32) - 16) <= 2;
+                    var index = ((y * width) + x) * 4;
+                    pixels[index] = dot ? (byte)95 : (byte)24;
+                    pixels[index + 1] = dot ? (byte)75 : (byte)24;
+                    pixels[index + 2] = dot ? (byte)220 : (byte)24;
+                    pixels[index + 3] = 255;
+                }
+                var encoder = await BitmapEncoder.CreateAsync(BitmapEncoder.PngEncoderId, stream);
+                encoder.SetPixelData(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Ignore,
+                    width, width, 96, 96, pixels);
+                await encoder.FlushAsync();
+            }
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                if (BackgroundPresetComboBox.SelectedItem is BackgroundPreset preset &&
+                    preset.Path == _dotPatternPath)
+                    UpdatePreviewStyle();
+            });
+        }
+        catch
+        {
+            // Optional generated preset; built-in and custom image presets remain available.
+        }
     }
 
     private void UpdateTrimLabels()
@@ -280,7 +365,8 @@ public sealed partial class TrimExportWindow : Window
             });
             await Mp4ExportService.ExportAsync(_filePath, TimeSpan.FromSeconds(TrimRange.RangeStart),
                 TimeSpan.FromSeconds(TrimRange.RangeEnd - TrimRange.RangeStart), outputPath, _backgroundPath,
-                VideoScaleSlider.Value, CornerRadiusSlider.Value, progress, _exportCts.Token);
+                _canvas.Width, _canvas.Height, VideoScaleSlider.Value, CornerRadiusSlider.Value,
+                progress, _exportCts.Token);
             TrimStatusText.Text = $"Saved: {outputPath}";
             CloseSafely();
         }
@@ -398,12 +484,18 @@ public sealed partial class TrimExportWindow : Window
     {
         ExportProgressPanel.Visibility = exporting ? Visibility.Visible : Visibility.Collapsed;
         TrimRange.IsEnabled = !exporting;
+        CanvasPresetComboBox.IsEnabled = !exporting;
         BackgroundPresetComboBox.IsEnabled = !exporting;
         VideoScaleSlider.IsEnabled = !exporting;
         CornerRadiusSlider.IsEnabled = !exporting;
         ExportGifButton.IsEnabled = !exporting;
         DiscardButton.IsEnabled = !exporting;
         SaveButton.IsEnabled = !exporting;
+    }
+
+    private sealed record CanvasPreset(string Name, int Width, int Height)
+    {
+        public override string ToString() => Name;
     }
 
     private sealed record BackgroundPreset(string Name, string Path)

@@ -8,7 +8,8 @@ namespace ScreenRecorderApp.Services.Export;
 public static class Mp4ExportService
 {
     public static async Task ExportAsync(string inputPath, TimeSpan start, TimeSpan duration, string outputPath,
-        string backgroundPath, double videoScale, double cornerRadius, IProgress<GifExportProgress>? progress = null,
+        string backgroundPath, int canvasWidth, int canvasHeight, double videoScale, double cornerRadius,
+        IProgress<GifExportProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
         var ffmpeg = FFmpegLocator.FindFFmpeg()
@@ -16,8 +17,8 @@ public static class Mp4ExportService
         if (!File.Exists(backgroundPath))
             throw new FileNotFoundException("The selected background image was not found.", backgroundPath);
 
-        const int width = 1920;
-        const int height = 1080;
+        var width = NormalizeDimension(canvasWidth);
+        var height = NormalizeDimension(canvasHeight);
         var videoWidth = Math.Max(2, (int)(width * Math.Clamp(videoScale, .55, 1) / 2) * 2);
         var videoHeight = Math.Max(2, (int)(height * Math.Clamp(videoScale, .55, 1) / 2) * 2);
         var radius = Math.Clamp(cornerRadius, 0, Math.Min(videoWidth, videoHeight) / 2);
@@ -30,6 +31,8 @@ public static class Mp4ExportService
         await RunAsync(ffmpeg, args, cancellationToken).ConfigureAwait(false);
         progress?.Report(new GifExportProgress("Done", 100));
     }
+
+    private static int NormalizeDimension(int value) => Math.Max(2, value / 2 * 2);
 
     private static string BuildFilter(int width, int height, int videoWidth, int videoHeight, double radius)
     {
