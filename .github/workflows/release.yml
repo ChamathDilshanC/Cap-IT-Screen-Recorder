@@ -37,6 +37,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          $version = "${{ github.event.release.tag_name }}".TrimStart('v', 'V')
           gh release upload "${{ github.event.release.tag_name }}" `
-            "Installer\Output\CapIT-Screen-Recorder-Setup-${{ github.event.release.tag_name }}.exe" `
+            "Installer\Output\CapIT-Screen-Recorder-Setup-$version.exe" `
             --repo "${{ github.repository }}" --clobber
