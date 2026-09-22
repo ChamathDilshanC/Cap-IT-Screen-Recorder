@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
+using ScreenRecorderApp.Models;
 using ScreenRecorderApp.Services.Encoding;
 
 namespace ScreenRecorderApp.Services.Export;
@@ -49,9 +50,10 @@ public static class GifExportService
     /// recording, but guarantees the exported clip starts exactly where it was trimmed — correctness over
     /// speed for a feature whose entire point is picking an exact moment.
     /// </remarks>
-    public static string BuildPaletteGenArguments(string inputPath, TimeSpan start, TimeSpan duration, string palettePath) =>
-        $"-y -hide_banner -loglevel warning -stats -i \"{inputPath}\" -ss {FormatTime(start)} -t {FormatTime(duration)} " +
-        $"-vf \"fps={GifFrameRate},scale={GifWidth}:-2:flags=lanczos,palettegen=stats_mode=diff\" " +
+    public static string BuildPaletteGenArguments(string inputPath, TimeSpan start, TimeSpan duration, string palettePath,
+        IReadOnlyList<ZoomRegion>? zoomRegions = null, PresentationSettings? presentation = null) =>
+        $"-y -hide_banner -loglevel warning -stats -i \"{inputPath}\" {BackgroundInput(presentation)}{WatermarkInput(presentation)}-ss {FormatTime(start)} -t {FormatTime(duration)} " +
+        $"-filter_complex \"{BuildVideoFilter(duration, zoomRegions, start, presentation, UsesWatermark(presentation) ? (UsesImage(presentation) ? 2 : 1) : null)},fps={GifFrameRate},scale={GifWidth}:-2:flags=lanczos,palettegen=stats_mode=diff[palette]\" -map \"[palette]\" " +
         $"\"{palettePath}\"";
 
     /// <summary>
@@ -61,12 +63,81 @@ public static class GifExportService
     /// default: visibly less color banding than no dithering, less "static-y" noise than Floyd-Steinberg
     /// tends to produce on flat, UI-heavy tutorial content.
     /// </summary>
-    public static string BuildPaletteUseArguments(string inputPath, TimeSpan start, TimeSpan duration, string palettePath, string outputGifPath) =>
-        $"-y -hide_banner -loglevel warning -stats -i \"{inputPath}\" -ss {FormatTime(start)} -t {FormatTime(duration)} -i \"{palettePath}\" " +
-        $"-filter_complex \"fps={GifFrameRate},scale={GifWidth}:-2:flags=lanczos[x];[x][1:v]paletteuse=dither=sierra2_4a\" " +
+    public static string BuildPaletteUseArguments(string inputPath, TimeSpan start, TimeSpan duration, string palettePath, string outputGifPath,
+        IReadOnlyList<ZoomRegion>? zoomRegions = null, PresentationSettings? presentation = null) =>
+        $"-y -hide_banner -loglevel warning -stats -i \"{inputPath}\" {BackgroundInput(presentation)}-ss {FormatTime(start)} -t {FormatTime(duration)} -i \"{palettePath}\" {WatermarkInput(presentation)}" +
+        $"-filter_complex \"{BuildVideoFilter(duration, zoomRegions, start, presentation, UsesWatermark(presentation) ? (UsesImage(presentation) ? 3 : 2) : null)},fps={GifFrameRate},scale={GifWidth}:-2:flags=lanczos[x];[x][{(UsesImage(presentation) ? 2 : 1)}:v]paletteuse=dither=sierra2_4a\" " +
         $"-loop 0 \"{outputGifPath}\"";
 
     private static string FormatTime(TimeSpan t) => t.ToString(@"hh\:mm\:ss\.fff", CultureInfo.InvariantCulture);
+    private static bool UsesImage(PresentationSettings? p) =>
+        p is not null && p.BackgroundMode.Equals("image", StringComparison.OrdinalIgnoreCase) &&
+        !string.IsNullOrWhiteSpace(p.BackgroundPath);
+    private static string BackgroundInput(PresentationSettings? p) =>
+        UsesImage(p) && !string.IsNullOrWhiteSpace(p?.BackgroundPath)
+            ? $"-loop 1 -i \"{p.BackgroundPath}\" " : string.Empty;
+    private static bool UsesWatermark(PresentationSettings? p) =>
+        p?.WatermarkEnabled == true && File.Exists(p.WatermarkPath);
+    private static string WatermarkInput(PresentationSettings? p) =>
+        UsesWatermark(p) ? $"-loop 1 -i \"{p!.WatermarkPath}\" " : string.Empty;
+
+    private static string BuildVideoFilter(TimeSpan duration, IReadOnlyList<ZoomRegion>? regions, TimeSpan trimStart, PresentationSettings? presentation = null, int? watermarkInput = null)
+    {
+        var active = (regions ?? []).Where(r => r.Enabled && r.EndSeconds > trimStart.TotalSeconds &&
+                r.StartSeconds < trimStart.TotalSeconds + duration.TotalSeconds)
+            .Select(r => new ZoomRegion
+            {
+                StartSeconds = r.StartSeconds - trimStart.TotalSeconds,
+                EndSeconds = r.EndSeconds - trimStart.TotalSeconds,
+                CenterX = r.CenterX, CenterY = r.CenterY, Scale = r.Scale, Enabled = true
+            }).OrderBy(r => r.StartSeconds).ToList();
+        presentation ??= new PresentationSettings { BackgroundMode = "solid" };
+        var (canvasW, canvasH) = presentation.CanvasSize;
+        var videoW = Math.Max(2, (int)(canvasW * Math.Clamp(presentation.VideoScale, .2, 1) / 2) * 2);
+        var videoH = Math.Max(2, (int)(canvasH * Math.Clamp(presentation.VideoScale, .2, 1) / 2) * 2);
+        var compose = $"[video]scale={videoW}:{videoH}:force_original_aspect_ratio=decrease,pad={videoW}:{videoH}:(ow-iw)/2:(oh-ih)/2:color=black,format=rgba" +
+                      (presentation.DeviceFrame ? ",drawbox=x=0:y=0:w=iw-1:h=ih-1:color=white@0.75:t=3" : string.Empty) + "[fg];" +
+                      (presentation.BackgroundMode == "solid"
+                        ? $"color=c={presentation.BackgroundColor}:s={canvasW}x{canvasH}:d=1[bg];"
+                        : presentation.BackgroundMode == "gradient"
+                            ? $"gradients=s={canvasW}x{canvasH}:c0={presentation.BackgroundColor}:c1={presentation.BackgroundColor2}:x0=0:y0=0:x1=W:y1=H[bg];"
+                            : $"[1:v]scale={canvasW}:{canvasH}:force_original_aspect_ratio=increase,crop={canvasW}:{canvasH}[bg];") +
+                      $"[bg][fg]overlay=(W-w)/2:(H-h)/2:format=auto[composed];" +
+                      (watermarkInput is int wm
+                        ? $"[{wm}:v]format=rgba,colorchannelmixer=aa={Math.Clamp(presentation.WatermarkOpacity, 0, 1).ToString(CultureInfo.InvariantCulture)},scale=iw*{Math.Clamp(presentation.WatermarkScale, .03, .5).ToString(CultureInfo.InvariantCulture)}:-1[wm];[composed][wm]overlay=W-w-24:H-h-24:format=auto,format=yuv420p"
+                        : "[composed]format=yuv420p");
+        if (active.Count == 0) return $"[0:v]setpts=PTS-STARTPTS[video];{compose}";
+        var end = duration.TotalSeconds;
+        var points = new SortedSet<double> { 0, end };
+        foreach (var r in active) { points.Add(Math.Clamp(r.StartSeconds, 0, end)); points.Add(Math.Clamp(r.EndSeconds, 0, end)); }
+        var p = points.OrderBy(x => x).ToArray();
+        var segments = new List<(double Start, double End, ZoomRegion? Region)>();
+        for (var i = 0; i < p.Length - 1; i++)
+        {
+            if (p[i + 1] - p[i] < .001) continue;
+            var mid = (p[i] + p[i + 1]) / 2;
+            segments.Add((p[i], p[i + 1], active.LastOrDefault(r => mid >= r.StartSeconds && mid <= r.EndSeconds)));
+        }
+        var graph = $"[0:v]split={segments.Count}" + string.Concat(Enumerable.Range(0, segments.Count).Select(i => $"[g{i}]")) + ";";
+        for (var i = 0; i < segments.Count; i++)
+        {
+            var s = segments[i];
+            var chain = $"[g{i}]trim=start={F(s.Start)}:end={F(s.End)},setpts=PTS-STARTPTS";
+            if (s.Region is { } r)
+            {
+                var z = Math.Clamp(r.Scale, 1, 4).ToString("0.###", CultureInfo.InvariantCulture);
+                var x = Math.Clamp(r.CenterX, 0, 1).ToString("0.###", CultureInfo.InvariantCulture);
+                var y = Math.Clamp(r.CenterY, 0, 1).ToString("0.###", CultureInfo.InvariantCulture);
+                var targetAspect = F((double)canvasW / canvasH);
+                chain += $",crop='min(iw/{z},ih/{z}*{targetAspect})':'min(ih/{z},iw/{z}/{targetAspect})':(iw-ow)*{x}:(ih-oh)*{y}";
+            }
+            graph += chain + $"[h{i}];";
+        }
+        return graph + string.Concat(Enumerable.Range(0, segments.Count).Select(i => $"[h{i}]")) +
+               $"concat=n={segments.Count}:v=1:a=0,format=yuv420p[video];{compose}";
+    }
+
+    private static string F(double value) => value.ToString("0.###", CultureInfo.InvariantCulture);
 
     /// <summary>
     /// Runs both ffmpeg passes end to end and writes <paramref name="outputGifPath"/>. Reports combined
@@ -74,7 +145,9 @@ public static class GifExportService
     /// The scratch palette PNG is always deleted before returning, whether this succeeds, is canceled, or throws.
     /// </summary>
     public static async Task ExportAsync(string inputPath, TimeSpan start, TimeSpan duration, string outputGifPath,
-        IProgress<GifExportProgress>? progress = null, CancellationToken ct = default)
+        IProgress<GifExportProgress>? progress = null, CancellationToken ct = default,
+        IReadOnlyList<ZoomRegion>? zoomRegions = null, RecordingMetadata? metadata = null,
+        PresentationSettings? presentation = null)
     {
         var ffmpegPath = FFmpegLocator.FindFFmpeg()
             ?? throw new FileNotFoundException("ffmpeg.exe was not found. Place it in an 'ffmpeg' subfolder next to the app, or install it and add it to PATH.");
@@ -84,17 +157,19 @@ public static class GifExportService
         {
             const string paletteStage = "Generating palette…";
             progress?.Report(new GifExportProgress(paletteStage, 0));
-            var pass1Args = BuildPaletteGenArguments(inputPath, start, duration, palettePath);
+            var pass1Args = BuildPaletteGenArguments(inputPath, start, duration, palettePath, zoomRegions, presentation);
             await ExecuteFFmpegCommandAsync(ffmpegPath, pass1Args, duration,
                 fraction => progress?.Report(new GifExportProgress(paletteStage, fraction * 50)), ct).ConfigureAwait(false);
 
             const string gifStage = "Encoding GIF…";
             progress?.Report(new GifExportProgress(gifStage, 50));
-            var pass2Args = BuildPaletteUseArguments(inputPath, start, duration, palettePath, outputGifPath);
+            var pass2Args = BuildPaletteUseArguments(inputPath, start, duration, palettePath, outputGifPath, zoomRegions, presentation);
             await ExecuteFFmpegCommandAsync(ffmpegPath, pass2Args, duration,
                 fraction => progress?.Report(new GifExportProgress(gifStage, 50 + fraction * 50)), ct).ConfigureAwait(false);
 
             progress?.Report(new GifExportProgress("Done", 100));
+            if (metadata is not null)
+                metadata.Save(outputGifPath);
         }
         finally
         {

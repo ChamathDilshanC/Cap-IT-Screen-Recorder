@@ -3,8 +3,11 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI;
 using ScreenRecorderApp.Services.Encoding;
 using ScreenRecorderApp.Services.Export;
+using ScreenRecorderApp.Models;
+using System.Collections.ObjectModel;
 using Windows.Storage;
 using Windows.Storage.Pickers;
 using Windows.Media.Core;
@@ -40,6 +43,11 @@ public sealed partial class TrimExportWindow : Window
     private readonly string _dotPatternPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CapIT", "dot-pattern.png");
     private CanvasPreset _canvas = new("1920 × 1080 (Landscape)", 1920, 1080);
     private bool _hasCustomStyle;
+    private readonly ObservableCollection<ZoomRegion> _zoomRegions = [];
+    private double _durationSeconds = 1;
+    private RecordingMetadata _metadata;
+    private PresentationSettings _presentation = new();
+    private bool _loadingCursorSettings;
 
     // What ffmpeg could read about the file. Null until the probe finishes; OnMediaFailed can fire first,
     // which is what _pendingPlaybackError defers.
@@ -54,7 +62,13 @@ public sealed partial class TrimExportWindow : Window
     {
         InitializeComponent();
         _filePath = filePath;
+        _metadata = RecordingMetadata.Load(filePath) ?? new RecordingMetadata();
+        _presentation = _metadata.Presentation ?? new PresentationSettings();
+        LoadCursorControls();
         FilePathText.Text = filePath;
+        foreach (var region in ZoomRegionStore.Load(filePath))
+            _zoomRegions.Add(region);
+        RenderZoomRegions();
 
         // Without this a WinUI Window falls back to the literal string "WinUI Desktop" in the title bar
         // and the taskbar, which is what this window was shipping as.
@@ -63,9 +77,10 @@ public sealed partial class TrimExportWindow : Window
         {
             new CanvasPreset("1920 × 1080 (Landscape)", 1920, 1080),
             new CanvasPreset("1080 × 1080 (Square)", 1080, 1080),
-            new CanvasPreset("1080 × 1920 (Portrait)", 1080, 1920)
+            new CanvasPreset("1080 × 1920 (Portrait 9:16)", 1080, 1920),
+            new CanvasPreset("1080 × 1350 (Social 4:5)", 1080, 1350)
         };
-        CanvasPresetComboBox.SelectedIndex = 0;
+        CanvasPresetComboBox.SelectedIndex = _presentation.CanvasPreset switch { "9:16" => 2, "1:1" => 1, "4:5" => 3, _ => 0 };
         BackgroundPresetComboBox.ItemsSource = new[]
         {
             new BackgroundPreset("Cap-IT logo", Path.Combine(AppContext.BaseDirectory, "assets", "Logo-CapIT.png")),
@@ -73,6 +88,15 @@ public sealed partial class TrimExportWindow : Window
             new BackgroundPreset("Dot pattern", _dotPatternPath)
         };
         BackgroundPresetComboBox.SelectedIndex = 0;
+        BackgroundModeComboBox.SelectedIndex = _presentation.BackgroundMode switch { "solid" => 1, "gradient" => 2, _ => 0 };
+        BackgroundColorTextBox.Text = _presentation.BackgroundColor;
+        BackgroundColor2TextBox.Text = _presentation.BackgroundColor2;
+        FramePaddingBox.Value = _presentation.Padding;
+        ShadowCheckBox.IsChecked = _presentation.Shadow;
+        DeviceFrameCheckBox.IsChecked = _presentation.DeviceFrame;
+        WatermarkCheckBox.IsChecked = _presentation.WatermarkEnabled;
+        VideoScaleSlider.Value = _presentation.VideoScale;
+        CornerRadiusSlider.Value = _presentation.CornerRadius;
         UpdatePreviewStyle();
         _ = EnsureDotPatternAsync();
 
@@ -97,6 +121,35 @@ public sealed partial class TrimExportWindow : Window
 
         _ = InitializeTrimRangeAsync();
     }
+
+    private void LoadCursorControls()
+    {
+        _loadingCursorSettings = true;
+        CursorStyleComboBox.ItemsSource = CursorStyleOption.All;
+        CursorStyleComboBox.SelectedItem = CursorStyleOption.All.FirstOrDefault(x => x.Value == _metadata.Cursor.Style);
+        CursorSizeSlider.Value = Math.Clamp(_metadata.Cursor.Size, .5, 3);
+        CursorSmoothingSlider.Value = Math.Clamp(_metadata.Cursor.Smoothing, 0, 1);
+        CursorHideIdleCheckBox.IsChecked = _metadata.Cursor.HideWhenIdle;
+        CursorClickEmphasisCheckBox.IsChecked = _metadata.Cursor.ClickEmphasis;
+        CursorTrailCheckBox.IsChecked = _metadata.Cursor.Trail;
+        _loadingCursorSettings = false;
+    }
+
+    private void UpdateCursorMetadata()
+    {
+        if (_loadingCursorSettings) return;
+        _metadata.Cursor.Style = (CursorStyleComboBox.SelectedItem as CursorStyleOption)?.Value ?? _metadata.Cursor.Style;
+        _metadata.Cursor.Size = CursorSizeSlider.Value;
+        _metadata.Cursor.Smoothing = CursorSmoothingSlider.Value;
+        _metadata.Cursor.HideWhenIdle = CursorHideIdleCheckBox.IsChecked == true;
+        _metadata.Cursor.ClickEmphasis = CursorClickEmphasisCheckBox.IsChecked == true;
+        _metadata.Cursor.Trail = CursorTrailCheckBox.IsChecked == true;
+        try { _metadata.Save(_filePath); } catch { /* optional review metadata */ }
+    }
+
+    private void CursorStyle_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateCursorMetadata();
+    private void CursorSetting_ValueChanged(object sender, RangeBaseValueChangedEventArgs e) => UpdateCursorMetadata();
+    private void CursorSetting_Click(object sender, RoutedEventArgs e) => UpdateCursorMetadata();
 
     /// <summary>
     /// Establishes the trim range from the file's real duration, probed with ffmpeg rather than taken
@@ -167,11 +220,81 @@ public sealed partial class TrimExportWindow : Window
 
     private void ApplyDuration(double totalSeconds)
     {
+        _durationSeconds = Math.Max(1, totalSeconds);
         TrimRange.Maximum = totalSeconds;
         TrimRange.RangeStart = 0;
         TrimRange.RangeEnd = totalSeconds;
         UpdateTrimLabels();
+        RenderZoomRegions();
     }
+
+    private void OnAddZoomRegionClick(object sender, RoutedEventArgs e)
+    {
+        var start = Math.Min(Math.Max(0, TrimRange.RangeStart), Math.Max(0, _durationSeconds - 2));
+        _zoomRegions.Add(new ZoomRegion { StartSeconds = start, EndSeconds = Math.Min(_durationSeconds, start + 2) });
+        SaveZoomRegions();
+        RenderZoomRegions();
+    }
+
+    private void SaveZoomRegions() => ZoomRegionStore.Save(_filePath, _zoomRegions);
+
+    private void RenderZoomRegions()
+    {
+        if (ZoomRegionsPanel is null) return;
+        ZoomRegionsPanel.Children.Clear();
+        foreach (var region in _zoomRegions)
+        {
+            var label = new TextBlock { FontSize = 12, Opacity = .8 };
+            var start = NewSlider(region.StartSeconds, 0, _durationSeconds);
+            var end = NewSlider(region.EndSeconds, 0, _durationSeconds);
+            var x = NewSlider(region.CenterX, 0, 1);
+            var y = NewSlider(region.CenterY, 0, 1);
+            var scale = NewSlider(region.Scale, 1, 4);
+            void Changed()
+            {
+                region.StartSeconds = Math.Clamp(start.Value, 0, Math.Max(0, end.Value - .05));
+                region.EndSeconds = Math.Clamp(end.Value, Math.Min(_durationSeconds, start.Value + .05), _durationSeconds);
+                region.CenterX = Math.Clamp(x.Value, 0, 1);
+                region.CenterY = Math.Clamp(y.Value, 0, 1);
+                region.Scale = Math.Clamp(scale.Value, 1, 4);
+                label.Text = Describe(region);
+                SaveZoomRegions();
+            }
+            start.ValueChanged += (_, _) => Changed();
+            end.ValueChanged += (_, _) => Changed();
+            x.ValueChanged += (_, _) => Changed();
+            y.ValueChanged += (_, _) => Changed();
+            scale.ValueChanged += (_, _) => Changed();
+            var enabled = new ToggleSwitch { IsOn = region.Enabled, OffContent = "Off", OnContent = "On" };
+            enabled.Toggled += (_, _) => { region.Enabled = enabled.IsOn; SaveZoomRegions(); };
+            var remove = new Button { Content = "Remove" };
+            remove.Click += (_, _) => { _zoomRegions.Remove(region); SaveZoomRegions(); RenderZoomRegions(); };
+            var header = new Grid { ColumnSpacing = 8 };
+            header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            header.Children.Add(label);
+            Grid.SetColumn(enabled, 1); header.Children.Add(enabled);
+            Grid.SetColumn(remove, 2); header.Children.Add(remove);
+            var row = new StackPanel { Spacing = 2 };
+            row.Children.Add(header);
+            row.Children.Add(new TextBlock { Text = "Start / end", FontSize = 11, Opacity = .7 });
+            row.Children.Add(start); row.Children.Add(end);
+            row.Children.Add(new TextBlock { Text = "Focus X / Y / scale", FontSize = 11, Opacity = .7 });
+            row.Children.Add(x); row.Children.Add(y); row.Children.Add(scale);
+            ZoomRegionsPanel.Children.Add(row);
+            label.Text = Describe(region);
+        }
+    }
+
+    private Slider NewSlider(double value, double min, double max) => new()
+    {
+        Minimum = min, Maximum = Math.Max(min + .01, max), Value = Math.Clamp(value, min, Math.Max(min + .01, max)),
+        StepFrequency = min == 0 && max == 1 ? .01 : .1, HorizontalAlignment = HorizontalAlignment.Stretch
+    };
+
+    private static string Describe(ZoomRegion r) =>
+        $"{r.StartSeconds:0.0}s – {r.EndSeconds:0.0}s  ·  {r.Scale:0.0}× at ({r.CenterX:0.00}, {r.CenterY:0.00})";
 
     private void OnMediaOpened(MediaPlayer sender, object args)
     {
@@ -197,6 +320,8 @@ public sealed partial class TrimExportWindow : Window
         if (BackgroundPresetComboBox.SelectedItem is BackgroundPreset preset)
         {
             _backgroundPath = preset.Path;
+            _presentation.BackgroundPath = preset.Path;
+            _presentation.BackgroundMode = "image";
             _hasCustomStyle = true;
             UpdatePreviewStyle();
         }
@@ -207,6 +332,11 @@ public sealed partial class TrimExportWindow : Window
         if (CanvasPresetComboBox.SelectedItem is CanvasPreset preset)
         {
             _canvas = preset;
+            _presentation.CanvasPreset = (preset.Width, preset.Height) switch
+            {
+                (1080, 1920) => "9:16", (1080, 1080) => "1:1", (1080, 1350) => "4:5", _ => "16:9"
+            };
+            SavePresentationMetadata();
             _hasCustomStyle = true;
             UpdatePreviewLayout();
         }
@@ -222,6 +352,9 @@ public sealed partial class TrimExportWindow : Window
         var file = await picker.PickSingleFileAsync();
         if (file is null) return;
         _backgroundPath = file.Path;
+        _presentation.BackgroundPath = file.Path;
+        _presentation.BackgroundMode = "image";
+        SavePresentationMetadata();
         _hasCustomStyle = true;
         BackgroundPresetComboBox.SelectedItem = null;
         PreviewBackground.Source = new BitmapImage(new Uri(file.Path));
@@ -229,21 +362,101 @@ public sealed partial class TrimExportWindow : Window
 
     private void VideoScale_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)
     {
+        _presentation.VideoScale = e.NewValue;
+        SavePresentationMetadata();
         _hasCustomStyle = true;
         UpdatePreviewStyle();
     }
 
     private void CornerRadius_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)
     {
+        _presentation.CornerRadius = e.NewValue;
+        SavePresentationMetadata();
         _hasCustomStyle = true;
         UpdatePreviewStyle();
     }
 
+    private void BackgroundMode_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (BackgroundModeComboBox.SelectedItem is ComboBoxItem item && item.Tag is string mode)
+        {
+            _presentation.BackgroundMode = mode;
+            SavePresentationMetadata();
+            UpdatePreviewStyle();
+        }
+    }
+
+    private void PresentationSetting_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_presentation is null) return;
+        _presentation.BackgroundColor = BackgroundColorTextBox.Text;
+        _presentation.BackgroundColor2 = BackgroundColor2TextBox.Text;
+        SavePresentationMetadata();
+        UpdatePreviewStyle();
+    }
+
+    private void PresentationNumberBox_ValueChanged(NumberBox sender, NumberBoxValueChangedEventArgs args)
+    {
+        _presentation.Padding = (int)Math.Clamp(args.NewValue, 0, 500);
+        SavePresentationMetadata();
+        UpdatePreviewStyle();
+    }
+
+    private void PresentationSetting_Click(object sender, RoutedEventArgs e)
+    {
+        _presentation.Shadow = ShadowCheckBox.IsChecked == true;
+        _presentation.DeviceFrame = DeviceFrameCheckBox.IsChecked == true;
+        _presentation.WatermarkEnabled = WatermarkCheckBox.IsChecked == true;
+        SavePresentationMetadata();
+        UpdatePreviewStyle();
+    }
+
+    private async void OnChooseWatermarkClick(object sender, RoutedEventArgs e)
+    {
+        var picker = new FileOpenPicker();
+        picker.FileTypeFilter.Add(".png"); picker.FileTypeFilter.Add(".jpg"); picker.FileTypeFilter.Add(".jpeg");
+        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this));
+        var file = await picker.PickSingleFileAsync();
+        if (file is null) return;
+        _presentation.WatermarkPath = file.Path;
+        _presentation.WatermarkEnabled = true;
+        WatermarkCheckBox.IsChecked = true;
+        SavePresentationMetadata();
+    }
+
+    private void SavePresentationMetadata()
+    {
+        _metadata.Presentation = _presentation;
+        try { _metadata.Save(_filePath); } catch { }
+    }
+
     private void UpdatePreviewStyle()
     {
-        if (!File.Exists(_backgroundPath)) return;
-        PreviewBackground.Source = new BitmapImage(new Uri(_backgroundPath));
+        _backgroundPath = _presentation.BackgroundPath is { Length: > 0 } path ? path : _backgroundPath;
+        PreviewCanvas.Background = ParsePresentationBrush(_presentation);
+        PreviewBackground.Opacity = _presentation.BackgroundMode.Equals("image", StringComparison.OrdinalIgnoreCase) ? .98 : 0;
+        if (_presentation.BackgroundMode.Equals("image", StringComparison.OrdinalIgnoreCase) && File.Exists(_backgroundPath))
+            PreviewBackground.Source = new BitmapImage(new Uri(_backgroundPath));
         UpdatePreviewLayout();
+    }
+
+    private static Brush ParsePresentationBrush(PresentationSettings p)
+    {
+        static Windows.UI.Color Parse(string value, Windows.UI.Color fallback)
+        {
+            try { return ColorHelper.FromArgb(255, Convert.ToByte(value.TrimStart('#').Substring(0, 2), 16), Convert.ToByte(value.TrimStart('#').Substring(2, 2), 16), Convert.ToByte(value.TrimStart('#').Substring(4, 2), 16)); }
+            catch { return fallback; }
+        }
+        var a = Parse(p.BackgroundColor, Colors.DarkSlateGray);
+        if (!p.BackgroundMode.Equals("gradient", StringComparison.OrdinalIgnoreCase))
+            return new SolidColorBrush(a);
+        var b = Parse(p.BackgroundColor2, Colors.MediumPurple);
+        return new LinearGradientBrush
+        {
+            StartPoint = new Windows.Foundation.Point(0, 0),
+            EndPoint = new Windows.Foundation.Point(1, 1),
+            GradientStops = { new GradientStop { Color = a, Offset = 0 }, new GradientStop { Color = b, Offset = 1 } }
+        };
     }
 
     private void PreviewCanvas_SizeChanged(object sender, SizeChangedEventArgs e) => UpdatePreviewLayout();
@@ -271,6 +484,7 @@ public sealed partial class TrimExportWindow : Window
             ScaleX = scale,
             ScaleY = scale
         };
+        PreviewVideoFrame.Margin = new Thickness(_presentation.Padding * Math.Min(width / _canvas.Width, height / _canvas.Height));
     }
 
     private async Task EnsureDotPatternAsync()
@@ -338,12 +552,14 @@ public sealed partial class TrimExportWindow : Window
 
         TeardownPlayer(); // must release the file before deleting it
         try { File.Delete(_filePath); } catch { /* best effort — file may already be gone or briefly locked by the player */ }
+        try { File.Delete(ZoomRegionStore.GetPath(_filePath)); } catch { /* clean up optional review metadata */ }
+        try { File.Delete(RecordingMetadata.GetPath(_filePath)); } catch { /* clean up optional metadata */ }
         CloseSafely();
     }
 
     private async void OnSaveClick(object sender, RoutedEventArgs e)
     {
-        if (!_hasCustomStyle && TrimRange.RangeStart <= 0.001 &&
+        if (!_hasCustomStyle && _zoomRegions.All(r => !r.Enabled) && TrimRange.RangeStart <= 0.001 &&
             Math.Abs(TrimRange.RangeEnd - TrimRange.Maximum) < 0.001)
         {
             CloseSafely();
@@ -366,7 +582,7 @@ public sealed partial class TrimExportWindow : Window
             await Mp4ExportService.ExportAsync(_filePath, TimeSpan.FromSeconds(TrimRange.RangeStart),
                 TimeSpan.FromSeconds(TrimRange.RangeEnd - TrimRange.RangeStart), outputPath, _backgroundPath,
                 _canvas.Width, _canvas.Height, VideoScaleSlider.Value, CornerRadiusSlider.Value,
-                progress, _exportCts.Token);
+                _zoomRegions, progress, _exportCts.Token, _metadata, _presentation);
             TrimStatusText.Text = $"Saved: {outputPath}";
             CloseSafely();
         }
@@ -458,7 +674,7 @@ public sealed partial class TrimExportWindow : Window
 
         try
         {
-            await GifExportService.ExportAsync(_filePath, start, duration, outputGifPath, progress, _exportCts.Token);
+            await GifExportService.ExportAsync(_filePath, start, duration, outputGifPath, progress, _exportCts.Token, _zoomRegions, _metadata, _presentation);
             ExportStageText.Text = "Done!";
             TrimStatusText.Text = $"Saved: {outputGifPath}";
         }
@@ -488,6 +704,7 @@ public sealed partial class TrimExportWindow : Window
         BackgroundPresetComboBox.IsEnabled = !exporting;
         VideoScaleSlider.IsEnabled = !exporting;
         CornerRadiusSlider.IsEnabled = !exporting;
+        ZoomRegionsPanel.IsHitTestVisible = !exporting;
         ExportGifButton.IsEnabled = !exporting;
         DiscardButton.IsEnabled = !exporting;
         SaveButton.IsEnabled = !exporting;

@@ -12,6 +12,7 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <StackPanel Grid.Row="0" Spacing="4">
@@ -72,6 +73,46 @@
             </Grid>
             <Slider x:Name="CornerRadiusSlider" Header="Rounded corners" Minimum="0" Maximum="48"
                     StepFrequency="2" Value="18" ValueChanged="CornerRadius_ValueChanged" />
+            <Grid ColumnSpacing="12">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                <ComboBox x:Name="BackgroundModeComboBox" Header="Background" SelectionChanged="BackgroundMode_SelectionChanged">
+                    <ComboBoxItem Content="Image" Tag="image" />
+                    <ComboBoxItem Content="Solid colour" Tag="solid" />
+                    <ComboBoxItem Content="Gradient" Tag="gradient" />
+                </ComboBox>
+                <TextBox x:Name="BackgroundColorTextBox" Grid.Column="1" Header="Colour" Text="#15151A"
+                         TextChanged="PresentationSetting_TextChanged" />
+                <TextBox x:Name="BackgroundColor2TextBox" Grid.Column="2" Header="Gradient end" Text="#5F4BDB"
+                         TextChanged="PresentationSetting_TextChanged" />
+                <NumberBox x:Name="FramePaddingBox" Grid.Column="3" Header="Frame padding" Minimum="0" Maximum="500"
+                           SmallChange="4" Value="0" ValueChanged="PresentationNumberBox_ValueChanged" />
+            </Grid>
+            <StackPanel Orientation="Horizontal" Spacing="16">
+                <CheckBox x:Name="ShadowCheckBox" Content="Shadow" IsChecked="True" Click="PresentationSetting_Click" />
+                <CheckBox x:Name="DeviceFrameCheckBox" Content="Device frame" Click="PresentationSetting_Click" />
+                <CheckBox x:Name="WatermarkCheckBox" Content="Watermark/logo" Click="PresentationSetting_Click" />
+                <Button Content="Choose watermark…" Click="OnChooseWatermarkClick" />
+            </StackPanel>
+            <TextBlock Text="Cursor (retained for export)" Style="{StaticResource SubtitleTextBlockStyle}" Margin="0,8,0,0" />
+            <Grid ColumnSpacing="12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <ComboBox x:Name="CursorStyleComboBox" Header="Style" SelectionChanged="CursorStyle_SelectionChanged" />
+                <Slider x:Name="CursorSizeSlider" Grid.Column="1" Header="Size"
+                        Minimum="0.5" Maximum="3" StepFrequency="0.1" Value="1"
+                        ValueChanged="CursorSetting_ValueChanged" />
+                <Slider x:Name="CursorSmoothingSlider" Grid.Column="2" Header="Smoothing"
+                        Minimum="0" Maximum="1" StepFrequency="0.05" Value="0.5"
+                        ValueChanged="CursorSetting_ValueChanged" />
+            </Grid>
+            <StackPanel Orientation="Horizontal" Spacing="16">
+                <CheckBox x:Name="CursorHideIdleCheckBox" Content="Hide when idle" Click="CursorSetting_Click" />
+                <CheckBox x:Name="CursorClickEmphasisCheckBox" Content="Emphasize clicks" Click="CursorSetting_Click" />
+                <CheckBox x:Name="CursorTrailCheckBox" Content="Cursor trail" Click="CursorSetting_Click" />
+            </StackPanel>
+            <TextBlock Text="The recorded cursor is already baked into source frames; these settings are retained in the manifest and export metadata."
+                       Opacity="0.65" FontSize="12" TextWrapping="Wrap" />
         </StackPanel>
 
         <StackPanel Grid.Row="3" Spacing="4">
@@ -90,12 +131,25 @@
             <TextBlock x:Name="TrimStatusText" Text="Selected: 0.0s" Opacity="0.7" FontSize="12" TextWrapping="Wrap" />
         </StackPanel>
 
-        <StackPanel x:Name="ExportProgressPanel" Grid.Row="4" Spacing="4" Visibility="Collapsed">
+        <StackPanel Grid.Row="4" Spacing="8">
+            <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                <TextBlock Text="Manual zoom regions" Style="{StaticResource SubtitleTextBlockStyle}" />
+                <Button Grid.Column="1" Content="＋ Add region" Click="OnAddZoomRegionClick" />
+            </Grid>
+            <TextBlock Text="Add camera moves after recording. Drag the start/end and focus sliders; these are layered after live smart zoom."
+                       Opacity="0.7" FontSize="12" TextWrapping="Wrap" />
+            <ScrollViewer MaxHeight="190" VerticalScrollBarVisibility="Auto">
+                <StackPanel x:Name="ZoomRegionsPanel" Spacing="6" />
+            </ScrollViewer>
+        </StackPanel>
+
+        <StackPanel x:Name="ExportProgressPanel" Grid.Row="5" Spacing="4" Visibility="Collapsed">
             <TextBlock x:Name="ExportStageText" Text="Generating palette…" FontSize="12" />
             <ProgressBar x:Name="ExportProgress" Minimum="0" Maximum="100" />
         </StackPanel>
 
-        <StackPanel Grid.Row="5" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+        <StackPanel Grid.Row="6" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
             <Button x:Name="DiscardButton" Content="Discard" Click="OnDiscardClick" />
             <Button x:Name="ExportGifButton" Content="Export GIF" Click="OnExportGifClick" />
             <Button x:Name="SaveButton" Content="Export MP4" Style="{StaticResource AccentButtonStyle}" Click="OnSaveClick" />

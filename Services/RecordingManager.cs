@@ -49,6 +49,7 @@ public sealed class RecordingManager : IDisposable
     // same — ffmpeg writes straight to the final path.
     private string? _encodePath;
     private string? _finalPath;
+    private RecordingSettings? _recordingSettings;
 
     private nint? _previewMonitorHandle;
     private nint? _previewWindowHandle;
@@ -295,6 +296,7 @@ public sealed class RecordingManager : IDisposable
 
         try
         {
+            _recordingSettings = settings;
             // Tear down any preview-only capture first so recording gets a freshly configured one — the
             // preview may be running against stale cursor settings or (in principle) a different target.
             lock (_videoLock) { _video.Stop(); }
@@ -557,22 +559,37 @@ public sealed class RecordingManager : IDisposable
     /// </summary>
     private async Task FinalizeRecordingAsync()
     {
-        if (_encodePath is null || _finalPath is null || _encodePath == _finalPath) return;
-        if (!File.Exists(_encodePath)) return;
-
-        var remuxed = await FFmpegRemuxer.ToFaststartAsync(_encodePath, _finalPath);
-        try
+        if (_encodePath is not null && _finalPath is not null && _encodePath != _finalPath && File.Exists(_encodePath))
         {
-            if (remuxed)
+            var remuxed = await FFmpegRemuxer.ToFaststartAsync(_encodePath, _finalPath);
+            try
             {
-                File.Delete(_encodePath);
+                if (remuxed) File.Delete(_encodePath);
+                else File.Move(_encodePath, _finalPath, overwrite: true);
             }
-            else
-            {
-                File.Move(_encodePath, _finalPath, overwrite: true);
-            }
+            catch { /* best effort — LastOutputPath still points at _finalPath either way */ }
         }
-        catch { /* best effort — LastOutputPath still points at _finalPath either way */ }
+
+        if (_finalPath is not null && File.Exists(_finalPath) && _recordingSettings is not null)
+        {
+            try
+            {
+                new RecordingMetadata
+                {
+                    RecordedAtUtc = _startTimeUtc,
+                    DurationSeconds = Elapsed.TotalSeconds,
+                    CaptureWidth = _video.Width,
+                    CaptureHeight = _video.Height,
+                    Fps = _recordingSettings.Fps,
+                    Cursor = (_recordingSettings.Cursor ?? new CursorSettings
+                    {
+                        Enabled = _recordingSettings.CaptureCursor,
+                        Style = _recordingSettings.CursorStyle
+                    }).Clone()
+                }.Save(_finalPath);
+            }
+            catch { /* optional metadata must never make a recording fail */ }
+        }
     }
 
     private async Task CleanupAfterFailureAsync()
