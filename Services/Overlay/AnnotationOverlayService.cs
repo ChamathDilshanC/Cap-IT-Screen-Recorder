@@ -31,6 +31,7 @@ public sealed class AnnotationOverlayService : IDisposable
     private AnnotationTool _tool = AnnotationTool.Pen;
     private WinColor _penColor;
     private double _penThickness = 6;
+    private int _fadeSeconds;
 
     public AnnotationOverlayService(DispatcherQueue dispatcherQueue)
     {
@@ -47,11 +48,12 @@ public sealed class AnnotationOverlayService : IDisposable
     /// listening for the annotation hotkeys. Idempotent for the same monitor; repositions both windows
     /// for a different one. Must be called on the UI thread.
     /// </summary>
-    public void Arm(MonitorInfo monitor, AnnotationTool tool, WinColor penColor, double penThickness)
+    public void Arm(MonitorInfo monitor, AnnotationTool tool, WinColor penColor, double penThickness, int fadeSeconds = 0)
     {
         _tool = tool;
         _penColor = penColor;
         _penThickness = penThickness;
+        _fadeSeconds = Math.Max(0, fadeSeconds);
 
         if (IsArmed)
         {
@@ -103,6 +105,8 @@ public sealed class AnnotationOverlayService : IDisposable
         _hook.ToggleDrawingModeRequested += () => _dispatcherQueue.TryEnqueue(ToggleDrawingMode);
         _hook.ClearRequested += () => _dispatcherQueue.TryEnqueue(() => _window?.ClearInk());
         _hook.UndoRequested += () => _dispatcherQueue.TryEnqueue(() => _window?.UndoLastStroke());
+        _hook.DuplicateRequested += () => _dispatcherQueue.TryEnqueue(() => _window?.DuplicateSelected());
+        _hook.DeleteRequested += () => _dispatcherQueue.TryEnqueue(() => _window?.DeleteSelected());
         _hook.TextCharTyped += ch => _dispatcherQueue.TryEnqueue(() => _window?.TextAppend(ch.ToString()));
         _hook.TextBackspaceRequested += () => _dispatcherQueue.TryEnqueue(() => _window?.TextBackspace());
         _hook.TextNewlineRequested += () => _dispatcherQueue.TryEnqueue(() => _window?.TextNewline());
@@ -131,6 +135,7 @@ public sealed class AnnotationOverlayService : IDisposable
     {
         _window?.SetTool(_tool);
         _window?.UpdateDrawingAttributes(ToDrawingColor(_penColor), _penThickness);
+        _window?.SetFadeSeconds(_fadeSeconds);
         _toolbar?.SetActiveState(_tool, ToDrawingColor(_penColor), (float)_penThickness);
     }
 
@@ -141,6 +146,12 @@ public sealed class AnnotationOverlayService : IDisposable
         _penColor = penColor;
         _penThickness = penThickness;
         PushAttributes();
+    }
+
+    public void UpdateFadeSeconds(int seconds)
+    {
+        _fadeSeconds = Math.Max(0, seconds);
+        _window?.SetFadeSeconds(_fadeSeconds);
     }
 
     private static Color ToDrawingColor(WinColor color) => Color.FromArgb(color.A, color.R, color.G, color.B);

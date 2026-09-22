@@ -27,6 +27,7 @@ public sealed class AppSettings
 
     public bool CaptureCursor { get; set; } = true;
     public CursorStyle CursorStyle { get; set; } = CursorStyle.SystemDefault;
+    public CursorSettings Cursor { get; set; } = new();
 
     public bool CaptureSystemAudio { get; set; } = true;
     public bool CaptureMicrophone { get; set; } = false;
@@ -61,8 +62,11 @@ public sealed class AppSettings
     // Last tool picked on the annotation toolbar (Pen/Line/Arrow/Rectangle/Ellipse/Text). Matched by
     // label against AnnotationToolOption.All at load, same convention AnnotationColorLabel uses.
     public string AnnotationToolLabel { get; set; } = "Pen";
+    public int AnnotationFadeSeconds { get; set; } = 0;
 
     public bool MaximizeTextClarity { get; set; } = false;
 
     public string OutputDirectory { get; set; } = new RecordingSettings().OutputDirectory;
+
+    public List<RecordingPreset> CustomPresets { get; set; } = [];
 }

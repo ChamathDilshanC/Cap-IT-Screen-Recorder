@@ -23,22 +23,76 @@ internal sealed class AnnotationToolbarWindow : IDisposable
 {
     private const string WindowClassName = "CapITAnnotationToolbarWindow";
 
-    private const int BarHeight = 54;
+    private const int BarHeight = 84;
     private const int Pad = 10;
-    private const int Gap = 6;
+    // The drawer has a deliberately dense catalog. Keeping buttons compact prevents the palette from
+    // exceeding a typical 1366px display while preserving one-click access to every tool.
+    private const int Gap = 2;
     private const int GripW = 16;
-    private const int ToolW = 30;
-    private const int SwatchW = 22;
+    private const int ToolW = 22;
+    private const int SwatchW = 20;
     private const int ThickW = 26;
     private const int SepW = 11;
 
     private static readonly (AnnotationTool Tool, string Name)[] Tools =
     [
+        (AnnotationTool.Select, "Select / move"),
         (AnnotationTool.Pen, "Pen"),
+        (AnnotationTool.Highlighter, "Highlighter"),
+        (AnnotationTool.Marker, "Marker"),
         (AnnotationTool.Line, "Line"),
         (AnnotationTool.Arrow, "Arrow"),
+        (AnnotationTool.DoubleArrow, "Double arrow"),
         (AnnotationTool.Rectangle, "Rectangle"),
+        (AnnotationTool.Square, "Square"),
         (AnnotationTool.Ellipse, "Ellipse"),
+        (AnnotationTool.Circle, "Circle"),
+        (AnnotationTool.RoundedRectangle, "Rounded rectangle"),
+        (AnnotationTool.Triangle, "Triangle"),
+        (AnnotationTool.Diamond, "Diamond"),
+        (AnnotationTool.FlowchartProcess, "Process"),
+        (AnnotationTool.FlowchartDecision, "Decision"),
+        (AnnotationTool.StartEnd, "Start / end"),
+        (AnnotationTool.Database, "Database"),
+        (AnnotationTool.Document, "Document"),
+        (AnnotationTool.User, "User"),
+        (AnnotationTool.Server, "Server"),
+        (AnnotationTool.Monitor, "Monitor"),
+        (AnnotationTool.Mobile, "Mobile"),
+        (AnnotationTool.Folder, "Folder"),
+        (AnnotationTool.Callout, "Callout"),
+        (AnnotationTool.Cloud, "Cloud"),
+        (AnnotationTool.SpeechBubble, "Speech bubble"),
+        (AnnotationTool.ThoughtBubble, "Thought bubble"),
+        (AnnotationTool.Label, "Label"),
+        (AnnotationTool.Tag, "Tag"),
+        (AnnotationTool.PointerCallout, "Pointer callout"),
+        (AnnotationTool.CurvedLine, "Curved line"),
+        (AnnotationTool.ElbowLine, "Elbow line"),
+        (AnnotationTool.DashedLine, "Dashed line"),
+        (AnnotationTool.Bezier, "Bezier"),
+        (AnnotationTool.Measurement, "Measurement"),
+        (AnnotationTool.Blur, "Blur"),
+        (AnnotationTool.Pixelate, "Pixelate"),
+        (AnnotationTool.Magnifier, "Magnifier"),
+        (AnnotationTool.SpotlightRectangle, "Spotlight rectangle"),
+        (AnnotationTool.Underline, "Underline"),
+        (AnnotationTool.StrikeThrough, "Strike-through"),
+        (AnnotationTool.Check, "Check"),
+        (AnnotationTool.Cross, "X"),
+        (AnnotationTool.Warning, "Warning"),
+        (AnnotationTool.Info, "Info"),
+        (AnnotationTool.Question, "Question"),
+        (AnnotationTool.Cursor, "Cursor"),
+        (AnnotationTool.Click, "Click"),
+        (AnnotationTool.KeyboardBadge, "Keyboard badge"),
+        (AnnotationTool.CodeFrame, "Code frame"),
+        (AnnotationTool.TerminalFrame, "Terminal frame"),
+        (AnnotationTool.BrowserFrame, "Browser frame"),
+        (AnnotationTool.Braces, "Braces"),
+        (AnnotationTool.Crosshair, "Crosshair"),
+        (AnnotationTool.NumberedStep, "Numbered step"),
+        (AnnotationTool.Spotlight, "Spotlight"),
         (AnnotationTool.Text, "Text"),
     ];
 
@@ -98,8 +152,9 @@ internal sealed class AnnotationToolbarWindow : IDisposable
 
         // Mirror the left-to-right advance in Render() exactly: grip, tools, sep, swatches, sep,
         // thickness, sep, undo, clear, then trailing padding.
+        var toolColumns = (Tools.Length + 1) / 2;
         _width = Pad + (GripW + Gap)
-                 + Tools.Length * (ToolW + Gap) + SepW
+                 + toolColumns * (ToolW + Gap) + SepW
                  + Palette.Length * (SwatchW + Gap) + SepW
                  + Thicknesses.Length * (ThickW + Gap) + SepW
                  + (ToolW + Gap) + ToolW + Pad;
@@ -223,16 +278,22 @@ internal sealed class AnnotationToolbarWindow : IDisposable
         _ = gripRect; // grip has no button action — a click here falls through to window drag
         x += GripW + Gap;
 
-        // Tools
-        foreach (var (tool, _) in Tools)
+        // Tools are wrapped into two compact rows so the full catalog remains usable on 1366px
+        // displays. The remaining controls stay in the vertically centered right-hand section.
+        var toolColumns = (Tools.Length + 1) / 2;
+        for (int toolIndex = 0; toolIndex < Tools.Length; toolIndex++)
         {
-            var r = new RectangleF(x, (BarHeight - ToolW) / 2f, ToolW, ToolW);
+            var tool = Tools[toolIndex].Tool;
+            var column = toolIndex % toolColumns;
+            var row = toolIndex / toolColumns;
+            var r = new RectangleF(x + column * (ToolW + Gap),
+                7 + row * (ToolW + Gap), ToolW, ToolW);
             DrawButtonBackground(r, _activeTool == tool);
             DrawToolGlyph(tool, r);
             var captured = tool;
             _hits.Add((r, () => SelectTool(captured)));
-            x += ToolW + Gap;
         }
+        x += toolColumns * (ToolW + Gap);
 
         x += Separator(x);
 
@@ -321,7 +382,13 @@ internal sealed class AnnotationToolbarWindow : IDisposable
 
         switch (tool)
         {
+            case AnnotationTool.Select:
+                _graphics.DrawRectangle(pen, box.X, box.Y, box.Width, box.Height);
+                _graphics.FillEllipse(pen.Brush, box.X + box.Width * .4f, box.Y + box.Height * .4f, 4, 4);
+                break;
             case AnnotationTool.Pen:
+            case AnnotationTool.Highlighter:
+            case AnnotationTool.Marker:
                 _graphics.DrawCurve(pen,
                 [
                     new PointF(box.Left, box.Bottom),
@@ -339,6 +406,11 @@ internal sealed class AnnotationToolbarWindow : IDisposable
                 _graphics.DrawLine(pen, box.Left, box.Bottom, box.Right, box.Top);
                 _graphics.DrawLine(pen, box.Right, box.Top, box.Right - box.Width * 0.45f, box.Top);
                 _graphics.DrawLine(pen, box.Right, box.Top, box.Right, box.Top + box.Height * 0.45f);
+                break;
+            case AnnotationTool.DoubleArrow:
+                _graphics.DrawLine(pen, box.Left, box.Bottom, box.Right, box.Top);
+                _graphics.DrawLine(pen, box.Left, box.Bottom, box.Left + box.Width * .35f, box.Bottom);
+                _graphics.DrawLine(pen, box.Right, box.Top, box.Right - box.Width * .35f, box.Top);
                 break;
 
             case AnnotationTool.Rectangle:

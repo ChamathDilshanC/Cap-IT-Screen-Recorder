@@ -37,6 +37,7 @@ public sealed class GlobalHotkeyHook : IDisposable
     private const int VK_D = 0x44;
     private const int VK_Z = 0x5A;
     private const int VK_ESCAPE = 0x1B;
+    private const int VK_DELETE = 0x2E;
 
     private delegate nint LowLevelKeyboardProc(int nCode, nint wParam, nint lParam);
 
@@ -124,6 +125,8 @@ public sealed class GlobalHotkeyHook : IDisposable
 
     /// <summary>Ctrl+Shift+Z was pressed — undo the last stroke. Same threading caveat as <see cref="ToggleDrawingModeRequested"/>.</summary>
     public event Action? UndoRequested;
+    public event Action? DuplicateRequested;
+    public event Action? DeleteRequested;
 
     /// <summary>
     /// When true, printable keystrokes (plus Backspace / Enter / Esc) are captured for the text
@@ -195,6 +198,15 @@ public sealed class GlobalHotkeyHook : IDisposable
                     {
                         _dKeyLatched = true;
                         ToggleDrawingModeRequested?.Invoke();
+                    }
+                    else if (vkCode == VK_D && IsDown(VK_CONTROL) && !IsDown(VK_SHIFT) && !_dKeyLatched)
+                    {
+                        _dKeyLatched = true;
+                        DuplicateRequested?.Invoke();
+                    }
+                    else if (vkCode == VK_DELETE && !TextCaptureActive)
+                    {
+                        DeleteRequested?.Invoke();
                     }
                     else if (vkCode == VK_Z && IsDown(VK_CONTROL) && IsDown(VK_SHIFT) && !_zKeyLatched)
                     {

@@ -108,12 +108,77 @@ public sealed record AnnotationToolOption(AnnotationTool Value, string Label)
 
     public static readonly IReadOnlyList<AnnotationToolOption> All =
     [
+        new(AnnotationTool.Select, "Select / move"),
         new(AnnotationTool.Pen, "Pen"),
+        new(AnnotationTool.Highlighter, "Highlighter"),
+        new(AnnotationTool.Marker, "Marker"),
         new(AnnotationTool.Line, "Line"),
         new(AnnotationTool.Arrow, "Arrow"),
+        new(AnnotationTool.DoubleArrow, "Double arrow"),
         new(AnnotationTool.Rectangle, "Rectangle"),
+        new(AnnotationTool.Square, "Square"),
         new(AnnotationTool.Ellipse, "Ellipse"),
+        new(AnnotationTool.Circle, "Circle"),
+        new(AnnotationTool.RoundedRectangle, "Rounded rectangle"),
+        new(AnnotationTool.Triangle, "Triangle"),
+        new(AnnotationTool.Diamond, "Diamond"),
+        new(AnnotationTool.FlowchartProcess, "Process"),
+        new(AnnotationTool.FlowchartDecision, "Decision"),
+        new(AnnotationTool.StartEnd, "Start / end"),
+        new(AnnotationTool.Database, "Database"),
+        new(AnnotationTool.Document, "Document"),
+        new(AnnotationTool.User, "User"),
+        new(AnnotationTool.Server, "Server"),
+        new(AnnotationTool.Monitor, "Monitor"),
+        new(AnnotationTool.Mobile, "Mobile"),
+        new(AnnotationTool.Folder, "Folder"),
+        new(AnnotationTool.Callout, "Callout"),
+        new(AnnotationTool.Cloud, "Cloud"),
+        new(AnnotationTool.SpeechBubble, "Speech bubble"),
+        new(AnnotationTool.ThoughtBubble, "Thought bubble"),
+        new(AnnotationTool.Label, "Label"),
+        new(AnnotationTool.Tag, "Tag"),
+        new(AnnotationTool.PointerCallout, "Pointer callout"),
+        new(AnnotationTool.CurvedLine, "Curved line"),
+        new(AnnotationTool.ElbowLine, "Elbow line"),
+        new(AnnotationTool.DashedLine, "Dashed line"),
+        new(AnnotationTool.Bezier, "Bezier"),
+        new(AnnotationTool.Measurement, "Measurement"),
+        new(AnnotationTool.Blur, "Blur"),
+        new(AnnotationTool.Pixelate, "Pixelate"),
+        new(AnnotationTool.Magnifier, "Magnifier"),
+        new(AnnotationTool.SpotlightRectangle, "Spotlight rectangle"),
+        new(AnnotationTool.Underline, "Underline"),
+        new(AnnotationTool.StrikeThrough, "Strike-through"),
+        new(AnnotationTool.Check, "Check"),
+        new(AnnotationTool.Cross, "X"),
+        new(AnnotationTool.Warning, "Warning"),
+        new(AnnotationTool.Info, "Info"),
+        new(AnnotationTool.Question, "Question"),
+        new(AnnotationTool.Cursor, "Cursor"),
+        new(AnnotationTool.Click, "Click"),
+        new(AnnotationTool.KeyboardBadge, "Keyboard badge"),
+        new(AnnotationTool.CodeFrame, "Code frame"),
+        new(AnnotationTool.TerminalFrame, "Terminal frame"),
+        new(AnnotationTool.BrowserFrame, "Browser frame"),
+        new(AnnotationTool.Braces, "Braces"),
+        new(AnnotationTool.Crosshair, "Crosshair"),
+        new(AnnotationTool.NumberedStep, "Numbered step"),
+        new(AnnotationTool.Spotlight, "Spotlight"),
         new(AnnotationTool.Text, "Text"),
+    ];
+}
+
+public sealed record AnnotationFadeOption(int Seconds, string Label)
+{
+    public override string ToString() => Label;
+
+    public static readonly IReadOnlyList<AnnotationFadeOption> All =
+    [
+        new(0, "Persistent"),
+        new(3, "Fade after 3 seconds"),
+        new(5, "Fade after 5 seconds"),
+        new(10, "Fade after 10 seconds"),
     ];
 }
 
@@ -163,6 +228,7 @@ public sealed class RecordingSettings
 
     public bool CaptureCursor { get; set; } = true;
     public CursorStyle CursorStyle { get; set; } = CursorStyle.SystemDefault;
+    public CursorSettings Cursor { get; set; } = new();
 
     public bool MouseTrackingZoomEnabled { get; set; } = false;
     public double ZoomFactor { get; set; } = 2.0;

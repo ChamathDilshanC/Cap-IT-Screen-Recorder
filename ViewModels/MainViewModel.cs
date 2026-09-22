@@ -47,6 +47,7 @@ public partial class MainViewModel : BaseViewModel
     public ObservableCollection<AudioDeviceOption> Microphones { get; } = [];
     public ObservableCollection<WindowInfo> Windows { get; } = [];
     public ObservableCollection<WebcamDeviceOption> Webcams { get; } = [];
+    public ObservableCollection<RecordingPresetOption> Presets { get; } = [];
 
     public IReadOnlyList<CaptureTargetKindOption> CaptureTargetKindOptions { get; } = CaptureTargetKindOption.All;
     public IReadOnlyList<int> FpsOptions { get; } = [15, 24, 30, 60];
@@ -172,6 +173,8 @@ public partial class MainViewModel : BaseViewModel
     public IReadOnlyList<AnnotationToolOption> AnnotationToolOptions { get; } = AnnotationToolOption.All;
     [ObservableProperty] private AnnotationToolOption _selectedAnnotationTool = AnnotationToolOption.All[0];
     public string SelectedAnnotationToolLabel => $"Current tool: {SelectedAnnotationTool.Label}";
+    public IReadOnlyList<AnnotationFadeOption> AnnotationFadeOptions { get; } = AnnotationFadeOption.All;
+    [ObservableProperty] private AnnotationFadeOption _selectedAnnotationFade = AnnotationFadeOption.All[0];
     private bool _syncingAnnotationFromToolbar;
 
     [ObservableProperty] private int _fps = 30;
@@ -181,6 +184,11 @@ public partial class MainViewModel : BaseViewModel
     [ObservableProperty] private OutputContainer _selectedContainer = OutputContainer.Mp4;
     [ObservableProperty] private ResolutionOption _selectedResolution = ResolutionOption.All[0];
     [ObservableProperty] private string _outputDirectory = new RecordingSettings().OutputDirectory;
+    [ObservableProperty] private RecordingPresetOption? _selectedPreset;
+    [ObservableProperty] private string _newPresetName = "";
+    private bool _applyingPreset;
+    public bool CanDeleteSelectedPreset => SelectedPreset is { IsBuiltIn: false };
+    public bool CanOverwriteSelectedPreset => CanDeleteSelectedPreset;
 
     // The yuv444p "Maximize text clarity" path only exists for libx264 (Auto or SoftwareX264) — see
     // FFmpegEncoderService.BuildEncoderTuning.
@@ -410,6 +418,12 @@ public partial class MainViewModel : BaseViewModel
         try
         {
             var s = _settingsService.Load();
+            Presets.Clear();
+            foreach (var preset in RecordingPreset.BuiltIn)
+                Presets.Add(new RecordingPresetOption(preset.Clone(), true));
+            foreach (var preset in s.CustomPresets ?? [])
+                if (!string.IsNullOrWhiteSpace(preset.Name) && Presets.All(p => !p.Name.Equals(preset.Name, StringComparison.OrdinalIgnoreCase)))
+                    Presets.Add(new RecordingPresetOption(preset, false));
             if (s.WebcamDeviceId is not null)
             {
                 var match = Webcams.FirstOrDefault(w => w.Id == s.WebcamDeviceId);
@@ -481,6 +495,7 @@ public partial class MainViewModel : BaseViewModel
             SelectedAnnotationColor = AnnotationColorOptions.FirstOrDefault(c => c.Label == s.AnnotationColorLabel) ?? SelectedAnnotationColor;
             AnnotationStrokeThickness = s.AnnotationStrokeThickness > 0 ? s.AnnotationStrokeThickness : AnnotationStrokeThickness;
             SelectedAnnotationTool = AnnotationToolOptions.FirstOrDefault(t => t.Label == s.AnnotationToolLabel) ?? SelectedAnnotationTool;
+            SelectedAnnotationFade = AnnotationFadeOptions.FirstOrDefault(t => t.Seconds == s.AnnotationFadeSeconds) ?? SelectedAnnotationFade;
             MaximizeTextClarity = s.MaximizeTextClarity;
             if (!string.IsNullOrWhiteSpace(s.OutputDirectory)) OutputDirectory = s.OutputDirectory;
         }
@@ -503,6 +518,7 @@ public partial class MainViewModel : BaseViewModel
         Resolution = SelectedResolution.Value,
         CaptureCursor = CaptureCursor,
         CursorStyle = SelectedCursorStyle.Value,
+        Cursor = new CursorSettings { Enabled = CaptureCursor, Style = SelectedCursorStyle.Value },
         CaptureSystemAudio = CaptureSystemAudio,
         CaptureMicrophone = CaptureMicrophone,
         MicrophoneDeviceId = SelectedMicrophone?.Id,
@@ -520,8 +536,93 @@ public partial class MainViewModel : BaseViewModel
         AnnotationColorLabel = SelectedAnnotationColor.Label,
         AnnotationStrokeThickness = AnnotationStrokeThickness,
         AnnotationToolLabel = SelectedAnnotationTool.Label,
+        AnnotationFadeSeconds = SelectedAnnotationFade.Seconds,
         MaximizeTextClarity = MaximizeTextClarity,
         OutputDirectory = OutputDirectory,
+        CustomPresets = Presets.Where(p => !p.IsBuiltIn).Select(p => p.Preset.Clone()).ToList(),
+    };
+
+    [RelayCommand]
+    private void ApplySelectedPreset()
+    {
+        if (SelectedPreset is null) return;
+        var p = SelectedPreset.Preset;
+        _applyingPreset = true;
+        _isLoadingSettings = true;
+        try
+        {
+            Fps = FpsOptions.Contains(p.Fps) ? p.Fps : Fps;
+            SelectedResolution = ResolutionOptions.FirstOrDefault(x => x.Value == p.Resolution) ?? SelectedResolution;
+            CaptureCursor = p.CaptureCursor;
+            SelectedCursorStyle = CursorStyleOptions.FirstOrDefault(x => x.Value == p.CursorStyle) ?? SelectedCursorStyle;
+            MouseTrackingZoomEnabled = p.MouseTrackingZoomEnabled;
+            SelectedZoomLevel = ZoomLevelOptions.FirstOrDefault(x => x.Factor == p.ZoomFactor) ?? SelectedZoomLevel;
+            ZoomOnClickOnly = p.ZoomOnClickOnly;
+            KeystrokeOverlayEnabled = p.KeystrokeOverlayEnabled;
+            WebcamEnabled = p.WebcamEnabled;
+            CaptureSystemAudio = p.CaptureSystemAudio;
+            CaptureMicrophone = p.CaptureMicrophone;
+            EnableMicNoiseSuppression = p.EnableMicNoiseSuppression;
+            AnnotationsEnabled = p.AnnotationsEnabled;
+            SelectedAnnotationColor = AnnotationColorOptions.FirstOrDefault(x => x.Label == p.AnnotationColorLabel) ?? SelectedAnnotationColor;
+            AnnotationStrokeThickness = p.AnnotationStrokeThickness > 0 ? p.AnnotationStrokeThickness : AnnotationStrokeThickness;
+            SelectedAnnotationTool = AnnotationToolOptions.FirstOrDefault(x => x.Label == p.AnnotationToolLabel) ?? SelectedAnnotationTool;
+            SelectedAnnotationFade = AnnotationFadeOptions.FirstOrDefault(x => x.Seconds == p.AnnotationFadeSeconds) ?? SelectedAnnotationFade;
+            SpotlightEnabled = p.SpotlightEnabled;
+            SpotlightRadius = p.SpotlightRadius;
+            ClickRipplesEnabled = p.ClickRipplesEnabled;
+            MaximizeTextClarity = p.MaximizeTextClarity;
+        }
+        finally
+        {
+            _isLoadingSettings = false;
+            _applyingPreset = false;
+        }
+        FlushSettings();
+        StatusMessage = $"Preset applied: {p.Name}";
+    }
+
+    [RelayCommand]
+    private void SaveCustomPreset()
+    {
+        var name = NewPresetName.Trim();
+        if (string.IsNullOrWhiteSpace(name)) return;
+        if (Presets.Any(p => p.IsBuiltIn && p.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
+        {
+            StatusMessage = "Built-in presets cannot be overwritten. Choose another name.";
+            return;
+        }
+        var existing = Presets.FirstOrDefault(p => !p.IsBuiltIn && p.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+        var option = new RecordingPresetOption(BuildCurrentPreset(name), false);
+        if (existing is null) Presets.Add(option);
+        else Presets[Presets.IndexOf(existing)] = option;
+        SelectedPreset = option;
+        NewPresetName = "";
+        FlushSettings();
+        StatusMessage = $"Preset saved: {name}";
+    }
+
+    [RelayCommand]
+    private void DeleteSelectedPreset()
+    {
+        if (SelectedPreset is not { IsBuiltIn: false } selected) return;
+        Presets.Remove(selected);
+        SelectedPreset = null;
+        FlushSettings();
+    }
+
+    private RecordingPreset BuildCurrentPreset(string name) => new()
+    {
+        Name = name, Fps = Fps, Resolution = SelectedResolution.Value, CaptureCursor = CaptureCursor,
+        CursorStyle = SelectedCursorStyle.Value, MouseTrackingZoomEnabled = MouseTrackingZoomEnabled,
+        ZoomFactor = SelectedZoomLevel.Factor, ZoomOnClickOnly = ZoomOnClickOnly,
+        KeystrokeOverlayEnabled = KeystrokeOverlayEnabled, WebcamEnabled = WebcamEnabled,
+        CaptureSystemAudio = CaptureSystemAudio, CaptureMicrophone = CaptureMicrophone,
+        EnableMicNoiseSuppression = EnableMicNoiseSuppression, AnnotationsEnabled = AnnotationsEnabled,
+        AnnotationColorLabel = SelectedAnnotationColor.Label, AnnotationStrokeThickness = AnnotationStrokeThickness,
+        AnnotationToolLabel = SelectedAnnotationTool.Label, AnnotationFadeSeconds = SelectedAnnotationFade.Seconds,
+        SpotlightEnabled = SpotlightEnabled, SpotlightRadius = SpotlightRadius,
+        ClickRipplesEnabled = ClickRipplesEnabled, MaximizeTextClarity = MaximizeTextClarity
     };
 
     /// <summary>Debounced (~400ms) save — called from every setting's On&lt;Prop&gt;Changed partial so a
@@ -732,6 +833,12 @@ public partial class MainViewModel : BaseViewModel
         QueueSaveSettings();
     }
 
+    partial void OnSelectedAnnotationFadeChanged(AnnotationFadeOption value)
+    {
+        _annotations.UpdateFadeSeconds(value.Seconds);
+        QueueSaveSettings();
+    }
+
     /// <summary>A tool / colour / thickness was picked on the on-screen toolbar — mirror it here (for the tab + persistence) without pushing straight back into the overlay.</summary>
     private void OnAnnotationAttributesChangedFromToolbar(Models.AnnotationTool tool, Windows.UI.Color color, double thickness)
     {
@@ -819,6 +926,13 @@ public partial class MainViewModel : BaseViewModel
 
     partial void OnSelectedResolutionChanged(ResolutionOption value) => QueueSaveSettings();
 
+    partial void OnSelectedPresetChanged(RecordingPresetOption? value)
+    {
+        OnPropertyChanged(nameof(CanDeleteSelectedPreset));
+        OnPropertyChanged(nameof(CanOverwriteSelectedPreset));
+        if (value is not null && !_applyingPreset) ApplySelectedPreset();
+    }
+
     partial void OnCaptureSystemAudioChanged(bool value)
     {
         QueueSaveSettings();
@@ -879,7 +993,7 @@ public partial class MainViewModel : BaseViewModel
 
         if (AnnotationsEnabled && IsMonitorCaptureMode && SelectedMonitor is { } monitor)
         {
-            try { _annotations.Arm(monitor, SelectedAnnotationTool.Value, SelectedAnnotationColor.Value, AnnotationStrokeThickness); }
+            try { _annotations.Arm(monitor, SelectedAnnotationTool.Value, SelectedAnnotationColor.Value, AnnotationStrokeThickness, SelectedAnnotationFade.Seconds); }
             catch { /* best effort: annotations are an add-on, never worth failing a recording over */ }
         }
         else
@@ -1135,6 +1249,7 @@ public partial class MainViewModel : BaseViewModel
             EnableMicNoiseSuppression = EnableMicNoiseSuppression,
             CaptureCursor = CaptureCursor,
             CursorStyle = SelectedCursorStyle.Value,
+            Cursor = new CursorSettings { Enabled = CaptureCursor, Style = SelectedCursorStyle.Value },
             MouseTrackingZoomEnabled = MouseTrackingZoomEnabled,
             ZoomFactor = SelectedZoomLevel.Factor,
             ZoomOnClickOnly = ZoomOnClickOnly,

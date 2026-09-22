@@ -44,6 +44,7 @@
                 </ctcontrols:SettingsCard.HeaderIcon>
                 <StackPanel Orientation="Vertical" Spacing="2" HorizontalAlignment="Right">
                     <TextBlock Text="Ctrl + Shift + D  —  toggle Drawing Mode" FontSize="13" />
+                    <TextBlock Text="Ctrl + D  —  duplicate selected object    Delete  —  remove selected" FontSize="13" />
                     <TextBlock Text="Ctrl + Shift + Z  —  undo last stroke" FontSize="13" />
                     <TextBlock Text="Esc  —  clear drawings" FontSize="13" />
                 </StackPanel>
@@ -80,7 +81,7 @@
             </ctcontrols:SettingsCard>
 
             <ctcontrols:SettingsCard Header="Drawing tools"
-                                      Description="A floating toolbar appears on the recorded display while Drawing Mode is on — Pen, Line, Arrow, Rectangle, Ellipse and a click-to-type Text tool, plus the colours and thickness. Drag it anywhere; it never appears in the recording or the live preview, only what you draw with it does."
+                                      Description="The retained drawer supports selection, move, resize handles, duplicate/delete, z-order, dashed strokes, translucent fills, and a practical catalog of basic, diagram, callout, emphasis, tutorial and developer tools. Drag the toolbar anywhere; it never appears in the recording."
                                       Visibility="{x:Bind ViewModel.AnnotationsEnabled, Mode=OneWay}">
                 <ctcontrols:SettingsCard.HeaderIcon>
                     <FontIcon Glyph="&#xE70F;" />
@@ -89,7 +90,15 @@
                            Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             </ctcontrols:SettingsCard>
 
-            <TextBlock Text="While Drawing Mode is on, the overlay captures your clicks — toggle it back off with Ctrl+Shift+D to interact with the apps underneath. With the Text tool, click where you want a label and just type; Enter adds a line, Esc places it."
+            <ctcontrols:SettingsCard Header="Annotation lifetime"
+                                      Description="Choose whether new drawings stay visible or fade automatically after the selected delay."
+                                      Visibility="{x:Bind ViewModel.AnnotationsEnabled, Mode=OneWay}">
+                <ComboBox MinWidth="220"
+                          ItemsSource="{x:Bind ViewModel.AnnotationFadeOptions}"
+                          SelectedItem="{x:Bind ViewModel.SelectedAnnotationFade, Mode=TwoWay}" />
+            </ctcontrols:SettingsCard>
+
+            <TextBlock Text="While Drawing Mode is on, Select / move lets you click objects, drag them, or use corner handles to resize. Ctrl+D duplicates and Delete removes the selected object. Toggle off with Ctrl+Shift+D to interact with apps underneath. With Text, click and type; Enter adds a line, Esc places it."
                        Style="{StaticResource SectionDescriptionText}"
                        Visibility="{x:Bind ViewModel.AnnotationsEnabled, Mode=OneWay}" />
         </StackPanel>
