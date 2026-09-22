@@ -27,6 +27,7 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -152,8 +153,34 @@
             </StackPanel>
         </Border>
 
+        <!-- Presets deliberately live beside the preview: applying one changes several capture
+             options together, while the source selection remains untouched. -->
+        <Border Grid.Row="2" Style="{StaticResource CardStyle}" Padding="12" Margin="0,0,0,16">
+            <Grid ColumnSpacing="10">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0" Spacing="3">
+                    <TextBlock Text="Recording preset" FontWeight="SemiBold" />
+                    <ComboBox ItemsSource="{x:Bind ViewModel.Presets}"
+                              SelectedItem="{x:Bind ViewModel.SelectedPreset, Mode=TwoWay}"
+                              IsEnabled="{x:Bind ViewModel.IsIdle, Mode=OneWay}" />
+                </StackPanel>
+                <TextBox Grid.Column="1" Width="160" PlaceholderText="Custom name"
+                         Text="{x:Bind ViewModel.NewPresetName, Mode=TwoWay}" />
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Bottom">
+                    <Button Content="Save" Command="{x:Bind ViewModel.SaveCustomPresetCommand}"
+                            IsEnabled="{x:Bind ViewModel.IsIdle, Mode=OneWay}" />
+                    <Button Content="Delete" Command="{x:Bind ViewModel.DeleteSelectedPresetCommand}"
+                            IsEnabled="{x:Bind ViewModel.CanDeleteSelectedPreset, Mode=OneWay}" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
         <!-- Live preview -->
-        <Border Grid.Row="2" CornerRadius="12" Background="#FF0B0B0F">
+        <Border Grid.Row="3" CornerRadius="12" Background="#FF0B0B0F">
             <Grid>
                 <Image x:Name="PreviewImage"
                        Stretch="Uniform"
@@ -221,7 +248,7 @@
         </Border>
 
         <!-- Buttons -->
-        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Center" Spacing="14" Margin="0,18,0,0">
+        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Center" Spacing="14" Margin="0,18,0,0">
             <Button Command="{x:Bind ViewModel.StartRecordingCommand}"
                     Style="{StaticResource AccentButtonStyle}"
                     Padding="30,14" CornerRadius="24"
@@ -263,7 +290,7 @@
             </Button>
         </StackPanel>
 
-        <StackPanel Grid.Row="4" HorizontalAlignment="Center" Margin="0,14,0,0" Spacing="2">
+        <StackPanel Grid.Row="5" HorizontalAlignment="Center" Margin="0,14,0,0" Spacing="2">
             <TextBlock Text="Cap-IT Screen Recorder · Developed by Chamath Dilshan"
                        HorizontalAlignment="Center"
                        Foreground="{ThemeResource TextFillColorTertiaryBrush}" FontSize="12" />

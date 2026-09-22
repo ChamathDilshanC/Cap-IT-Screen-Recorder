@@ -51,6 +51,41 @@ Your saved settings are **not** affected by updating. They live in
 `%LocalAppData%\Cap-IT Screen Recorder\settings.json`, outside the install folder — an in-place
 upgrade only overwrites the program files and never runs the uninstaller.
 
+### Recording scenes / presets
+
+The Home tab includes one-click built-in presets for **Tutorial, Coding, Presentation, Gaming, Bug
+Report, and Vertical Reel**. A preset changes capture quality (resolution and FPS), zoom, cursor,
+webcam, audio, and annotation options together; your selected display, window, microphone, and webcam
+devices are preserved. Enter a name and choose **Save** to create a custom preset. Saving an existing
+custom name overwrites it, and **Delete** removes it. Custom presets are stored alongside the other
+preferences in `%LocalAppData%\Cap-IT Screen Recorder\settings.json`.
+
+### Post-record cursor editor
+
+After recording, the Review & Export window retains cursor presentation metadata and exposes controls
+for style, size, smoothing, hide-when-idle, click emphasis, and a cursor trail. The settings are saved
+next to the recording as `<recording>.<extension>.metadata.json` and are carried into MP4 export
+metadata; GIF exports receive the same sidecar metadata. Older recordings without a sidecar continue
+to open and export normally.
+
+The current capture engine composites the cursor into each video frame rather than retaining a separate
+vector cursor track. Consequently, changing these controls after recording updates the retained
+manifest/export metadata, but cannot redraw the already-rasterized cursor in the preview or pixels.
+New capture-time rendering controls can be added later without changing the sidecar format.
+
+### Canvas / Presentation mode
+
+Review & Export includes presentation controls for 16:9, 9:16, 1:1, and 4:5 canvases. Recordings can
+be placed in a floating frame with configurable padding, rounded corners, shadow, and an optional
+device-frame outline. Backgrounds support an image, a solid colour, or a two-colour gradient. An
+optional watermark/logo can be composited in the lower-right corner. These settings are saved in the
+recording metadata sidecar and are applied consistently to MP4 and GIF exports; trim ranges and
+post-record zoom regions remain relative to the original recording timeline.
+
+Cursor settings remain metadata-only because the cursor is rasterized into the captured frames.
+Very large source recordings, unusual FFmpeg builds without the `gradients` filter, or watermark files
+removed before export may require falling back to an image/solid background.
+
 <details>
 <summary><strong>What it actually measures — and where it still does not fit</strong></summary>
 
@@ -261,7 +296,7 @@ that can't lose a leg mid-stream.
 
 ### 🖊️ Live on-screen creativity
 
-- **Live annotations with a real toolbar** — draw over your desktop while recording, on a genuinely transparent, always-on-top, click-through overlay. **Pen, Line, Arrow, Rectangle, Ellipse and a click-to-type Text tool**, with colours, thickness, undo and clear on a draggable floating palette that is hidden from the recording itself. Toggle drawing with **Ctrl+Shift+D** from anywhere, undo with **Ctrl+Shift+Z**, clear with **Esc**
+- **Live annotations with a real toolbar** — draw over your desktop while recording, on a genuinely transparent, always-on-top, click-through overlay. **Pen, Line, Arrow, Rectangle, Ellipse and a click-to-type Text tool**, with colours, thickness, undo and clear on a draggable floating palette that is hidden from the recording itself. New freehand strokes can snap to clean lines, rectangles, ellipses, and arrows, and annotations can be set to remain **Persistent** or fade after **3, 5, or 10 seconds**. Toggle drawing with **Ctrl+Shift+D** from anywhere, undo with **Ctrl+Shift+Z**, clear with **Esc**
 - **Circular webcam PiP** — a round, always-on-top picture-in-picture webcam overlay, composited straight into the recording
 - **Cursor spotlight** — dims everything except a soft-edged circle around the pointer, with a radius you can adjust live, even while recording
 - **Click ripples** — a brief expanding ring on every click, left or right
@@ -276,6 +311,7 @@ that can't lose a leg mid-stream.
 ### ✂️ Post-production, without leaving the app
 
 - **Quick trim & review** — the moment you stop, a review window opens with a scrubbable preview and a dual-thumb trim range
+- **Post-recording camera control** — add retained manual zoom regions in the review timeline, enable/disable them, move their start/end handles, and edit focus and scale. Regions are saved beside the recording (`.zoom.json`) and are applied to MP4 and GIF exports after the live smart-zoom pass, so existing automatic zoom remains intact
 - **High-quality GIF export** — a proper two-pass `palettegen`/`paletteuse` pipeline (not a naive single-pass conversion), with live progress, so shareable GIFs look like the source instead of banded and dithered
 - Keep the full MP4, export a trimmed GIF, or discard the take — all from the same screen
 
@@ -400,6 +436,9 @@ whenever **Annotations** is switched on.
 |---|---|
 | <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>D</kbd> | Toggle drawing mode on/off |
 | <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>Z</kbd> | Undo the last stroke |
+| Hold <kbd>Shift</kbd> while drawing | Snap rectangles/circles to equal dimensions; freehand shapes become perfect squares/circles |
+| Hold <kbd>Alt</kbd> while drawing | Resize a shape from its center |
+| <kbd>Ctrl</kbd> + <kbd>D</kbd> | Duplicate the selected annotation |
 | <kbd>Esc</kbd> | Clear all drawings |
 
 While drawing mode is **on**, the overlay captures your clicks. Toggle it back off to interact with
