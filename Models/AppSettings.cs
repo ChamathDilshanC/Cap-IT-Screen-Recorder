@@ -10,6 +10,7 @@
 /// </summary>
 public sealed class AppSettings
 {
+    public AppTheme Theme { get; set; } = AppTheme.System;
     public CaptureTargetKind CaptureTargetKind { get; set; } = CaptureTargetKind.Monitor;
     public string? MonitorDeviceName { get; set; }
 

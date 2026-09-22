@@ -1,6 +1,9 @@
 using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
+using ScreenRecorderApp.Models;
+using ScreenRecorderApp.ViewModels;
+using System.ComponentModel;
 using Windows.Graphics;
 using WinRT.Interop;
 
@@ -20,6 +23,11 @@ public sealed partial class MainWindow : Window
 
         Title = "Cap-IT Screen Recorder";
         RootFrame.Navigate(typeof(ShellPage));
+        if (RootFrame.Content is ShellPage shell)
+        {
+            shell.ViewModel.PropertyChanged += OnViewModelPropertyChanged;
+            ApplyTheme(shell.ViewModel.SelectedAppTheme.Value);
+        }
         Closed += OnClosed;
 
         try
@@ -56,7 +64,30 @@ public sealed partial class MainWindow : Window
     // the live audio/preview capture threads so the process actually exits.
     private void OnClosed(object sender, WindowEventArgs args)
     {
-        (RootFrame.Content as ShellPage)?.ViewModel.Shutdown();
+        if (RootFrame.Content is ShellPage shell)
+        {
+            shell.ViewModel.PropertyChanged -= OnViewModelPropertyChanged;
+            shell.ViewModel.Shutdown();
+        }
+    }
+
+    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(MainViewModel.SelectedAppTheme) &&
+            sender is MainViewModel viewModel)
+        {
+            ApplyTheme(viewModel.SelectedAppTheme.Value);
+        }
+    }
+
+    private void ApplyTheme(AppTheme theme)
+    {
+        RootFrame.RequestedTheme = theme switch
+        {
+            AppTheme.Light => ElementTheme.Light,
+            AppTheme.Dark => ElementTheme.Dark,
+            _ => ElementTheme.Default,
+        };
     }
 
     private void OnAppWindowChanged(AppWindow sender, AppWindowChangedEventArgs args)

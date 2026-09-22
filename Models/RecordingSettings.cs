@@ -1,5 +1,24 @@
 ﻿namespace ScreenRecorderApp.Models;
 
+public sealed record AppThemeOption(AppTheme Value, string Label)
+{
+    public override string ToString() => Label;
+
+    public static readonly IReadOnlyList<AppThemeOption> All =
+    [
+        new(AppTheme.System, "System default"),
+        new(AppTheme.Light, "Light"),
+        new(AppTheme.Dark, "Dark"),
+    ];
+}
+
+public enum AppTheme
+{
+    System,
+    Light,
+    Dark,
+}
+
 /// <summary>Pairs a <see cref="CaptureTargetKind"/> with a friendly label for display in a ComboBox.</summary>
 public sealed record CaptureTargetKindOption(CaptureTargetKind Value, string Label)
 {

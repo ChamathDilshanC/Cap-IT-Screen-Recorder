@@ -37,6 +37,8 @@ public sealed partial class SourcePickerDialog : ContentDialog
     // that a Rescan has already thrown away.
     private bool _refreshInFlight;
     private bool _closed;
+    private readonly MonitorInfo? _initialMonitor;
+    private readonly WindowInfo? _initialWindow;
 
     // The two GridViews hold one logical selection between them, so selecting in one has to clear the
     // other — which raises its SelectionChanged in turn. This breaks that loop.
@@ -54,6 +56,8 @@ public sealed partial class SourcePickerDialog : ContentDialog
     public SourcePickerDialog(MainViewModel viewModel)
     {
         _viewModel = viewModel;
+        _initialMonitor = viewModel.SelectedMonitor;
+        _initialWindow = viewModel.SelectedWindow;
         InitializeComponent();
 
         _refreshTimer = _dispatcherQueue.CreateTimer();
@@ -79,6 +83,10 @@ public sealed partial class SourcePickerDialog : ContentDialog
         _closed = true;
         _refreshTimer.Stop();
         _thumbnails.Dispose();
+        if (ConfirmedSource is null)
+        {
+            _viewModel.PreviewCaptureSource(_initialMonitor, _initialWindow);
+        }
     }
 
     private void OnRescanClick(object sender, RoutedEventArgs e) => Rescan();
@@ -122,6 +130,7 @@ public sealed partial class SourcePickerDialog : ContentDialog
         _syncingSelection = true;
         WindowsGrid.SelectedItem = null;
         _syncingSelection = false;
+        _viewModel.PreviewCaptureSource((ScreensGrid.SelectedItem as CaptureSourceItem)?.Monitor, null);
         UpdateSelectionSummary();
     }
 
@@ -131,6 +140,7 @@ public sealed partial class SourcePickerDialog : ContentDialog
         _syncingSelection = true;
         ScreensGrid.SelectedItem = null;
         _syncingSelection = false;
+        _viewModel.PreviewCaptureSource(null, (WindowsGrid.SelectedItem as CaptureSourceItem)?.Window);
         UpdateSelectionSummary();
     }
 

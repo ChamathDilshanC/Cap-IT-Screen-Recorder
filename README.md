@@ -286,7 +286,7 @@ that can't lose a leg mid-stream.
 
 ### 🎥 Capture, sharply
 
-- **Visual source picker** — a gallery of live thumbnails for every display and window; pick by sight, then **Select and record** in one step
+- **Visual source picker** — a gallery of live thumbnails for every display and window; selecting a tile immediately drives the Home live preview, and **Select** commits it (or **Select and record** starts recording in one step)
 - **GPU-accelerated monitor capture** via the DXGI Desktop Duplication API — no screen-scraping, no per-frame WinRT overhead
 - **Single-window capture** via Windows Graphics Capture, with overlapping windows correctly excluded — record one app even while other things sit on top of it
 - **Catmull-Rom Smart Animated Zoom** — eases into your chosen zoom level only while you're actively moving the mouse, clicking, or typing, on a critically damped spring that accelerates and settles smoothly with no overshoot (an After Effects-style Easy Ease, not a snap or a lurch). Pans to the real text caret while you type instead of a stale mouse position, holds steady through cursor jitter via a pan dead zone, and can be set to fire on **mouse clicks only**. Resamples with a 16-tap Catmull-Rom kernel — sharper than bilinear, with none of the haloing a naive sharpen filter adds on top of text
@@ -318,7 +318,8 @@ that can't lose a leg mid-stream.
 ### 🧭 A UI that stays out of your way
 
 - **Eight-tab NavigationView shell** — Home, Capture, Smart Tracking, Webcam, Annotations, Effects, Audio, Settings; each a focused, card-based Fluent Design page
-- **Live preview** of exactly what's being captured, from the moment a source is selected — not just while recording
+- **Live preview** of exactly what's being captured, from the moment a source is selected — not just while recording; picker tiles and the Capture-tab dropdowns both update it, while window capture remains window-only
+- **Light, Dark, or System default theme** — choose the app theme on the Settings tab; the selection is saved in `%LocalAppData%\Cap-IT Screen Recorder\settings.json` and applied to the whole window
 - **Pause / resume, two ways** — **Pause Video** stops the recording outright (the file gets no longer while you're paused), **Pause Screen** freezes just the picture while your voice and the timeline keep running
 - **Live settings** — cursor style, smart zoom (including its **click-only** trigger mode), keystroke overlay, click ripples, spotlight, the webcam PiP **and your audio sources** can all be changed mid-recording
 - **In-app updates** — checks GitHub Releases on startup and can download and install a new version in place
@@ -416,7 +417,9 @@ your existing install, and relaunches the app. Nothing else to do.
 ## 🚀 Quick start
 
 1. **Pick a source.** Hit **Choose source** on the Home tab and click a display or window tile — every
-   tile is live, so you can see exactly what you're about to capture.
+   tile is live, and the Home preview updates as you browse. Press **Select** to keep the source, or
+   cancel to restore the previous preview. The same preview behavior applies to the source dropdowns
+   on the Capture tab.
 2. **Check your audio.** The meters next to the timer should move when you speak or play something. If
    one says *unavailable*, pick a different device on the **Audio** tab.
 3. **Turn on what you need.** Smart zoom (**Smart Tracking**), webcam PiP (**Webcam**), spotlight and
@@ -424,6 +427,8 @@ your existing install, and relaunches the app. Nothing else to do.
 4. **Record.** Press **Start Recording** — or use **Select and record** straight from the picker.
 5. **Review.** Stopping opens the review window: trim the range, then **Keep MP4**, **Export GIF**, or
    **Discard**.
+6. **Choose a theme.** Open **Settings → Appearance → Theme** and select **Light**, **Dark**, or
+   **System default**. The choice applies immediately and persists across launches.
 
 ---
 

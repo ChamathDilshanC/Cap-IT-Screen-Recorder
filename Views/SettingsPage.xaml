@@ -17,9 +17,23 @@
         <StackPanel Padding="32,28" Spacing="18" HorizontalAlignment="Stretch">
             <StackPanel Spacing="4">
                 <TextBlock Text="Settings" Style="{StaticResource TitleTextBlockStyle}" />
-                <TextBlock Text="Where finished recordings are saved. Capture and audio preferences moved to their own Capture and Audio tabs."
+                <TextBlock Text="Customize the app theme and where finished recordings are saved. Capture and audio preferences moved to their own tabs."
                            Style="{StaticResource SectionDescriptionText}" />
             </StackPanel>
+
+            <!-- Appearance -->
+            <ctcontrols:SettingsExpander Header="Appearance" Description="Choose how Cap-IT looks" IsExpanded="True">
+                <ctcontrols:SettingsExpander.HeaderIcon>
+                    <FontIcon Glyph="&#xE790;" />
+                </ctcontrols:SettingsExpander.HeaderIcon>
+                <ctcontrols:SettingsExpander.Items>
+                    <ctcontrols:SettingsCard Header="Theme" Description="System default follows Windows' app theme">
+                        <ComboBox MinWidth="180"
+                                  ItemsSource="{x:Bind ViewModel.AppThemeOptions}"
+                                  SelectedItem="{x:Bind ViewModel.SelectedAppTheme, Mode=TwoWay}" />
+                    </ctcontrols:SettingsCard>
+                </ctcontrols:SettingsExpander.Items>
+            </ctcontrols:SettingsExpander>
 
             <!-- Output -->
             <ctcontrols:SettingsExpander Header="Output" Description="Where finished recordings are saved" IsExpanded="True">

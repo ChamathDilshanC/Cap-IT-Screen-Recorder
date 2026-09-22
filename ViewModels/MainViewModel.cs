@@ -56,6 +56,8 @@ public partial class MainViewModel : BaseViewModel
     public IReadOnlyList<ResolutionOption> ResolutionOptions { get; } = ResolutionOption.All;
     public IReadOnlyList<CursorStyleOption> CursorStyleOptions { get; } = CursorStyleOption.All;
     public IReadOnlyList<ZoomLevelOption> ZoomLevelOptions { get; } = ZoomLevelOption.All;
+    public IReadOnlyList<AppThemeOption> AppThemeOptions { get; } = AppThemeOption.All;
+    [ObservableProperty] private AppThemeOption _selectedAppTheme = AppThemeOption.All[0];
 
     [ObservableProperty] private CaptureTargetKindOption _selectedCaptureTargetKind = CaptureTargetKindOption.All[0];
     public bool IsWindowCaptureMode => SelectedCaptureTargetKind.Value == CaptureTargetKind.Window;
@@ -418,6 +420,7 @@ public partial class MainViewModel : BaseViewModel
         try
         {
             var s = _settingsService.Load();
+            SelectedAppTheme = AppThemeOptions.FirstOrDefault(t => t.Value == s.Theme) ?? AppThemeOptions[0];
             Presets.Clear();
             foreach (var preset in RecordingPreset.BuiltIn)
                 Presets.Add(new RecordingPresetOption(preset.Clone(), true));
@@ -507,6 +510,7 @@ public partial class MainViewModel : BaseViewModel
 
     private AppSettings BuildAppSettings() => new()
     {
+        Theme = SelectedAppTheme.Value,
         CaptureTargetKind = SelectedCaptureTargetKind.Value,
         MonitorDeviceName = SelectedMonitor?.DeviceName,
         TargetWindowTitle = SelectedWindow?.Title,
@@ -688,6 +692,8 @@ public partial class MainViewModel : BaseViewModel
         SyncAnnotationOverlay(); // the overlay has to follow the display it's annotating
         QueueSaveSettings();
     }
+
+    partial void OnSelectedAppThemeChanged(AppThemeOption value) => QueueSaveSettings();
 
     partial void OnSelectedWindowChanged(WindowInfo? value)
     {
@@ -1012,6 +1018,21 @@ public partial class MainViewModel : BaseViewModel
         var targetKind = SelectedCaptureTargetKind.Value;
         var monitor = isWindowMode ? null : SelectedMonitor;
         var window = isWindowMode ? SelectedWindow : null;
+        StartPreview(targetKind, monitor, window);
+    }
+
+    /// <summary>
+    /// Shows a picker candidate in the live preview without changing the committed recording target.
+    /// The picker uses this while the dialog is open; <see cref="ApplyCaptureSource"/> commits the choice.
+    /// </summary>
+    public void PreviewCaptureSource(MonitorInfo? monitor, WindowInfo? window)
+    {
+        if (!IsIdle || (monitor is null && window is null)) return;
+        StartPreview(window is null ? CaptureTargetKind.Monitor : CaptureTargetKind.Window, monitor, window);
+    }
+
+    private void StartPreview(CaptureTargetKind targetKind, MonitorInfo? monitor, WindowInfo? window)
+    {
         var cursor = CaptureCursor;
         var cursorStyle = SelectedCursorStyle.Value;
         var zoomEnabled = MouseTrackingZoomEnabled;
