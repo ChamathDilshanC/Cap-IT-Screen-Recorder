@@ -272,6 +272,13 @@ public sealed class VideoCaptureService : IDisposable
     private WebcamCaptureService? _webcam;
     private string? _webcamDeviceId;
     private string _webcamTemplate = "circle";
+    private double _webcamBrightness;
+    private double _webcamContrast = 1;
+    private double _webcamSaturation = 1;
+    private double _webcamWarmth;
+    private double _webcamSmoothing;
+
+    public event Action<byte[], int, int>? WebcamFrameReady;
 
     // Raw pointer-shape scratch buffer for GetFramePointerShape(), grown as needed and reused across
     // shape updates; the decoded/converted result is cached separately since the shape only changes
@@ -2179,22 +2186,38 @@ public sealed class VideoCaptureService : IDisposable
     /// "did anything actually change" themselves — e.g. RestartPreviewIfIdle can call this unconditionally
     /// every time any setting changes, the same way it already does for Prepare()'s parameters.
     /// </summary>
-    public void SetWebcam(bool enabled, string? deviceId, string template = "circle")
+    public void SetWebcam(bool enabled, string? deviceId, string template = "circle",
+        double brightness = 0, double contrast = 1, double saturation = 1,
+        double warmth = 0, double smoothing = 0)
     {
         lock (_webcamLifecycleLock)
         {
             if (enabled && deviceId is not null)
             {
-                if (_webcam is not null && _webcamDeviceId == deviceId && _webcamTemplate == template) return;
+                _webcamBrightness = brightness;
+                _webcamContrast = contrast;
+                _webcamSaturation = saturation;
+                _webcamWarmth = warmth;
+                _webcamSmoothing = smoothing;
+                if (_webcam is not null && _webcamDeviceId == deviceId && _webcamTemplate == template)
+                {
+                    _webcam.UpdateAdjustments(brightness, contrast, saturation, warmth, smoothing);
+                    return;
+                }
 
                 var old = _webcam;
                 var webcam = new WebcamCaptureService();
                 _webcam = webcam;
                 _webcamDeviceId = deviceId;
                 _webcamTemplate = template;
-                _ = webcam.StartAsync(deviceId, template).ContinueWith(_ => { /* best effort: see StartAsync's own remarks */ },
+                webcam.FrameReady += OnWebcamFrameReady;
+                _ = webcam.StartAsync(deviceId, template, brightness, contrast, saturation, warmth, smoothing).ContinueWith(_ => { /* best effort: see StartAsync's own remarks */ },
                     TaskContinuationOptions.OnlyOnFaulted);
-                if (old is not null) _ = old.StopAsync();
+                if (old is not null)
+                {
+                    old.FrameReady -= OnWebcamFrameReady;
+                    _ = old.StopAsync();
+                }
             }
             else
             {
@@ -2210,8 +2233,12 @@ public sealed class VideoCaptureService : IDisposable
         _webcam = null;
         _webcamDeviceId = null;
         _webcamTemplate = "circle";
+        if (old is not null) old.FrameReady -= OnWebcamFrameReady;
         if (old is not null) _ = old.StopAsync();
     }
+
+    private void OnWebcamFrameReady(byte[] frame, int width, int height) =>
+        WebcamFrameReady?.Invoke(frame, width, height);
 
     /// <summary>Straight-alpha blends a small BGRA overlay bitmap onto <paramref name="frame"/> at a fixed position — the keystroke-overlay counterpart to <see cref="BlendCursorIcon"/>, without that method's cursor-specific invert-alpha handling.</summary>
     private static void BlendOverlay(byte[] frame, int frameWidth, int frameHeight, byte[] overlay, int overlayWidth, int overlayHeight, int originX, int originY)

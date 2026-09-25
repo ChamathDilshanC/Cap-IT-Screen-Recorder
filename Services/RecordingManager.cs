@@ -70,6 +70,12 @@ public sealed class RecordingManager : IDisposable
         remove => _video.CaptureTargetLost -= value;
     }
 
+    public event Action<byte[], int, int>? WebcamFrameReady
+    {
+        add => _video.WebcamFrameReady += value;
+        remove => _video.WebcamFrameReady -= value;
+    }
+
     private DateTime _startTimeUtc;
     private TimeSpan _pausedAccum;
     private DateTime? _pauseStartedUtc;
@@ -129,7 +135,9 @@ public sealed class RecordingManager : IDisposable
         bool zoomEnabled = false, double zoomFactor = 2.0, bool keystrokeOverlayEnabled = false,
         bool webcamEnabled = false, string? webcamDeviceId = null,
         bool spotlightEnabled = false, double spotlightRadius = 180, bool clickRipplesEnabled = false,
-        bool zoomOnClickOnly = false, string webcamTemplate = "circle")
+        bool zoomOnClickOnly = false, string webcamTemplate = "circle",
+        double webcamBrightness = 0, double webcamContrast = 1, double webcamSaturation = 1,
+        double webcamWarmth = 0, double webcamSmoothing = 0)
     {
         // Same single-authority rule StartAsync applies — the chosen target kind decides, so the preview
         // can never end up showing a different source than a recording started from the same selection.
@@ -144,7 +152,8 @@ public sealed class RecordingManager : IDisposable
             // internally (matching device id + enabled state), so this can run unconditionally on every
             // call without ever tearing down and re-initializing the camera just because some *other*
             // setting (monitor, cursor style, zoom...) changed. See VideoCaptureService.SetWebcam.
-            _video.SetWebcam(webcamEnabled, webcamDeviceId, webcamTemplate);
+            _video.SetWebcam(webcamEnabled, webcamDeviceId, webcamTemplate,
+                webcamBrightness, webcamContrast, webcamSaturation, webcamWarmth, webcamSmoothing);
 
             // Unlike the webcam, spotlight/ripples have no external device to keep alive across a
             // restart (no camera, no privacy LED) — they're plain Prepare() parameters like zoom/cursor
@@ -236,7 +245,10 @@ public sealed class RecordingManager : IDisposable
     }
 
     /// <summary>Starts/stops/switches the webcam PiP overlay live. Already independent of the screen-capture engine's lifecycle — see VideoCaptureService.SetWebcam.</summary>
-    public void UpdateWebcam(bool enabled, string? deviceId, string template = "circle") => _video.SetWebcam(enabled, deviceId, template);
+    public void UpdateWebcam(bool enabled, string? deviceId, string template = "circle",
+        double brightness = 0, double contrast = 1, double saturation = 1,
+        double warmth = 0, double smoothing = 0) =>
+        _video.SetWebcam(enabled, deviceId, template, brightness, contrast, saturation, warmth, smoothing);
 
     /// <summary>
     /// Whether system-audio / microphone / mic-device changes can be applied to the recording that's
@@ -306,7 +318,9 @@ public sealed class RecordingManager : IDisposable
             // Independent of the screen-capture Prepare() below — a no-op if the preview already has the
             // right camera running, so starting an actual recording doesn't interrupt an already-live PiP
             // feed. See VideoCaptureService.SetWebcam.
-            _video.SetWebcam(settings.WebcamEnabled, settings.WebcamDeviceId, settings.WebcamTemplate);
+            _video.SetWebcam(settings.WebcamEnabled, settings.WebcamDeviceId, settings.WebcamTemplate,
+                settings.WebcamBrightness, settings.WebcamContrast, settings.WebcamSaturation,
+                settings.WebcamWarmth, settings.WebcamSmoothing);
 
             // Prepare (but don't start) capture first so we know the real resolution.
             await Task.Run(() => { lock (_videoLock) { _video.Prepare(monitor, window, settings.CaptureCursor, settings.CursorStyle,

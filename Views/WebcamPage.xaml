@@ -39,6 +39,38 @@
                             </Button>
                         </StackPanel>
                     </ctcontrols:SettingsCard>
+                    <ctcontrols:SettingsCard Header="Live camera preview" Description="This is the same processed webcam image that will be placed on your recording.">
+                        <Border Width="320" Height="260" Background="#FF0B0B0F" CornerRadius="12"
+                                HorizontalAlignment="Left" Padding="8">
+                            <Grid>
+                                <Image Source="{x:Bind ViewModel.WebcamPreviewSource, Mode=OneWay}"
+                                       Stretch="Uniform" />
+                                <TextBlock Text="{x:Bind ViewModel.WebcamPreviewStatus, Mode=OneWay}"
+                                           TextWrapping="Wrap" TextAlignment="Center"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Grid>
+                        </Border>
+                    </ctcontrols:SettingsCard>
+                    <ctcontrols:SettingsCard Header="Camera adjustments" Description="Tune the picture before recording. Changes apply live to the preview and recording overlay.">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="Brightness" />
+                            <Slider Minimum="-1" Maximum="1" StepFrequency="0.01"
+                                    Value="{x:Bind ViewModel.WebcamBrightness, Mode=TwoWay}" />
+                            <TextBlock Text="Contrast" />
+                            <Slider Minimum="0.5" Maximum="1.5" StepFrequency="0.01"
+                                    Value="{x:Bind ViewModel.WebcamContrast, Mode=TwoWay}" />
+                            <TextBlock Text="Saturation" />
+                            <Slider Minimum="0" Maximum="2" StepFrequency="0.01"
+                                    Value="{x:Bind ViewModel.WebcamSaturation, Mode=TwoWay}" />
+                            <TextBlock Text="Warmth" />
+                            <Slider Minimum="-1" Maximum="1" StepFrequency="0.01"
+                                    Value="{x:Bind ViewModel.WebcamWarmth, Mode=TwoWay}" />
+                            <TextBlock Text="Beauty smoothing" />
+                            <Slider Minimum="0" Maximum="1" StepFrequency="0.01"
+                                    Value="{x:Bind ViewModel.WebcamSmoothing, Mode=TwoWay}" />
+                        </StackPanel>
+                    </ctcontrols:SettingsCard>
                     <ctcontrols:SettingsCard Header="Webcam template" Description="Choose a frame style. The preview below shows how it will look in the recording.">
                         <StackPanel Spacing="10">
                             <ComboBox MinWidth="260"

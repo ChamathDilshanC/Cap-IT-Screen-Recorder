@@ -42,15 +42,25 @@ public sealed class WebcamCaptureService
     private byte[]? _rawFrameBuffer;
     private byte[]? _cachedOverlay;
     private bool _stopped;
+    private double _brightness;
+    private double _contrast = 1;
+    private double _saturation = 1;
+    private double _warmth;
+    private double _smoothing;
+
+    public event Action<byte[], int, int>? FrameReady;
 
     /// <summary>
     /// Initializes the camera and starts delivering frames. Throws on failure (bad device id, camera
     /// already in use, permission denied) — callers should treat this the same "best effort, don't take
     /// down the recording over it" way RestartPreviewIfIdle already treats preview failures.
     /// </summary>
-    public async Task StartAsync(string deviceId, string template = "circle")
+    public async Task StartAsync(string deviceId, string template = "circle",
+        double brightness = 0, double contrast = 1, double saturation = 1,
+        double warmth = 0, double smoothing = 0)
     {
         _template = template;
+        UpdateAdjustments(brightness, contrast, saturation, warmth, smoothing);
         var mediaCapture = new MediaCapture();
         await mediaCapture.InitializeAsync(new MediaCaptureInitializationSettings
         {
@@ -100,6 +110,18 @@ public sealed class WebcamCaptureService
 
             _mediaCapture = mediaCapture;
             _frameReader = frameReader;
+        }
+    }
+
+    public void UpdateAdjustments(double brightness, double contrast, double saturation, double warmth, double smoothing)
+    {
+        lock (_lock)
+        {
+            _brightness = Math.Clamp(brightness, -1, 1);
+            _contrast = Math.Clamp(contrast, 0.5, 1.5);
+            _saturation = Math.Clamp(saturation, 0, 2);
+            _warmth = Math.Clamp(warmth, -1, 1);
+            _smoothing = Math.Clamp(smoothing, 0, 1);
         }
     }
 
@@ -186,9 +208,54 @@ public sealed class WebcamCaptureService
         VideoCaptureService.ResampleCatmullRomInto(_rawFrameBuffer, srcW, srcH, cropX, cropY, cropSize, cropSize,
             masked, Diameter, Diameter, 0, 0, Diameter, Diameter);
 
+        ApplyBeautyAdjustments(masked, _brightness, _contrast, _saturation, _warmth, _smoothing);
         ApplyTemplateMask(masked, _template);
 
         _cachedOverlay = masked;
+        FrameReady?.Invoke((byte[])masked.Clone(), Diameter, Diameter);
+    }
+
+    private static void ApplyBeautyAdjustments(byte[] bgra, double brightness, double contrast,
+        double saturation, double warmth, double smoothing)
+    {
+        if (smoothing > 0)
+        {
+            var source = (byte[])bgra.Clone();
+            int radius = Math.Max(1, (int)Math.Round(smoothing * 2));
+            for (int y = 0; y < Diameter; y++)
+                for (int x = 0; x < Diameter; x++)
+                {
+                    int count = 0, b = 0, g = 0, r = 0;
+                    for (int oy = -radius; oy <= radius; oy++)
+                        for (int ox = -radius; ox <= radius; ox++)
+                        {
+                            int sx = Math.Clamp(x + ox, 0, Diameter - 1);
+                            int sy = Math.Clamp(y + oy, 0, Diameter - 1);
+                            int i = (sy * Diameter + sx) * 4;
+                            b += source[i]; g += source[i + 1]; r += source[i + 2]; count++;
+                        }
+                    int target = (y * Diameter + x) * 4;
+                    double mix = smoothing * 0.45;
+                    bgra[target] = (byte)(bgra[target] * (1 - mix) + b / (double)count * mix);
+                    bgra[target + 1] = (byte)(bgra[target + 1] * (1 - mix) + g / (double)count * mix);
+                    bgra[target + 2] = (byte)(bgra[target + 2] * (1 - mix) + r / (double)count * mix);
+                }
+        }
+
+        for (int i = 0; i < bgra.Length; i += 4)
+        {
+            double b = bgra[i], g = bgra[i + 1], r = bgra[i + 2];
+            double luminance = r * 0.299 + g * 0.587 + b * 0.114;
+            r = luminance + (r - luminance) * saturation;
+            g = luminance + (g - luminance) * saturation;
+            b = luminance + (b - luminance) * saturation;
+            r = (r - 128) * contrast + 128 + brightness * 255 + warmth * 18;
+            g = (g - 128) * contrast + 128 + brightness * 255 + warmth * 7;
+            b = (b - 128) * contrast + 128 + brightness * 255 - warmth * 18;
+            bgra[i] = (byte)Math.Clamp(b, 0, 255);
+            bgra[i + 1] = (byte)Math.Clamp(g, 0, 255);
+            bgra[i + 2] = (byte)Math.Clamp(r, 0, 255);
+        }
     }
 
     /// <summary>Sets each pixel's alpha from the precomputed circular mask — the source frame is fully opaque, so this replaces alpha outright rather than blending it.</summary>

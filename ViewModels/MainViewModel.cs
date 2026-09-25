@@ -136,6 +136,13 @@ public partial class MainViewModel : BaseViewModel
     [ObservableProperty] private WebcamDeviceOption? _selectedWebcam;
     [ObservableProperty] private WebcamTemplateOption _selectedWebcamTemplate = WebcamTemplateOption.All[0];
     [ObservableProperty] private bool _webcamEnabled;
+    [ObservableProperty] private double _webcamBrightness;
+    [ObservableProperty] private double _webcamContrast = 1;
+    [ObservableProperty] private double _webcamSaturation = 1;
+    [ObservableProperty] private double _webcamWarmth;
+    [ObservableProperty] private double _webcamSmoothing;
+    [ObservableProperty] private WriteableBitmap? _webcamPreviewSource;
+    [ObservableProperty] private string _webcamPreviewStatus = "Turn on the webcam and select a camera to preview it";
 
     // Advanced cursor effects (Phase 4 Step 1 — hooks/settings/UI only; VideoCaptureService doesn't
     // render the spotlight or ripples onto frames yet, so these don't touch RestartPreviewIfIdle either,
@@ -234,6 +241,7 @@ public partial class MainViewModel : BaseViewModel
 
     public bool HasPreview => PreviewSource is not null;
     public bool ShowPlaceholder => !HasPreview;
+    public bool HasWebcamPreview => WebcamPreviewSource is not null;
 
     /// <summary>The installed release version, shown under the Home tab's footer — the same number <see cref="UpdateService"/> compares against the latest GitHub release tag.</summary>
     public string AppVersionText => $"Version {UpdateService.CurrentVersion.ToString(3)}";
@@ -274,6 +282,7 @@ public partial class MainViewModel : BaseViewModel
     {
         _annotations = new AnnotationOverlayService(_dispatcherQueue);
         _annotations.AttributesChanged += OnAnnotationAttributesChangedFromToolbar;
+        _manager.WebcamFrameReady += OnWebcamFrameReady;
         _uiTimer = DispatcherQueue.GetForCurrentThread().CreateTimer();
         _uiTimer.Interval = TimeSpan.FromMilliseconds(150);
         _uiTimer.Tick += (_, _) =>
@@ -436,6 +445,11 @@ public partial class MainViewModel : BaseViewModel
             }
             WebcamEnabled = s.WebcamEnabled;
             SelectedWebcamTemplate = WebcamTemplateOptions.FirstOrDefault(t => t.Key == s.WebcamTemplate) ?? WebcamTemplateOptions[0];
+            WebcamBrightness = s.WebcamBrightness;
+            WebcamContrast = s.WebcamContrast;
+            WebcamSaturation = s.WebcamSaturation;
+            WebcamWarmth = s.WebcamWarmth;
+            WebcamSmoothing = s.WebcamSmoothing;
         }
         finally
         {
@@ -537,6 +551,11 @@ public partial class MainViewModel : BaseViewModel
         WebcamEnabled = WebcamEnabled,
         WebcamDeviceId = SelectedWebcam?.Id,
         WebcamTemplate = SelectedWebcamTemplate.Key,
+        WebcamBrightness = WebcamBrightness,
+        WebcamContrast = WebcamContrast,
+        WebcamSaturation = WebcamSaturation,
+        WebcamWarmth = WebcamWarmth,
+        WebcamSmoothing = WebcamSmoothing,
         SpotlightEnabled = SpotlightEnabled,
         SpotlightRadius = SpotlightRadius,
         ClickRipplesEnabled = ClickRipplesEnabled,
@@ -775,23 +794,55 @@ public partial class MainViewModel : BaseViewModel
 
     partial void OnSelectedWebcamChanged(WebcamDeviceOption? value)
     {
-        _manager.UpdateWebcam(WebcamEnabled, value?.Id, SelectedWebcamTemplate.Key);
+        UpdateWebcamAdjustments();
         RestartPreviewIfIdle();
         QueueSaveSettings();
     }
 
     partial void OnWebcamEnabledChanged(bool value)
     {
-        _manager.UpdateWebcam(value, SelectedWebcam?.Id, SelectedWebcamTemplate.Key);
+        UpdateWebcamAdjustments();
+        if (!value) WebcamPreviewSource = null;
+        WebcamPreviewStatus = value ? "Waiting for camera frames…" : "Turn on the webcam and select a camera to preview it";
         RestartPreviewIfIdle();
         QueueSaveSettings();
     }
 
     partial void OnSelectedWebcamTemplateChanged(WebcamTemplateOption value)
     {
-        _manager.UpdateWebcam(WebcamEnabled, SelectedWebcam?.Id, value.Key);
+        UpdateWebcamAdjustments(value.Key);
         QueueSaveSettings();
     }
+
+    partial void OnWebcamBrightnessChanged(double value) => UpdateWebcamAdjustments();
+    partial void OnWebcamContrastChanged(double value) => UpdateWebcamAdjustments();
+    partial void OnWebcamSaturationChanged(double value) => UpdateWebcamAdjustments();
+    partial void OnWebcamWarmthChanged(double value) => UpdateWebcamAdjustments();
+    partial void OnWebcamSmoothingChanged(double value) => UpdateWebcamAdjustments();
+
+    private void UpdateWebcamAdjustments(string? template = null)
+    {
+        _manager.UpdateWebcam(WebcamEnabled, SelectedWebcam?.Id, template ?? SelectedWebcamTemplate.Key,
+            WebcamBrightness, WebcamContrast, WebcamSaturation, WebcamWarmth, WebcamSmoothing);
+        QueueSaveSettings();
+    }
+
+    private void OnWebcamFrameReady(byte[] frame, int width, int height)
+    {
+        _dispatcherQueue.TryEnqueue(() =>
+        {
+            if (WebcamPreviewSource is null || WebcamPreviewSource.PixelWidth != width || WebcamPreviewSource.PixelHeight != height)
+                WebcamPreviewSource = new WriteableBitmap(width, height);
+
+            using var stream = WebcamPreviewSource.PixelBuffer.AsStream();
+            stream.Write(frame, 0, frame.Length);
+            WebcamPreviewSource.Invalidate();
+            WebcamPreviewStatus = "";
+        });
+    }
+
+    partial void OnWebcamPreviewSourceChanged(WriteableBitmap? value) =>
+        OnPropertyChanged(nameof(HasWebcamPreview));
 
     // Both of these are pushed straight into the running capture rather than restarting it. The
     // spotlight is a pure per-frame compositing parameter (no device, no hook), so a restart was never
@@ -1060,7 +1111,8 @@ public partial class MainViewModel : BaseViewModel
             try
             {
                 _manager.StartPreview(targetKind, monitor, window, cursor, cursorStyle, zoomEnabled, zoomFactor, keystrokeOverlay,
-                    webcamEnabled, webcamDeviceId, spotlightEnabled, spotlightRadius, clickRipplesEnabled, zoomClickOnly, webcamTemplate);
+                    webcamEnabled, webcamDeviceId, spotlightEnabled, spotlightRadius, clickRipplesEnabled, zoomClickOnly, webcamTemplate,
+                    WebcamBrightness, WebcamContrast, WebcamSaturation, WebcamWarmth, WebcamSmoothing);
             }
             catch { /* best effort: live preview is a convenience, not required to record */ }
         });
@@ -1289,6 +1341,11 @@ public partial class MainViewModel : BaseViewModel
             WebcamEnabled = WebcamEnabled,
             WebcamDeviceId = SelectedWebcam?.Id,
             WebcamTemplate = SelectedWebcamTemplate.Key,
+            WebcamBrightness = WebcamBrightness,
+            WebcamContrast = WebcamContrast,
+            WebcamSaturation = WebcamSaturation,
+            WebcamWarmth = WebcamWarmth,
+            WebcamSmoothing = WebcamSmoothing,
             SpotlightEnabled = SpotlightEnabled,
             SpotlightRadius = SpotlightRadius,
             ClickRipplesEnabled = ClickRipplesEnabled,
