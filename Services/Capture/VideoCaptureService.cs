@@ -271,6 +271,7 @@ public sealed class VideoCaptureService : IDisposable
     private readonly object _webcamLifecycleLock = new();
     private WebcamCaptureService? _webcam;
     private string? _webcamDeviceId;
+    private string _webcamTemplate = "circle";
 
     // Raw pointer-shape scratch buffer for GetFramePointerShape(), grown as needed and reused across
     // shape updates; the decoded/converted result is cached separately since the shape only changes
@@ -2178,19 +2179,20 @@ public sealed class VideoCaptureService : IDisposable
     /// "did anything actually change" themselves — e.g. RestartPreviewIfIdle can call this unconditionally
     /// every time any setting changes, the same way it already does for Prepare()'s parameters.
     /// </summary>
-    public void SetWebcam(bool enabled, string? deviceId)
+    public void SetWebcam(bool enabled, string? deviceId, string template = "circle")
     {
         lock (_webcamLifecycleLock)
         {
             if (enabled && deviceId is not null)
             {
-                if (_webcam is not null && _webcamDeviceId == deviceId) return; // already running this camera
+                if (_webcam is not null && _webcamDeviceId == deviceId && _webcamTemplate == template) return;
 
                 var old = _webcam;
                 var webcam = new WebcamCaptureService();
                 _webcam = webcam;
                 _webcamDeviceId = deviceId;
-                _ = webcam.StartAsync(deviceId).ContinueWith(_ => { /* best effort: see StartAsync's own remarks */ },
+                _webcamTemplate = template;
+                _ = webcam.StartAsync(deviceId, template).ContinueWith(_ => { /* best effort: see StartAsync's own remarks */ },
                     TaskContinuationOptions.OnlyOnFaulted);
                 if (old is not null) _ = old.StopAsync();
             }
@@ -2207,6 +2209,7 @@ public sealed class VideoCaptureService : IDisposable
         var old = _webcam;
         _webcam = null;
         _webcamDeviceId = null;
+        _webcamTemplate = "circle";
         if (old is not null) _ = old.StopAsync();
     }
 

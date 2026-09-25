@@ -1,4 +1,5 @@
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Navigation;
 using ScreenRecorderApp.ViewModels;
 
@@ -19,5 +20,15 @@ public sealed partial class WebcamPage : Page
     {
         base.OnNavigatedTo(e);
         ViewModel = (MainViewModel)e.Parameter;
+        Bindings.Update();
+    }
+
+    private void OnTemplateClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: string key })
+        {
+            var template = ViewModel.WebcamTemplateOptions.FirstOrDefault(item => item.Key == key);
+            if (template is not null) ViewModel.SelectedWebcamTemplate = template;
+        }
     }
 }

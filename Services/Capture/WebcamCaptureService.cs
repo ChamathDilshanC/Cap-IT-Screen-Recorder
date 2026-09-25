@@ -34,9 +34,8 @@ public sealed class WebcamCaptureService
     // Computed once, ever — see BuildCircularMaskAlpha's remarks on why a static Lazy<T> is the right
     // place for this rather than per-frame or even per-instance: the mask only depends on Diameter, a
     // compile-time constant, so there is nothing frame-specific about it at all.
-    private static readonly Lazy<byte[]> CircularMaskAlpha = new(BuildCircularMaskAlpha);
-
     private readonly object _lock = new();
+    private string _template = "circle";
 
     private MediaCapture? _mediaCapture;
     private MediaFrameReader? _frameReader;
@@ -49,8 +48,9 @@ public sealed class WebcamCaptureService
     /// already in use, permission denied) — callers should treat this the same "best effort, don't take
     /// down the recording over it" way RestartPreviewIfIdle already treats preview failures.
     /// </summary>
-    public async Task StartAsync(string deviceId)
+    public async Task StartAsync(string deviceId, string template = "circle")
     {
+        _template = template;
         var mediaCapture = new MediaCapture();
         await mediaCapture.InitializeAsync(new MediaCaptureInitializationSettings
         {
@@ -186,18 +186,44 @@ public sealed class WebcamCaptureService
         VideoCaptureService.ResampleCatmullRomInto(_rawFrameBuffer, srcW, srcH, cropX, cropY, cropSize, cropSize,
             masked, Diameter, Diameter, 0, 0, Diameter, Diameter);
 
-        ApplyCircularMask(masked);
+        ApplyTemplateMask(masked, _template);
 
         _cachedOverlay = masked;
     }
 
     /// <summary>Sets each pixel's alpha from the precomputed circular mask — the source frame is fully opaque, so this replaces alpha outright rather than blending it.</summary>
-    private static void ApplyCircularMask(byte[] bgra)
+    private static void ApplyTemplateMask(byte[] bgra, string template)
     {
-        var mask = CircularMaskAlpha.Value;
-        for (int i = 0; i < mask.Length; i++)
+        double center = (Diameter - 1) / 2.0;
+        double half = Diameter / 2.0;
+        for (int y = 0; y < Diameter; y++)
+            for (int x = 0; x < Diameter; x++)
+            {
+                double dx = Math.Abs(x - center);
+                double dy = Math.Abs(y - center);
+                double distance = template switch
+                {
+                    "rounded" => Math.Max(dx - half + 30, dy - half + 30),
+                    "square" => Math.Max(dx, dy) - half,
+                    "landscape" => Math.Max(dx / 1.35, dy) - half,
+                    _ => Math.Sqrt(dx * dx + dy * dy) - half,
+                };
+                double alpha = Math.Clamp(-distance / EdgeFeatherPx * 255.0, 0, 255);
+                bgra[(y * Diameter + x) * 4 + 3] = (byte)alpha;
+            }
+        if (template == "neon")
         {
-            bgra[i * 4 + 3] = mask[i];
+            for (int y = 0; y < Diameter; y++)
+                for (int x = 0; x < Diameter; x++)
+                {
+                    double dx = x - center, dy = y - center;
+                    double distance = Math.Abs(Math.Sqrt(dx * dx + dy * dy) - (half - 5));
+                    if (distance < 7 && bgra[(y * Diameter + x) * 4 + 3] > 0)
+                    {
+                        int i = (y * Diameter + x) * 4;
+                        bgra[i] = 220; bgra[i + 1] = 80; bgra[i + 2] = 255;
+                    }
+                }
         }
     }
 

@@ -39,6 +39,47 @@
                             </Button>
                         </StackPanel>
                     </ctcontrols:SettingsCard>
+                    <ctcontrols:SettingsCard Header="Webcam template" Description="Choose a frame style. The preview below shows how it will look in the recording.">
+                        <StackPanel Spacing="10">
+                            <ComboBox MinWidth="260"
+                                      ItemsSource="{x:Bind ViewModel.WebcamTemplateOptions}"
+                                      SelectedItem="{x:Bind ViewModel.SelectedWebcamTemplate, Mode=TwoWay}" />
+                            <TextBlock Text="{x:Bind ViewModel.SelectedWebcamTemplate.Label, Mode=OneWay}"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <Button Tag="circle" Click="OnTemplateClick" Padding="8">
+                                    <StackPanel Spacing="4">
+                                        <Ellipse Width="56" Height="56" Fill="#FF536D8A" Stroke="#FFB7C9E2" StrokeThickness="3" />
+                                        <TextBlock Text="Circle" HorizontalAlignment="Center" FontSize="11" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Tag="rounded" Click="OnTemplateClick" Padding="8">
+                                    <StackPanel Spacing="4">
+                                        <Border Width="56" Height="56" Background="#FF536D8A" CornerRadius="14" BorderBrush="#FFB7C9E2" BorderThickness="3" />
+                                        <TextBlock Text="Rounded" HorizontalAlignment="Center" FontSize="11" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Tag="square" Click="OnTemplateClick" Padding="8">
+                                    <StackPanel Spacing="4">
+                                        <Border Width="56" Height="56" Background="#FF536D8A" BorderBrush="#FFB7C9E2" BorderThickness="3" />
+                                        <TextBlock Text="Square" HorizontalAlignment="Center" FontSize="11" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Tag="landscape" Click="OnTemplateClick" Padding="8">
+                                    <StackPanel Spacing="4">
+                                        <Border Width="70" Height="48" Background="#FF536D8A" CornerRadius="8" BorderBrush="#FFB7C9E2" BorderThickness="3" />
+                                        <TextBlock Text="Landscape" HorizontalAlignment="Center" FontSize="11" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Tag="neon" Click="OnTemplateClick" Padding="8">
+                                    <StackPanel Spacing="4">
+                                        <Ellipse Width="56" Height="56" Fill="#FF536D8A" Stroke="#FFE052FF" StrokeThickness="4" />
+                                        <TextBlock Text="Neon ring" HorizontalAlignment="Center" FontSize="11" />
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
+                        </StackPanel>
+                    </ctcontrols:SettingsCard>
                 </ctcontrols:SettingsExpander.Items>
             </ctcontrols:SettingsExpander>
         </StackPanel>

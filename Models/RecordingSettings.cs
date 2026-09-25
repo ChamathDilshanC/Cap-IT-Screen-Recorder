@@ -114,9 +114,26 @@ public sealed record ZoomLevelOption(double Factor, string Label)
 
     public static readonly IReadOnlyList<ZoomLevelOption> All =
     [
+        new(1.25, "125%"),
         new(1.5, "150%"),
+        new(1.75, "175%"),
         new(2.0, "200%"),
         new(3.0, "300%"),
+    ];
+}
+
+/// <summary>Visual styles for the webcam picture-in-picture overlay.</summary>
+public sealed record WebcamTemplateOption(string Key, string Label)
+{
+    public override string ToString() => Label;
+
+    public static readonly IReadOnlyList<WebcamTemplateOption> All =
+    [
+        new("circle", "Circle"),
+        new("rounded", "Rounded"),
+        new("square", "Square"),
+        new("landscape", "Landscape"),
+        new("neon", "Neon ring"),
     ];
 }
 
@@ -264,6 +281,7 @@ public sealed class RecordingSettings
     // re-match key exists or is needed here).
     public bool WebcamEnabled { get; set; } = false;
     public string? WebcamDeviceId { get; set; }
+    public string WebcamTemplate { get; set; } = "circle";
 
     // Advanced cursor effects (Phase 4). SpotlightRadius is canvas pixels (same space _cursorX/_cursorY
     // already live in) — a Slider-bound raw value rather than an options list, since "how big" is a

@@ -49,6 +49,7 @@ public sealed class AppSettings
 
     public bool WebcamEnabled { get; set; } = false;
     public string? WebcamDeviceId { get; set; }
+    public string WebcamTemplate { get; set; } = "circle";
 
     public bool SpotlightEnabled { get; set; } = false;
     public double SpotlightRadius { get; set; } = 180;

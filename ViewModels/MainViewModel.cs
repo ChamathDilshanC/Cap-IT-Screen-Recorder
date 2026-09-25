@@ -56,6 +56,7 @@ public partial class MainViewModel : BaseViewModel
     public IReadOnlyList<ResolutionOption> ResolutionOptions { get; } = ResolutionOption.All;
     public IReadOnlyList<CursorStyleOption> CursorStyleOptions { get; } = CursorStyleOption.All;
     public IReadOnlyList<ZoomLevelOption> ZoomLevelOptions { get; } = ZoomLevelOption.All;
+    public IReadOnlyList<WebcamTemplateOption> WebcamTemplateOptions { get; } = WebcamTemplateOption.All;
     public IReadOnlyList<AppThemeOption> AppThemeOptions { get; } = AppThemeOption.All;
     [ObservableProperty] private AppThemeOption _selectedAppTheme = AppThemeOption.All[0];
 
@@ -133,6 +134,7 @@ public partial class MainViewModel : BaseViewModel
     // doesn't composite it onto frames yet, so these don't touch RestartPreviewIfIdle like the capture
     // target/cursor properties above do).
     [ObservableProperty] private WebcamDeviceOption? _selectedWebcam;
+    [ObservableProperty] private WebcamTemplateOption _selectedWebcamTemplate = WebcamTemplateOption.All[0];
     [ObservableProperty] private bool _webcamEnabled;
 
     // Advanced cursor effects (Phase 4 Step 1 — hooks/settings/UI only; VideoCaptureService doesn't
@@ -433,6 +435,7 @@ public partial class MainViewModel : BaseViewModel
                 if (match is not null) SelectedWebcam = match;
             }
             WebcamEnabled = s.WebcamEnabled;
+            SelectedWebcamTemplate = WebcamTemplateOptions.FirstOrDefault(t => t.Key == s.WebcamTemplate) ?? WebcamTemplateOptions[0];
         }
         finally
         {
@@ -533,6 +536,7 @@ public partial class MainViewModel : BaseViewModel
         KeystrokeOverlayEnabled = KeystrokeOverlayEnabled,
         WebcamEnabled = WebcamEnabled,
         WebcamDeviceId = SelectedWebcam?.Id,
+        WebcamTemplate = SelectedWebcamTemplate.Key,
         SpotlightEnabled = SpotlightEnabled,
         SpotlightRadius = SpotlightRadius,
         ClickRipplesEnabled = ClickRipplesEnabled,
@@ -771,15 +775,21 @@ public partial class MainViewModel : BaseViewModel
 
     partial void OnSelectedWebcamChanged(WebcamDeviceOption? value)
     {
-        _manager.UpdateWebcam(WebcamEnabled, value?.Id);
+        _manager.UpdateWebcam(WebcamEnabled, value?.Id, SelectedWebcamTemplate.Key);
         RestartPreviewIfIdle();
         QueueSaveSettings();
     }
 
     partial void OnWebcamEnabledChanged(bool value)
     {
-        _manager.UpdateWebcam(value, SelectedWebcam?.Id);
+        _manager.UpdateWebcam(value, SelectedWebcam?.Id, SelectedWebcamTemplate.Key);
         RestartPreviewIfIdle();
+        QueueSaveSettings();
+    }
+
+    partial void OnSelectedWebcamTemplateChanged(WebcamTemplateOption value)
+    {
+        _manager.UpdateWebcam(WebcamEnabled, SelectedWebcam?.Id, value.Key);
         QueueSaveSettings();
     }
 
@@ -1041,6 +1051,7 @@ public partial class MainViewModel : BaseViewModel
         var keystrokeOverlay = KeystrokeOverlayEnabled;
         var webcamEnabled = WebcamEnabled;
         var webcamDeviceId = SelectedWebcam?.Id;
+        var webcamTemplate = SelectedWebcamTemplate.Key;
         var spotlightEnabled = SpotlightEnabled;
         var spotlightRadius = SpotlightRadius;
         var clickRipplesEnabled = ClickRipplesEnabled;
@@ -1049,7 +1060,7 @@ public partial class MainViewModel : BaseViewModel
             try
             {
                 _manager.StartPreview(targetKind, monitor, window, cursor, cursorStyle, zoomEnabled, zoomFactor, keystrokeOverlay,
-                    webcamEnabled, webcamDeviceId, spotlightEnabled, spotlightRadius, clickRipplesEnabled, zoomClickOnly);
+                    webcamEnabled, webcamDeviceId, spotlightEnabled, spotlightRadius, clickRipplesEnabled, zoomClickOnly, webcamTemplate);
             }
             catch { /* best effort: live preview is a convenience, not required to record */ }
         });
@@ -1277,6 +1288,7 @@ public partial class MainViewModel : BaseViewModel
             KeystrokeOverlayEnabled = KeystrokeOverlayEnabled,
             WebcamEnabled = WebcamEnabled,
             WebcamDeviceId = SelectedWebcam?.Id,
+            WebcamTemplate = SelectedWebcamTemplate.Key,
             SpotlightEnabled = SpotlightEnabled,
             SpotlightRadius = SpotlightRadius,
             ClickRipplesEnabled = ClickRipplesEnabled,
