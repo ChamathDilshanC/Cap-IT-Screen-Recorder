@@ -9,22 +9,79 @@ tutorial for you** — pick what to record from live thumbnails, let smart zoom 
 actually doing, draw on your screen while you talk, clean up your mic, and export a trimmed GIF, all
 without leaving the app.
 
-[![Release](https://img.shields.io/badge/release-v2.7.0-success?logo=github)](../../releases/latest)
+[![Release](https://img.shields.io/badge/release-v3.2.2-success?logo=github)](../../releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/ChamathDilshanC/Cap-IT-Screen-Recorder/total?color=blue&logo=github)](../../releases)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-0078D6?logo=windows&logoColor=white)](#-installation)
 [![.NET](https://img.shields.io/badge/.NET-8-512BD4?logo=dotnet&logoColor=white)](#%EF%B8%8F-tech-stack)
 [![WinUI](https://img.shields.io/badge/UI-WinUI%203-5C2D91)](#%EF%B8%8F-tech-stack)
 [![FFmpeg](https://img.shields.io/badge/encoder-FFmpeg-007808?logo=ffmpeg&logoColor=white)](#%EF%B8%8F-tech-stack)
 
-### [**⬇ Download for Windows**](../../releases/latest)
+### [**⬇ Download the latest Windows installer**](../../releases/latest)
 
-[What's new](#-whats-new-in-v270) · [Features](#-features) · [Screenshots](#-screenshots) · [Install](#-installation) · [Shortcuts](#%EF%B8%8F-keyboard-shortcuts) · [Build from source](#-building-from-source)
+[What's new](#-whats-new-in-v322) · [Features](#-features) · [Screenshots](#-screenshots) · [Install](#-installation) · [Shortcuts](#%EF%B8%8F-keyboard-shortcuts) · [Architecture](#-architecture) · [Build from source](#-building-from-source)
 
 <br/>
 
 <img src="assets/Screenshots/Home.png" alt="Cap-IT Screen Recorder — Home dashboard with live preview and audio meters" width="880" />
 
 </div>
+
+---
+
+## ℹ️ Overview
+
+Cap-IT Screen Recorder is a native, self-contained Windows 10/11 desktop application for creating
+clear software tutorials, product demos, bug reports, presentations, and vertical social clips.
+It combines GPU-assisted capture, live interaction effects, audio monitoring, webcam picture-in-picture,
+post-recording composition, and export in one focused workflow — without a browser tab or cloud upload.
+
+### Product workflow
+
+```mermaid
+flowchart LR
+    A[Choose display or window] --> B[Configure capture preset]
+    B --> C[Preview source and audio]
+    C --> D[Record screen, audio, webcam and effects]
+    D --> E[Stop and finalize MP4]
+    E --> F[Review and trim]
+    F --> G{Export decision}
+    G -->|Keep| H[Final MP4]
+    G -->|Share| I[Optimized GIF]
+    G -->|Refine| J[Canvas, zoom and presentation settings]
+    J --> H
+```
+
+### At a glance
+
+| Capability | Included |
+|---|---|
+| Capture targets | Full monitor, individual window, live source-picker thumbnails |
+| Output | MP4 or MKV, 360p–4K, 15/24/30/60 FPS |
+| Encoders | NVIDIA NVENC, AMD AMF, Intel QSV, software H.264 fallback |
+| Audio | System audio, microphone, live meters, Studio Mic cleanup |
+| Visual effects | Smart zoom, cursor spotlight, click ripples, keystrokes, webcam PiP |
+| Annotations | Pen, line, arrow, rectangle, ellipse, text, undo, clear, fade modes |
+| Post-production | Preview, trim, zoom regions, canvas composition, MP4 and two-pass GIF export |
+| Deployment | Self-contained Windows installer; no separate .NET or Windows App SDK runtime |
+
+### ✍️ Author
+
+Designed and developed by **[Chamath Dilshan](https://github.com/ChamathDilshanC)**.
+
+---
+
+## 🆕 What's new in v3.2.2
+
+This release improves the post-recording experience and makes stopping a recording resilient:
+
+| | |
+|---|---|
+| ✅ **Reliable stop flow** | A review-window initialization error can no longer close the application after a successful recording. The MP4 remains finalized and saved even if the editor cannot be opened. |
+| ▶️ **Stable Review & Export window** | The review window is retained by the application for its full lifetime, so video preview, canvas controls, trim range, MP4 save, GIF export, and discard actions remain available after stopping. |
+| 🖼️ **Safer presentation metadata** | Missing or incomplete background-mode values in older recording metadata are handled safely instead of breaking the preview canvas. |
+| 🎥 **Current recording editor** | Review recordings with a MediaPlayer preview, trim timeline, post-record zoom regions, canvas presets, backgrounds, rounded corners, shadows, device frames, watermarks, cursor metadata, and GIF export. |
+
+> **Upgrade note:** recordings and preferences are preserved. Settings remain outside the install directory at `%LocalAppData%\Cap-IT Screen Recorder\settings.json`, and recording metadata is stored beside each video.
 
 ---
 
@@ -380,7 +437,7 @@ that can't lose a leg mid-stream.
 
 ## 📦 Installation
 
-Grab **`CapIT-Screen-Recorder-Setup-2.7.0.exe`** from
+Grab **`CapIT-Screen-Recorder-Setup-3.2.2.exe`** from
 **[Releases](../../releases/latest)** and run it. It's a normal Windows installer (built with Inno
 Setup) and it's fully self-contained — no separate .NET runtime, no Windows App SDK runtime, and no
 manual FFmpeg download.
@@ -448,6 +505,53 @@ whenever **Annotations** is switched on.
 
 While drawing mode is **on**, the overlay captures your clicks. Toggle it back off to interact with
 the apps underneath — anything you've drawn stays on screen.
+
+---
+
+## 🧭 Architecture
+
+Cap-IT keeps capture, encoding, monitoring, and post-production separate so a slow encoder or
+optional effect does not have to block the UI.
+
+```mermaid
+flowchart TB
+    UI[WinUI 3 shell and MVVM] --> VM[MainViewModel]
+    VM --> RM[RecordingManager]
+    RM --> CAP[VideoCaptureService]
+    RM --> AUDIO[AudioCaptureService]
+    RM --> ENC[FFmpegEncoderService]
+    CAP --> GPU[DXGI Desktop Duplication / WGC]
+    CAP --> FX[Cursor, zoom, webcam, annotations and effects]
+    AUDIO --> METERS[Mic and system-audio meters]
+    ENC --> MP4[MP4 or MKV recording]
+    MP4 --> REVIEW[TrimExportWindow]
+    REVIEW --> REMUX[FFmpeg stream-copy remux]
+    REVIEW --> GIF[Two-pass GIF export]
+    REVIEW --> META[Recording metadata sidecar]
+```
+
+### Recording lifecycle
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant App
+    participant Capture
+    participant FFmpeg
+    participant Review
+
+    User->>App: Select source and press Start
+    App->>Capture: Prepare monitor or window session
+    App->>FFmpeg: Start video/audio named pipes
+    loop At target FPS
+        Capture->>FFmpeg: Write latest composed frame
+    end
+    User->>App: Press Stop
+    App->>Capture: Stop pacer and drain pending frames
+    App->>FFmpeg: Close pipes and finalize output
+    FFmpeg-->>App: Completed recording path
+    App->>Review: Open preview, trim and export window
+```
 
 ---
 
@@ -652,6 +756,19 @@ for the exact trimmed clip, then `paletteuse` dithers onto it.
 Foundation can't decode the fragmented MP4 the app records for crash-safety; recordings are now
 remuxed to a standard MP4 on stop), and a Pause that never actually shortened the file.
 [Full write-up above.](#-whats-new-in-v250)
+
+---
+
+## 💭 Feedback and contributing
+
+Found a bug, have an idea, or want to improve Cap-IT?
+
+- [Open an issue](../../issues/new/choose) for reproducible bugs and feature requests.
+- Include your Windows version, Cap-IT version, capture target, encoder, and steps to reproduce.
+- Attach the relevant `crash.log` or a short screen recording when it does not contain private data.
+- For code changes, keep the existing WinUI/MVVM patterns, update related documentation, and run
+  `dotnet build ScreenRecorderApp.csproj --no-restore` before opening a pull request.
+- Use [GitHub Discussions](../../discussions) for questions, workflow ideas, and broader design feedback.
 
 ---
 

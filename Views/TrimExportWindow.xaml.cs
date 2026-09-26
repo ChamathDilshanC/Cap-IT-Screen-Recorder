@@ -434,8 +434,8 @@ public sealed partial class TrimExportWindow : Window
     {
         _backgroundPath = _presentation.BackgroundPath is { Length: > 0 } path ? path : _backgroundPath;
         PreviewCanvas.Background = ParsePresentationBrush(_presentation);
-        PreviewBackground.Opacity = _presentation.BackgroundMode.Equals("image", StringComparison.OrdinalIgnoreCase) ? .98 : 0;
-        if (_presentation.BackgroundMode.Equals("image", StringComparison.OrdinalIgnoreCase) && File.Exists(_backgroundPath))
+        PreviewBackground.Opacity = string.Equals(_presentation.BackgroundMode, "image", StringComparison.OrdinalIgnoreCase) ? .98 : 0;
+        if (string.Equals(_presentation.BackgroundMode, "image", StringComparison.OrdinalIgnoreCase) && File.Exists(_backgroundPath))
             PreviewBackground.Source = new BitmapImage(new Uri(_backgroundPath));
         UpdatePreviewLayout();
     }
@@ -448,7 +448,7 @@ public sealed partial class TrimExportWindow : Window
             catch { return fallback; }
         }
         var a = Parse(p.BackgroundColor, Colors.DarkSlateGray);
-        if (!p.BackgroundMode.Equals("gradient", StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(p.BackgroundMode, "gradient", StringComparison.OrdinalIgnoreCase))
             return new SolidColorBrush(a);
         var b = Parse(p.BackgroundColor2, Colors.MediumPurple);
         return new LinearGradientBrush

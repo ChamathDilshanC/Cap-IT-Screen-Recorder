@@ -26,6 +26,7 @@ public partial class MainViewModel : BaseViewModel
     private readonly SpeakerLevelMonitorService _speakerLevelMonitor = new();
     private readonly UpdateService _updateService = new();
     private readonly DispatcherQueueTimer _uiTimer;
+    private TrimExportWindow? _trimExportWindow;
 
     // Guards the load-and-apply pass in the constructor so setting ~15 properties from disk doesn't
     // immediately queue ~15 redundant saves of the values it just read.
@@ -412,6 +413,12 @@ public partial class MainViewModel : BaseViewModel
         try { _micLevelMonitor.Dispose(); } catch { /* best effort */ }
         try { _speakerLevelMonitor.Dispose(); } catch { /* best effort */ }
         try { _annotations.Disarm(); } catch { /* best effort */ }
+        try
+        {
+            _trimExportWindow?.Close();
+            _trimExportWindow = null;
+        }
+        catch { /* best effort */ }
         try { _manager.Dispose(); } catch { /* best effort */ }
     }
 
@@ -1392,7 +1399,23 @@ public partial class MainViewModel : BaseViewModel
         // for why — so the user can keep using the app (e.g. start another recording) while reviewing.
         if (path is not null)
         {
-            new TrimExportWindow(path).Activate();
+            try
+            {
+                _trimExportWindow?.Close();
+                _trimExportWindow = new TrimExportWindow(path);
+                _trimExportWindow.Closed += (sender, _) =>
+                {
+                    if (ReferenceEquals(_trimExportWindow, sender)) _trimExportWindow = null;
+                };
+                _trimExportWindow.Activate();
+            }
+            catch (Exception ex)
+            {
+                // The recording has already been finalized. A review-window failure must not turn a
+                // successful stop into an unhandled UI exception that closes the whole application.
+                Debug.WriteLine($"Could not open recording review window: {ex}");
+                StatusMessage = $"Saved: {path} (preview could not be opened)";
+            }
         }
     }
 
