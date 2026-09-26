@@ -49,6 +49,7 @@ public sealed partial class PresentationSettings : ObservableObject
     [ObservableProperty] private double _watermarkOffsetX = 0;
     [ObservableProperty] private double _watermarkOffsetY = 0;
     public PresentationTextOverlay TextOverlay { get; set; } = new();
+    public List<PresentationTextOverlay> TextOverlays { get; set; } = [];
     // Retained schema-1 property. Normalize migrates it to the neutral minimal frame.
     public bool DeviceFrame { get; set; }
     [JsonIgnore] public (int Width, int Height) CanvasSize => ResolveCanvas(1920, 1080);
@@ -98,7 +99,11 @@ public sealed partial class PresentationSettings : ObservableObject
         WatermarkMargin = Safe(WatermarkMargin, 24, 0, 200);
         WatermarkOffsetX = Safe(WatermarkOffsetX, 0, -7680, 7680); WatermarkOffsetY = Safe(WatermarkOffsetY, 0, -7680, 7680);
         TextOverlay ??= new();
-        TextOverlay.Normalize();
+        TextOverlays ??= [];
+        if (TextOverlays.Count == 0 && TextOverlay.IsVisible)
+            TextOverlays.Add(TextOverlay.Clone());
+        foreach (var text in TextOverlays) text.Normalize();
+        TextOverlay = TextOverlays.FirstOrDefault() ?? TextOverlay;
     }
     // Do not copy ObservableObject subscribers into a history/export snapshot.
     public PresentationSettings Clone() => JsonSerializer.Deserialize<PresentationSettings>(JsonSerializer.Serialize(this))!;

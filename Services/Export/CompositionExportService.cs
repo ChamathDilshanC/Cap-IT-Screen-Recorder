@@ -43,7 +43,8 @@ public static class CompositionExportService
                 await File.WriteAllBytesAsync(path, assets.TextLetters[i], ct).ConfigureAwait(false);
                 letterPaths.Add(path);
             }
-            var filter = BuildFilter(assets.Layout, sw, sh, regions, start.TotalSeconds, duration.TotalSeconds, fps, p.TextOverlay, assets.TextLetters.Count);
+            var texts = p.TextOverlays.Count > 0 ? p.TextOverlays : [p.TextOverlay];
+            var filter = BuildFilter(assets.Layout, sw, sh, regions, start.TotalSeconds, duration.TotalSeconds, fps, texts, assets.TextLetters.Count);
             List<string> Inputs()
             {
                 var args = new List<string> { "-y", "-hide_banner", "-loglevel", "warning", "-nostats", "-progress", "pipe:1",
@@ -107,7 +108,7 @@ public static class CompositionExportService
     }
 
     public static string BuildFilter(CompositionLayout layout, int sw, int sh, IReadOnlyList<ZoomRegion> regions,
-        double start, double duration, double fps, PresentationTextOverlay? text = null, int textLetterCount = 0)
+        double start, double duration, double fps, IReadOnlyList<PresentationTextOverlay>? texts = null, int textLetterCount = 0)
     {
         var boundaries = new SortedSet<double> { 0, duration };
         foreach (var region in regions.Where(r => r.Enabled && double.IsFinite(r.StartSeconds) && double.IsFinite(r.EndSeconds) && r.EndSeconds > r.StartSeconds))
@@ -131,14 +132,17 @@ public static class CompositionExportService
         graph.Append($"concat=n={count}:v=1:a=0,fps={F(fps)}[video];[2:v]format=gray[mask];[video][mask]alphamerge=shortest=1[rounded];");
         graph.Append($"[1:v][rounded]overlay=x={layout.Video.X}:y={layout.Video.Y}:shortest=1:format=rgb[base];");
         graph.Append("[base][3:v]overlay=0:0:shortest=1:format=rgb[styled];");
-        if (text is { IsVisible: true } && text.Animation == "BounceLetters" && textLetterCount > 0)
+        var visibleTexts = texts?.Where(t => t.IsVisible).ToArray() ?? [];
+        var text = visibleTexts.FirstOrDefault(t => t.Animation != "BounceLetters");
+        var bounceDuration = visibleTexts.FirstOrDefault(t => t.Animation == "BounceLetters")?.AnimationDuration ?? .8;
+        if (textLetterCount > 0)
         {
             graph.Append("[styled]");
             for (var i = 0; i < textLetterCount; i++)
             {
-                var delay = i * Math.Min(.08, text.AnimationDuration / Math.Max(1, textLetterCount * 2d));
+                var delay = i * Math.Min(.08, bounceDuration / Math.Max(1, textLetterCount * 2d));
                 var inputIndex = 4 + i;
-                var bounce = $"y='{F(layout.Height * .12)}*(1-min(max((t-{F(delay)})/{F(text.AnimationDuration)},0),1))+sin(min(max((t-{F(delay)})/{F(text.AnimationDuration)},0),1)*PI*2)*{F(layout.Height * .055)}*(1-min(max((t-{F(delay)})/{F(text.AnimationDuration)},0),1))'";
+                var bounce = $"y='{F(layout.Height * .12)}*(1-min(max((t-{F(delay)})/{F(bounceDuration)},0),1))+sin(min(max((t-{F(delay)})/{F(bounceDuration)},0),1)*PI*2)*{F(layout.Height * .055)}*(1-min(max((t-{F(delay)})/{F(bounceDuration)},0),1))'";
                 graph.Append($"[{inputIndex}:v]overlay=x=0:{bounce}:enable='gte(t,{F(delay)})':shortest=1:format=rgb");
             }
         }
@@ -146,11 +150,11 @@ public static class CompositionExportService
         {
             var animation = text.Animation switch
             {
-                "Bounce" => $"x='({layout.Width * text.X:F3}-overlay_w/2)+sin(min(t/{F(text.AnimationDuration)},1)*PI*3)*{Math.Max(6, layout.Width * .018):F3}*(1-min(t/{F(text.AnimationDuration)},1))':y='({layout.Height * text.Y:F3}-overlay_h/2)':enable='between(t,0,{F(text.AnimationDuration)})'",
-                "Fade" => $"x={layout.Width * text.X:F3}-overlay_w/2:y={layout.Height * text.Y:F3}-overlay_h/2",
-                "Pop" => $"x={layout.Width * text.X:F3}-overlay_w/2:y={layout.Height * text.Y:F3}-overlay_h/2:enable='gte(t,0)'",
-                "SlideUp" => $"x={layout.Width * text.X:F3}-overlay_w/2:y='({layout.Height * text.Y:F3}-overlay_h/2)+{layout.Height * .08:F3}*(1-min(t/{F(text.AnimationDuration)},1))'",
-                _ => $"x={layout.Width * text.X:F3}-overlay_w/2:y={layout.Height * text.Y:F3}-overlay_h/2"
+                "Bounce" => $"x='sin(min(t/{F(text.AnimationDuration)},1)*PI*3)*{Math.Max(6, layout.Width * .018):F3}*(1-min(t/{F(text.AnimationDuration)},1))':y=0:enable='between(t,0,{F(text.AnimationDuration)})'",
+                "Fade" => "x=0:y=0",
+                "Pop" => "x=0:y=0:enable='gte(t,0)'",
+                "SlideUp" => $"x=0:y='{layout.Height * .08:F3}*(1-min(t/{F(text.AnimationDuration)},1))'",
+                _ => "x=0:y=0"
             };
             if (text.Animation == "Fade")
                 graph.Append($"[4:v]format=rgba,colorchannelmixer=aa='if(lt(t,{F(text.AnimationDuration)}),t/{F(text.AnimationDuration)},1)'[animatedtext];[styled][animatedtext]overlay={animation}:shortest=1:format=rgb");

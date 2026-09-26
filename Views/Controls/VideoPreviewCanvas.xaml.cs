@@ -26,6 +26,8 @@ public sealed partial class VideoPreviewCanvas : UserControl
     private int _generation;
     private string? _lastSettings;
     private PresentationTextOverlay _lastText = new();
+    private IReadOnlyList<PresentationTextOverlay> _lastTexts = [];
+    private int _activeTextIndex;
     private bool _draggingText;
     private uint _dragPointerId;
     private Windows.Foundation.Point _dragStart;
@@ -43,7 +45,10 @@ public sealed partial class VideoPreviewCanvas : UserControl
         var cts = _renderCts = new(); var ct = cts.Token; var generation = ++_generation;
         _sourceWidth = sourceWidth; _sourceHeight = sourceHeight;
         var snapshot = settings.Clone(); snapshot.Normalize();
-        _lastText = snapshot.TextOverlay;
+        var texts = snapshot.TextOverlays.Count > 0 ? snapshot.TextOverlays : [snapshot.TextOverlay];
+        _lastTexts = texts;
+        _activeTextIndex = Math.Clamp(_activeTextIndex, 0, Math.Max(0, texts.Count - 1));
+        _lastText = texts.ElementAtOrDefault(_activeTextIndex) ?? new();
         // Geometry is cheap. Commit it together with the matching static artwork to avoid stale shadows.
         try
         {
@@ -69,7 +74,7 @@ public sealed partial class VideoPreviewCanvas : UserControl
             _geometry.Size = new Vector2(l.Video.Width, l.Video.Height);
             _geometry.CornerRadius = new Vector2((float)l.Radius);
             BackgroundLayer.Source = bg; OverlayLayer.Source = overlay; TextLayer.Source = text;
-            BuildLetterPreview(l, _lastText);
+            BuildLetterPreview(l, texts);
             _renderedTextX = _lastText.X; _renderedTextY = _lastText.Y;
             SetPosition(_lastTime, _lastRegions);
             AssetWarning?.Invoke(assets.Warning);
@@ -91,27 +96,33 @@ public sealed partial class VideoPreviewCanvas : UserControl
         VideoPlayer.Width = _sourceWidth * sx; VideoPlayer.Height = _sourceHeight * sy;
         Canvas.SetLeft(VideoPlayer, -crop.X * sx); Canvas.SetTop(VideoPlayer, -crop.Y * sy);
     }
-    private void BuildLetterPreview(CompositionLayout layout, PresentationTextOverlay text)
+    private void BuildLetterPreview(CompositionLayout layout, IReadOnlyList<PresentationTextOverlay> texts)
     {
         TextLettersCanvas.Children.Clear();
         TextLettersCanvas.Width = layout.Width; TextLettersCanvas.Height = layout.Height;
-        TextLettersCanvas.Visibility = text.Animation == "BounceLetters" && text.IsVisible ? Visibility.Visible : Visibility.Collapsed;
-        TextLayer.Visibility = TextLettersCanvas.Visibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible;
+        TextLettersCanvas.Visibility = texts.Any(t => t.Animation == "BounceLetters" && t.IsVisible) ? Visibility.Visible : Visibility.Collapsed;
+        TextLayer.Visibility = Visibility.Visible;
         if (TextLettersCanvas.Visibility == Visibility.Collapsed) return;
-        var width = text.FontSize * .62;
-        var start = text.X * layout.Width - text.Text.Length * width / 2;
-        for (var i = 0; i < text.Text.Length; i++)
+        foreach (var text in texts.Where(t => t.Animation == "BounceLetters" && t.IsVisible))
         {
-            var letter = new TextBlock
+            var width = text.FontSize * .62;
+            var totalWidth = text.Text.Length * width;
+            var start = AlignedOrigin(text.X * layout.Width, totalWidth, text.HorizontalAlignment);
+            for (var i = 0; i < text.Text.Length; i++)
             {
-                Text = text.Text[i].ToString(), FontSize = text.FontSize,
-                FontFamily = new Microsoft.UI.Xaml.Media.FontFamily(text.FontFamily),
-                Foreground = new SolidColorBrush(ParseTextColor(text.Color)),
-                FontWeight = text.Bold ? Microsoft.UI.Text.FontWeights.Bold : Microsoft.UI.Text.FontWeights.Normal,
-                FontStyle = text.Italic ? Windows.UI.Text.FontStyle.Italic : Windows.UI.Text.FontStyle.Normal
-            };
-            Canvas.SetLeft(letter, start + i * width); Canvas.SetTop(letter, text.Y * layout.Height - text.FontSize / 2);
-            TextLettersCanvas.Children.Add(letter);
+                var letter = new TextBlock
+                {
+                    Text = text.Text[i].ToString(), FontSize = text.FontSize,
+                    FontFamily = new Microsoft.UI.Xaml.Media.FontFamily(text.FontFamily),
+                    Foreground = new SolidColorBrush(ParseTextColor(text.Color)) { Opacity = text.Opacity },
+                    FontWeight = text.Bold ? Microsoft.UI.Text.FontWeights.Bold : Microsoft.UI.Text.FontWeights.Normal,
+                    FontStyle = text.Italic ? Windows.UI.Text.FontStyle.Italic : Windows.UI.Text.FontStyle.Normal,
+                    Tag = text.AnimationDuration
+                };
+                Canvas.SetLeft(letter, start + i * width);
+                Canvas.SetTop(letter, AlignedOrigin(text.Y * layout.Height, text.FontSize * 1.6, text.VerticalAlignment));
+                TextLettersCanvas.Children.Add(letter);
+            }
         }
     }
     private void UpdateTextAnimation(double seconds)
@@ -122,7 +133,7 @@ public sealed partial class VideoPreviewCanvas : UserControl
         var progress = Math.Clamp(seconds / duration, 0, 1);
         if (text.Animation == "BounceLetters")
         {
-            TextLayer.Opacity = 0;
+            TextLayer.Opacity = 1;
             TextLettersCanvas.RenderTransform = new TranslateTransform
             {
                 X = (text.X - _renderedTextX) * _layout.Width,
@@ -130,9 +141,10 @@ public sealed partial class VideoPreviewCanvas : UserControl
             };
             for (var i = 0; i < TextLettersCanvas.Children.Count; i++)
             {
-                if (TextLettersCanvas.Children[i] is not UIElement element) continue;
-                var stagger = i * Math.Min(.08, duration / Math.Max(1, TextLettersCanvas.Children.Count * 2d));
-                var local = Math.Clamp((seconds - stagger) / duration, 0, 1);
+                if (TextLettersCanvas.Children[i] is not FrameworkElement element) continue;
+                var letterDuration = element.Tag is double value ? value : duration;
+                var stagger = i * Math.Min(.08, letterDuration / Math.Max(1, TextLettersCanvas.Children.Count * 2d));
+                var local = Math.Clamp((seconds - stagger) / letterDuration, 0, 1);
                 var letterTransform = new TranslateTransform
                 {
                     Y = _layout.Height * .12 * (1 - local) -
@@ -174,13 +186,18 @@ public sealed partial class VideoPreviewCanvas : UserControl
         var point = e.GetCurrentPoint(CompositionCanvas).Position;
         var width = Math.Max(_lastText.FontSize * .62, _lastText.Text.Length * _lastText.FontSize * .62);
         var height = _lastText.FontSize * 1.6;
-        var left = _lastText.X * _layout.Width - width / 2;
-        var top = _lastText.Y * _layout.Height - height / 2;
+        var left = AlignedOrigin(_lastText.X * _layout.Width, width, _lastText.HorizontalAlignment);
+        var top = AlignedOrigin(_lastText.Y * _layout.Height, height, _lastText.VerticalAlignment);
         if (point.X < left || point.X > left + width || point.Y < top || point.Y > top + height) return;
         _draggingText = true; _dragPointerId = e.Pointer.PointerId; _dragStart = point;
         _dragOriginalX = _lastText.X; _dragOriginalY = _lastText.Y;
         CompositionCanvas.CapturePointer(e.Pointer);
         e.Handled = true;
+    }
+    public void SetActiveTextIndex(int index)
+    {
+        _activeTextIndex = Math.Clamp(index, 0, Math.Max(0, _lastTexts.Count - 1));
+        _lastText = _lastTexts.ElementAtOrDefault(_activeTextIndex) ?? new();
     }
     private void OnCompositionPointerMoved(object sender, PointerRoutedEventArgs e)
     {
@@ -215,6 +232,13 @@ public sealed partial class VideoPreviewCanvas : UserControl
         }
         catch { return Colors.White; }
     }
+    private static double AlignedOrigin(double anchor, double size, string alignment) =>
+        alignment switch
+        {
+            "Left" or "Top" => anchor,
+            "Right" or "Bottom" => anchor - size,
+            _ => anchor - size / 2
+        };
     private static async Task<BitmapImage> DecodeAsync(byte[] bytes)
     {
         using var stream = new InMemoryRandomAccessStream();

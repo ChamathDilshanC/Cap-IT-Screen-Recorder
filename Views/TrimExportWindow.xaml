@@ -496,8 +496,17 @@
                             <StackPanel x:Name="TextSection" Spacing="12" Visibility="Collapsed">
                                 <TextBlock Text="Text overlay" Style="{StaticResource SectionHeaderText}"/>
                                 <TextBlock Text="Add a title, label, or callout using any font installed on your Windows system." Style="{StaticResource SectionDescriptionText}" FontSize="12" TextWrapping="Wrap"/>
+                                <Grid ColumnSpacing="8">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                    <ComboBox x:Name="TextLayerPicker" Header="Text layer" SelectionChanged="OnTextLayerChanged"/>
+                                    <Button Grid.Column="1" Content="Add text" Margin="8,0,0,0" VerticalAlignment="Bottom" Click="OnAddTextOverlayClick"/>
+                                    <Button Grid.Column="2" Content="Remove" Margin="8,0,0,0" VerticalAlignment="Bottom" Click="OnRemoveTextOverlayClick"/>
+                                </Grid>
                                 <TextBox x:Name="TextOverlayBox" Header="Text" TextChanged="OnTextOverlayChanged" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="72" PlaceholderText="Type text to place on the video"/>
                                 <ComboBox x:Name="TextFontPicker" Header="System font" SelectionChanged="OnTextFontChanged"/>
+                                <ColorPicker x:Name="TextColourPicker" ColorChanged="OnTextColourChanged" IsAlphaEnabled="False" IsHexInputVisible="True"/>
+                                <TextBlock Text="Opacity"/>
+                                <Slider x:Name="TextOpacitySlider" Minimum="0" Maximum="1" StepFrequency=".05" ValueChanged="OnTextOpacityChanged"/>
                                 <ComboBox x:Name="TextAnimationPicker" Header="Intro animation" SelectionChanged="OnTextAnimationChanged">
                                     <ComboBoxItem Tag="None" Content="None"/>
                                     <ComboBoxItem Tag="BounceLetters" Content="Bounce letters"/>
@@ -511,6 +520,19 @@
                                     <NumberBox x:Name="TextXBox" Grid.Column="1" Header="X · %" Minimum="0" Maximum="100" ValueChanged="OnTextOverlayNumberChanged" SpinButtonPlacementMode="Compact"/>
                                 </Grid>
                                 <NumberBox x:Name="TextYBox" Header="Y · %" Minimum="0" Maximum="100" ValueChanged="OnTextOverlayNumberChanged" SpinButtonPlacementMode="Compact"/>
+                                <Grid ColumnSpacing="8">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                    <ComboBox x:Name="TextHorizontalAlignmentPicker" Header="Horizontal alignment" SelectionChanged="OnTextAlignmentChanged">
+                                        <x:String>Left</x:String>
+                                        <x:String>Center</x:String>
+                                        <x:String>Right</x:String>
+                                    </ComboBox>
+                                    <ComboBox x:Name="TextVerticalAlignmentPicker" Grid.Column="1" Header="Vertical alignment" SelectionChanged="OnTextAlignmentChanged">
+                                        <x:String>Top</x:String>
+                                        <x:String>Center</x:String>
+                                        <x:String>Bottom</x:String>
+                                    </ComboBox>
+                                </Grid>
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <ToggleButton x:Name="TextBoldButton" Content="Bold" Click="OnTextStyleClick"/>
                                     <ToggleButton x:Name="TextItalicButton" Content="Italic" Click="OnTextStyleClick"/>

@@ -98,12 +98,29 @@ public sealed partial class TrimExportWindow : Window
     }
         private void SyncTextControls()
         {
-            var text = ViewModel.Presentation.TextOverlay;
+            var text = ViewModel.SelectedTextOverlay;
+            _syncing = true;
+            TextLayerPicker.Items.Clear();
+            var texts = ViewModel.Presentation.TextOverlays.Count > 0 ? ViewModel.Presentation.TextOverlays : [ViewModel.Presentation.TextOverlay];
+            for (var i = 0; i < texts.Count; i++) TextLayerPicker.Items.Add($"Text {i + 1}");
+            if (TextLayerPicker.Items.Count > 0) TextLayerPicker.SelectedIndex = Math.Clamp(ViewModel.SelectedTextOverlayIndex, 0, TextLayerPicker.Items.Count - 1);
             TextOverlayBox.Text = text.Text;
             TextFontPicker.SelectedItem = TextFontPicker.Items.Cast<string>().FirstOrDefault(x => x.Equals(text.FontFamily, StringComparison.OrdinalIgnoreCase)) ?? "Segoe UI";
             TextAnimationPicker.SelectedItem = TextAnimationPicker.Items.OfType<ComboBoxItem>().FirstOrDefault(x => (string)x.Tag == text.Animation);
+            TextColourPicker.Color = ParseColor(text.Color);
+            TextOpacitySlider.Value = text.Opacity;
             TextSizeBox.Value = text.FontSize; TextXBox.Value = text.X * 100; TextYBox.Value = text.Y * 100;
+            TextHorizontalAlignmentPicker.SelectedItem = text.HorizontalAlignment;
+            TextVerticalAlignmentPicker.SelectedItem = text.VerticalAlignment;
             TextBoldButton.IsChecked = text.Bold; TextItalicButton.IsChecked = text.Italic;
+            _syncing = false;
+        }
+        private void OnTextLayerChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (!_ready || _syncing || TextLayerPicker.SelectedIndex < 0) return;
+            ViewModel.SelectedTextOverlayIndex = TextLayerPicker.SelectedIndex;
+            Preview.SetActiveTextIndex(ViewModel.SelectedTextOverlayIndex);
+            SyncTextControls();
         }
         private void OnTextOverlayChanged(object sender, TextChangedEventArgs e)
         { if (_ready && !_syncing) ViewModel.UpdateTextOverlay(t => t.Text = TextOverlayBox.Text); }
@@ -111,6 +128,15 @@ public sealed partial class TrimExportWindow : Window
         { if (_ready && !_syncing && TextFontPicker.SelectedItem is string font) ViewModel.UpdateTextOverlay(t => t.FontFamily = font); }
         private void OnTextAnimationChanged(object sender, SelectionChangedEventArgs e)
         { if (_ready && !_syncing && TextAnimationPicker.SelectedItem is ComboBoxItem item && item.Tag is string animation) ViewModel.UpdateTextOverlay(t => t.Animation = animation); }
+        private void OnTextAlignmentChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (!_ready || _syncing) return;
+            ViewModel.UpdateTextOverlay(t =>
+            {
+                if (TextHorizontalAlignmentPicker.SelectedItem is string horizontal) t.HorizontalAlignment = horizontal;
+                if (TextVerticalAlignmentPicker.SelectedItem is string vertical) t.VerticalAlignment = vertical;
+            });
+        }
         private void OnTextOverlayNumberChanged(NumberBox sender, NumberBoxValueChangedEventArgs e)
         {
             if (!_ready || _syncing) return;
@@ -120,6 +146,14 @@ public sealed partial class TrimExportWindow : Window
         { if (_ready && !_syncing) ViewModel.UpdateTextOverlay(t => { t.Bold = TextBoldButton.IsChecked == true; t.Italic = TextItalicButton.IsChecked == true; }); }
         private void OnClearTextOverlayClick(object sender, RoutedEventArgs e)
         { if (_ready) { ViewModel.UpdateTextOverlay(t => t.Text = ""); SyncTextControls(); } }
+        private void OnAddTextOverlayClick(object sender, RoutedEventArgs e)
+        { if (_ready) { ViewModel.AddTextOverlay(); Preview.SetActiveTextIndex(ViewModel.SelectedTextOverlayIndex); SyncTextControls(); } }
+        private void OnRemoveTextOverlayClick(object sender, RoutedEventArgs e)
+        { if (_ready) { ViewModel.RemoveSelectedTextOverlay(); Preview.SetActiveTextIndex(ViewModel.SelectedTextOverlayIndex); SyncTextControls(); } }
+        private void OnTextColourChanged(ColorPicker sender, ColorChangedEventArgs e)
+        { if (_ready && !_syncing) ViewModel.UpdateTextOverlay(t => t.Color = $"#{e.NewColor.R:X2}{e.NewColor.G:X2}{e.NewColor.B:X2}"); }
+        private void OnTextOpacityChanged(object sender, RangeBaseValueChangedEventArgs e)
+        { if (_ready && !_syncing) ViewModel.UpdateTextOverlay(t => t.Opacity = e.NewValue); }
     private void OpenPlayer()
     {
         ReleasePlayer();

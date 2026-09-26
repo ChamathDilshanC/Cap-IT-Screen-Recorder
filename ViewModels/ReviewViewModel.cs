@@ -29,6 +29,7 @@ public sealed partial class ReviewViewModel : ObservableObject
     public ExportSettings Export { get; } = new();
     public ObservableCollection<ZoomRegion> ZoomRegions { get; } = [];
     public ObservableCollection<PresentationPreset> Presets { get; } = new(PresentationPreset.BuiltIns);
+    [ObservableProperty] private int _selectedTextOverlayIndex;
     public event EventHandler? CompositionChanged;
     public string RecordingInfo => $@"{TimeSpan.FromSeconds(Duration):mm\:ss}  ·  {SourceWidth} × {SourceHeight}  ·  {Probe?.FrameRate:0.##} fps";
     public string ScaleLabel => $"{Presentation.VideoScale:P0}";
@@ -36,14 +37,32 @@ public sealed partial class ReviewViewModel : ObservableObject
     public string TrimLabel => $"{Math.Max(0, TrimEnd - TrimStart):0.0}s selected";
     public void UpdateTextOverlay(Action<PresentationTextOverlay> update)
     {
-        update(Presentation.TextOverlay);
-        Presentation.TextOverlay.Normalize();
+        var text = SelectedTextOverlay;
+        update(text);
+        text.Normalize();
+        Changed();
+    }
+    public PresentationTextOverlay SelectedTextOverlay =>
+        Presentation.TextOverlays.Count == 0
+            ? Presentation.TextOverlay
+            : Presentation.TextOverlays[Math.Clamp(SelectedTextOverlayIndex, 0, Presentation.TextOverlays.Count - 1)];
+    public void AddTextOverlay()
+    {
+        Presentation.TextOverlays.Add(new PresentationTextOverlay { X = .5, Y = .5 });
+        SelectedTextOverlayIndex = Presentation.TextOverlays.Count - 1;
+        Changed();
+    }
+    public void RemoveSelectedTextOverlay()
+    {
+        if (Presentation.TextOverlays.Count == 0) return;
+        Presentation.TextOverlays.RemoveAt(Math.Clamp(SelectedTextOverlayIndex, 0, Presentation.TextOverlays.Count - 1));
+        SelectedTextOverlayIndex = Math.Max(0, Math.Min(SelectedTextOverlayIndex, Presentation.TextOverlays.Count - 1));
         Changed();
     }
     public void SetTextOverlayPosition(double x, double y, bool notify = true)
     {
-        Presentation.TextOverlay.X = Math.Clamp(x, 0, 1);
-        Presentation.TextOverlay.Y = Math.Clamp(y, 0, 1);
+        SelectedTextOverlay.X = Math.Clamp(x, 0, 1);
+        SelectedTextOverlay.Y = Math.Clamp(y, 0, 1);
         if (notify) Changed();
     }
     private readonly DispatcherQueueTimer _commitTimer;

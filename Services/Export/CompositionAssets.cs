@@ -106,14 +106,15 @@ public static class CompositionAssetRenderer
                 { warning = "Watermark image unavailable. It is omitted from preview and export. Choose a replacement image."; }
             }
         }
+        var texts = p.TextOverlays.Count > 0 ? p.TextOverlays : [p.TextOverlay];
         using (var g = Graphics.FromImage(textLayer))
         {
             Setup(g);
-            DrawTextOverlay(g, p.TextOverlay, l);
+            foreach (var text in texts.Where(t => t.IsVisible && t.Animation != "BounceLetters"))
+                DrawTextOverlay(g, text, l);
         }
-        var textLetters = p.TextOverlay.Animation == "BounceLetters"
-            ? RenderTextLetters(p.TextOverlay, l)
-            : Array.Empty<byte[]>();
+        var textLetters = texts.Where(t => t.IsVisible && t.Animation == "BounceLetters")
+            .SelectMany(text => RenderTextLetters(text, l)).ToArray();
         ct.ThrowIfCancellationRequested();
         return new(l, Png(background), Png(overlay), Png(mask), Png(textLayer), textLetters, warning);
     }
@@ -124,21 +125,24 @@ public static class CompositionAssetRenderer
         using var measureBitmap = new Bitmap(1, 1);
         using var measureGraphics = Graphics.FromImage(measureBitmap);
         using var font = CreateFont(text);
-        var total = measureGraphics.MeasureString(text.Text, font).Width;
-        var startX = (float)(text.X * layout.Width - total / 2);
+        var widths = text.Text.Select(letter => Math.Max(1f, measureGraphics.MeasureString(letter.ToString(), font).Width)).ToArray();
+        var total = widths.Sum();
+        var startX = (float)(AlignedOrigin(text.X * layout.Width, total, text.HorizontalAlignment));
         var result = new List<byte[]>();
         var cursor = startX;
-        foreach (var letter in text.Text)
+        for (var index = 0; index < text.Text.Length; index++)
         {
+            var letter = text.Text[index];
             var width = Math.Max(1f, measureGraphics.MeasureString(letter.ToString(), font).Width);
             using var bitmap = new Bitmap(layout.Width, layout.Height, PixelFormat.Format32bppArgb);
             using var graphics = Graphics.FromImage(bitmap);
             Setup(graphics);
-            using var brush = new SolidBrush(Parse(text.Color));
+            using var brush = new SolidBrush(Color.FromArgb((int)(text.Opacity * 255), Parse(text.Color)));
             var size = graphics.MeasureString(letter.ToString(), font);
-            graphics.DrawString(letter.ToString(), font, brush, cursor, (float)(text.Y * layout.Height - size.Height / 2));
+            graphics.DrawString(letter.ToString(), font, brush, cursor,
+                (float)AlignedOrigin(text.Y * layout.Height, size.Height, text.VerticalAlignment));
             result.Add(Png(bitmap));
-            cursor += width;
+            cursor += widths[index];
         }
         return result;
     }
@@ -159,22 +163,56 @@ public static class CompositionAssetRenderer
             var style = (text.Bold ? FontStyle.Bold : FontStyle.Regular) |
                         (text.Italic ? FontStyle.Italic : FontStyle.Regular);
             using var font = new Font(text.FontFamily, (float)text.FontSize, style, GraphicsUnit.Pixel);
-            using var brush = new SolidBrush(Parse(text.Color));
-            var size = g.MeasureString(text.Text, font);
+            using var brush = new SolidBrush(Color.FromArgb((int)(text.Opacity * 255), Parse(text.Color)));
+            var size = g.MeasureString(text.Text, font, layout.Width);
+            using var format = new StringFormat
+            {
+                Alignment = ToStringAlignment(text.HorizontalAlignment),
+                LineAlignment = ToStringAlignment(text.VerticalAlignment),
+                FormatFlags = StringFormatFlags.LineLimit
+            };
+            var bounds = new RectangleF(
+                (float)AlignedOrigin(text.X * layout.Width, size.Width, text.HorizontalAlignment),
+                (float)AlignedOrigin(text.Y * layout.Height, size.Height, text.VerticalAlignment),
+                size.Width, size.Height);
             g.DrawString(text.Text, font, brush,
-                (float)(text.X * layout.Width - size.Width / 2),
-                (float)(text.Y * layout.Height - size.Height / 2));
+                bounds, format);
         }
         catch (ArgumentException)
         {
             using var font = new Font("Segoe UI", (float)text.FontSize, FontStyle.Regular, GraphicsUnit.Pixel);
-            using var brush = new SolidBrush(Parse(text.Color));
-            var size = g.MeasureString(text.Text, font);
+            using var brush = new SolidBrush(Color.FromArgb((int)(text.Opacity * 255), Parse(text.Color)));
+            var size = g.MeasureString(text.Text, font, layout.Width);
+            using var format = new StringFormat
+            {
+                Alignment = ToStringAlignment(text.HorizontalAlignment),
+                LineAlignment = ToStringAlignment(text.VerticalAlignment),
+                FormatFlags = StringFormatFlags.LineLimit
+            };
             g.DrawString(text.Text, font, brush,
-                (float)(text.X * layout.Width - size.Width / 2),
-                (float)(text.Y * layout.Height - size.Height / 2));
+                new RectangleF(
+                    (float)AlignedOrigin(text.X * layout.Width, size.Width, text.HorizontalAlignment),
+                    (float)AlignedOrigin(text.Y * layout.Height, size.Height, text.VerticalAlignment),
+                    size.Width, size.Height),
+                format);
         }
     }
+
+    private static double AlignedOrigin(double anchor, double size, string alignment) =>
+        alignment switch
+        {
+            "Left" or "Top" => anchor,
+            "Right" or "Bottom" => anchor - size,
+            _ => anchor - size / 2
+        };
+
+    private static StringAlignment ToStringAlignment(string alignment) =>
+        alignment switch
+        {
+            "Left" or "Top" => StringAlignment.Near,
+            "Right" or "Bottom" => StringAlignment.Far,
+            _ => StringAlignment.Center
+        };
 
     private static void DrawFrame(Graphics g, PresentationSettings p, CompositionLayout l)
     {
