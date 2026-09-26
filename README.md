@@ -9,7 +9,7 @@ tutorial for you** — pick what to record from live thumbnails, let smart zoom 
 actually doing, draw on your screen while you talk, clean up your mic, and export a trimmed GIF, all
 without leaving the app.
 
-[![Release](https://img.shields.io/badge/release-v3.2.2-success?logo=github)](../../releases/latest)
+[![Release](https://img.shields.io/badge/release-v3.2.3-success?logo=github)](../../releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/ChamathDilshanC/Cap-IT-Screen-Recorder/total?color=blue&logo=github)](../../releases)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-0078D6?logo=windows&logoColor=white)](#-installation)
 [![.NET](https://img.shields.io/badge/.NET-8-512BD4?logo=dotnet&logoColor=white)](#%EF%B8%8F-tech-stack)
@@ -18,7 +18,7 @@ without leaving the app.
 
 ### [**⬇ Download the latest Windows installer**](../../releases/latest)
 
-[What's new](#-whats-new-in-v322) · [Features](#-features) · [Screenshots](#-screenshots) · [Install](#-installation) · [Shortcuts](#%EF%B8%8F-keyboard-shortcuts) · [Architecture](#-architecture) · [Build from source](#-building-from-source)
+[What's new](#-whats-new-in-v323) · [Features](#-features) · [Screenshots](#-screenshots) · [Install](#-installation) · [Shortcuts](#%EF%B8%8F-keyboard-shortcuts) · [Architecture](#-architecture) · [Build from source](#-building-from-source)
 
 <br/>
 
@@ -70,7 +70,7 @@ Designed and developed by **[Chamath Dilshan](https://github.com/ChamathDilshanC
 
 ---
 
-## 🆕 What's new in v3.2.2
+## 🆕 What's new in v3.2.3
 
 This release improves the post-recording experience and makes stopping a recording resilient:
 
@@ -80,6 +80,7 @@ This release improves the post-recording experience and makes stopping a recordi
 | ▶️ **Stable Review & Export window** | The review window is retained by the application for its full lifetime, so video preview, canvas controls, trim range, MP4 save, GIF export, and discard actions remain available after stopping. |
 | 🖼️ **Safer presentation metadata** | Missing or incomplete background-mode values in older recording metadata are handled safely instead of breaking the preview canvas. |
 | 🎥 **Current recording editor** | Review recordings with a MediaPlayer preview, trim timeline, post-record zoom regions, canvas presets, backgrounds, rounded corners, shadows, device frames, watermarks, cursor metadata, and GIF export. |
+| 🔔 **Live update notifications** | The app checks for new GitHub releases at startup and every five minutes while open, so users see an update banner even when a release is published after the app was launched. |
 
 > **Upgrade note:** recordings and preferences are preserved. Settings remain outside the install directory at `%LocalAppData%\Cap-IT Screen Recorder\settings.json`, and recording metadata is stored beside each video.
 
@@ -437,7 +438,7 @@ that can't lose a leg mid-stream.
 
 ## 📦 Installation
 
-Grab **`CapIT-Screen-Recorder-Setup-3.2.2.exe`** from
+Grab **`CapIT-Screen-Recorder-Setup-3.2.3.exe`** from
 **[Releases](../../releases/latest)** and run it. It's a normal Windows installer (built with Inno
 Setup) and it's fully self-contained — no separate .NET runtime, no Windows App SDK runtime, and no
 manual FFmpeg download.

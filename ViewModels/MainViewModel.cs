@@ -26,7 +26,9 @@ public partial class MainViewModel : BaseViewModel
     private readonly SpeakerLevelMonitorService _speakerLevelMonitor = new();
     private readonly UpdateService _updateService = new();
     private readonly DispatcherQueueTimer _uiTimer;
+    private readonly DispatcherQueueTimer _updateCheckTimer;
     private TrimExportWindow? _trimExportWindow;
+    private bool _updateCheckInProgress;
 
     // Guards the load-and-apply pass in the constructor so setting ~15 properties from disk doesn't
     // immediately queue ~15 redundant saves of the values it just read.
@@ -223,8 +225,8 @@ public partial class MainViewModel : BaseViewModel
     private TaskCompletionSource<bool>? _ffmpegDecisionTcs;
     private CancellationTokenSource? _ffmpegDownloadCts;
 
-    // Auto-update (GitHub Releases). The check runs once, in the background, at startup; the banner only
-    // appears if a strictly-newer release exists. See UpdateService.
+    // Auto-update (GitHub Releases). The check runs at startup and periodically while the app remains
+    // open, so a release published after launch is still surfaced without requiring a restart.
     private UpdateInfo? _pendingUpdate;
     private CancellationTokenSource? _updateDownloadCts;
 
@@ -296,6 +298,10 @@ public partial class MainViewModel : BaseViewModel
         // Runs continuously (not just while recording) so the live preview can update as soon as a
         // monitor is selected, before the user ever presses Start Recording.
         _uiTimer.Start();
+        _updateCheckTimer = DispatcherQueue.GetForCurrentThread().CreateTimer();
+        _updateCheckTimer.Interval = TimeSpan.FromMinutes(5);
+        _updateCheckTimer.Tick += (_, _) => _ = CheckForUpdatesAsync();
+        _updateCheckTimer.Start();
 
         // Fires from VideoCaptureService's WGC Closed handler, which runs on WGC's own thread, not the
         // UI thread — everything below touches [ObservableProperty]-backed state XAML bindings expect
@@ -329,23 +335,43 @@ public partial class MainViewModel : BaseViewModel
         _dispatcherQueue.TryEnqueue(SyncAnnotationOverlay);
     }
 
-    /// <summary>One-shot background update check on startup. Silent unless a newer GitHub release exists.</summary>
+    /// <summary>
+    /// Checks for a newer GitHub release. This runs at startup and every five minutes while the app is
+    /// open, so users do not need to restart the app to learn about a release published during the day.
+    /// Failed checks remain silent and never interrupt recording.
+    /// </summary>
     private async Task CheckForUpdatesAsync()
     {
+        if (_updateCheckInProgress || IsDownloadingUpdate) return;
+        _updateCheckInProgress = true;
         UpdateInfo? info;
-        try { info = await _updateService.CheckForUpdateAsync(); }
-        catch { return; }
-        if (info is null) return;
-
-        _pendingUpdate = info;
-        _dispatcherQueue.TryEnqueue(() =>
+        try
         {
-            var current = UpdateService.CurrentVersion.ToString(3);
-            UpdateBannerMessage = info.InstallerUrl is not null
-                ? $"Version {info.VersionTag} is available (you have v{current}). It installs to your current location and restarts the app."
-                : $"Version {info.VersionTag} is available (you have v{current}). Open the releases page to download it.";
-            UpdateAvailable = true;
-        });
+            info = await _updateService.CheckForUpdateAsync();
+            if (info is null) return;
+
+            // Do not keep replacing the same notification on every timer tick. A dismissed banner can
+            // still be shown again if a genuinely newer release is published later.
+            if (_pendingUpdate?.Version >= info.Version) return;
+
+            _pendingUpdate = info;
+            _dispatcherQueue.TryEnqueue(() =>
+            {
+                var current = UpdateService.CurrentVersion.ToString(3);
+                UpdateBannerMessage = info.InstallerUrl is not null
+                    ? $"Version {info.VersionTag} is available (you have v{current}). It installs to your current location and restarts the app."
+                    : $"Version {info.VersionTag} is available (you have v{current}). Open the releases page to download it.";
+                UpdateAvailable = true;
+            });
+        }
+        catch
+        {
+            // A network failure must not interrupt recording or show a misleading update message.
+        }
+        finally
+        {
+            _updateCheckInProgress = false;
+        }
     }
 
     /// <summary>(Re)applies the live mic level monitor to the current CaptureMicrophone / SelectedMicrophone
@@ -407,6 +433,7 @@ public partial class MainViewModel : BaseViewModel
     {
         FlushSettings();
         _uiTimer.Stop();
+        _updateCheckTimer.Stop();
         _micMonitorCts?.Cancel();
         _speakerMonitorCts?.Cancel();
         _audioSourceCts?.Cancel();
