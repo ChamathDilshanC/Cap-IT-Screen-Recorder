@@ -40,6 +40,12 @@ public sealed partial class ReviewViewModel : ObservableObject
         Presentation.TextOverlay.Normalize();
         Changed();
     }
+    public void SetTextOverlayPosition(double x, double y, bool notify = true)
+    {
+        Presentation.TextOverlay.X = Math.Clamp(x, 0, 1);
+        Presentation.TextOverlay.Y = Math.Clamp(y, 0, 1);
+        if (notify) Changed();
+    }
     private readonly DispatcherQueueTimer _commitTimer;
     private readonly SemaphoreSlim _saveLock = new(1, 1);
     private readonly List<string> _history = [];

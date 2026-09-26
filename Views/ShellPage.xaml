@@ -9,7 +9,7 @@
                      IsBackButtonVisible="Collapsed"
                      IsSettingsVisible="False"
                      OpenPaneLength="208"
-                     PaneTitle="Cap-IT"
+                     PaneTitle=""
                      SelectionChanged="OnSelectionChanged"
                      Loaded="OnNavigationViewLoaded">
 

@@ -5,6 +5,7 @@ using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 using Microsoft.UI.Xaml;
 using Microsoft.UI;
+using Microsoft.UI.Xaml.Input;
 using ScreenRecorderApp.Models;
 using ScreenRecorderApp.Services.Export;
 using System.Numerics;
@@ -16,6 +17,7 @@ public sealed partial class VideoPreviewCanvas : UserControl
 {
     public MediaPlayerElement Player => VideoPlayer;
     public event Action<string?>? AssetWarning;
+    public event Action<double, double, bool>? TextPositionChanged;
     private CancellationTokenSource? _renderCts;
     private CompositionRoundedRectangleGeometry? _geometry;
     private CompositionLayout? _layout;
@@ -24,6 +26,11 @@ public sealed partial class VideoPreviewCanvas : UserControl
     private int _generation;
     private string? _lastSettings;
     private PresentationTextOverlay _lastText = new();
+    private bool _draggingText;
+    private uint _dragPointerId;
+    private Windows.Foundation.Point _dragStart;
+    private double _dragOriginalX, _dragOriginalY;
+    private double _renderedTextX, _renderedTextY;
 
     public VideoPreviewCanvas() => InitializeComponent();
 
@@ -63,6 +70,7 @@ public sealed partial class VideoPreviewCanvas : UserControl
             _geometry.CornerRadius = new Vector2((float)l.Radius);
             BackgroundLayer.Source = bg; OverlayLayer.Source = overlay; TextLayer.Source = text;
             BuildLetterPreview(l, _lastText);
+            _renderedTextX = _lastText.X; _renderedTextY = _lastText.Y;
             SetPosition(_lastTime, _lastRegions);
             AssetWarning?.Invoke(assets.Warning);
         }
@@ -115,6 +123,11 @@ public sealed partial class VideoPreviewCanvas : UserControl
         if (text.Animation == "BounceLetters")
         {
             TextLayer.Opacity = 0;
+            TextLettersCanvas.RenderTransform = new TranslateTransform
+            {
+                X = (text.X - _renderedTextX) * _layout.Width,
+                Y = (text.Y - _renderedTextY) * _layout.Height
+            };
             for (var i = 0; i < TextLettersCanvas.Children.Count; i++)
             {
                 if (TextLettersCanvas.Children[i] is not UIElement element) continue;
@@ -136,22 +149,62 @@ public sealed partial class VideoPreviewCanvas : UserControl
             CenterX = text.X * _layout.Width, CenterY = text.Y * _layout.Height,
             ScaleX = 1, ScaleY = 1, TranslateY = 0, TranslateX = 0
         };
+        transform.TranslateX = (text.X - _renderedTextX) * _layout.Width;
+        transform.TranslateY = (text.Y - _renderedTextY) * _layout.Height;
         switch (text.Animation)
         {
             case "Bounce":
-                transform.TranslateX = Math.Sin(progress * Math.PI * 3) * _layout.Width * .018 * (1 - progress);
+                transform.TranslateX += Math.Sin(progress * Math.PI * 3) * _layout.Width * .018 * (1 - progress);
                 break;
             case "Fade": TextLayer.Opacity = progress; break;
             case "Pop":
                 transform.ScaleX = transform.ScaleY = .75 + .25 * progress;
                 break;
             case "SlideUp":
-                transform.TranslateY = _layout.Height * .08 * (1 - progress);
+                transform.TranslateY += _layout.Height * .08 * (1 - progress);
                 break;
             default: TextLayer.Opacity = 1; break;
         }
         TextLayer.RenderTransform = transform;
         if (text.Animation != "Fade") TextLayer.Opacity = 1;
+    }
+    private void OnCompositionPointerPressed(object sender, PointerRoutedEventArgs e)
+    {
+        if (_layout is null || !_lastText.IsVisible) return;
+        var point = e.GetCurrentPoint(CompositionCanvas).Position;
+        var width = Math.Max(_lastText.FontSize * .62, _lastText.Text.Length * _lastText.FontSize * .62);
+        var height = _lastText.FontSize * 1.6;
+        var left = _lastText.X * _layout.Width - width / 2;
+        var top = _lastText.Y * _layout.Height - height / 2;
+        if (point.X < left || point.X > left + width || point.Y < top || point.Y > top + height) return;
+        _draggingText = true; _dragPointerId = e.Pointer.PointerId; _dragStart = point;
+        _dragOriginalX = _lastText.X; _dragOriginalY = _lastText.Y;
+        CompositionCanvas.CapturePointer(e.Pointer);
+        e.Handled = true;
+    }
+    private void OnCompositionPointerMoved(object sender, PointerRoutedEventArgs e)
+    {
+        if (!_draggingText || e.Pointer.PointerId != _dragPointerId || _layout is null) return;
+        var point = e.GetCurrentPoint(CompositionCanvas).Position;
+        _lastText.X = Math.Clamp(_dragOriginalX + (point.X - _dragStart.X) / _layout.Width, 0, 1);
+        _lastText.Y = Math.Clamp(_dragOriginalY + (point.Y - _dragStart.Y) / _layout.Height, 0, 1);
+        TextPositionChanged?.Invoke(_lastText.X, _lastText.Y, false);
+        UpdateTextAnimation(_lastTime);
+        e.Handled = true;
+    }
+    private void OnCompositionPointerReleased(object sender, PointerRoutedEventArgs e)
+    {
+        if (!_draggingText || e.Pointer.PointerId != _dragPointerId) return;
+        _draggingText = false; CompositionCanvas.ReleasePointerCapture(e.Pointer);
+        TextPositionChanged?.Invoke(_lastText.X, _lastText.Y, true);
+        e.Handled = true;
+    }
+    private void OnCompositionPointerCanceled(object sender, PointerRoutedEventArgs e)
+    {
+        if (!_draggingText || e.Pointer.PointerId != _dragPointerId) return;
+        _draggingText = false; CompositionCanvas.ReleasePointerCapture(e.Pointer);
+        _lastText.X = _dragOriginalX; _lastText.Y = _dragOriginalY;
+        TextPositionChanged?.Invoke(_lastText.X, _lastText.Y, true);
     }
     private static Windows.UI.Color ParseTextColor(string value)
     {

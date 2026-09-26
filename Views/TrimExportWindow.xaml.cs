@@ -56,6 +56,7 @@ public sealed partial class TrimExportWindow : Window
         ViewModel.CompositionChanged += OnCompositionChanged;
         Timeline.SeekRequested += Seek;
         Timeline.TrimChanged += (start, end) => { ViewModel.TrimStart = start; ViewModel.TrimEnd = end; };
+        Preview.TextPositionChanged += (x, y, completed) => ViewModel.SetTextOverlayPosition(x, y, completed);
         Root.Loaded += OnLoaded;
         Closed += OnClosed;
         BuildGradientPresets();
