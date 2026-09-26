@@ -36,11 +36,24 @@ public static class CompositionExportService
             await File.WriteAllBytesAsync(overlay, assets.Overlay, ct).ConfigureAwait(false);
             await File.WriteAllBytesAsync(mask, assets.Mask, ct).ConfigureAwait(false);
             await File.WriteAllBytesAsync(text, assets.Text, ct).ConfigureAwait(false);
-            var filter = BuildFilter(assets.Layout, sw, sh, regions, start.TotalSeconds, duration.TotalSeconds, fps, p.TextOverlay);
-            List<string> Inputs() => ["-y", "-hide_banner", "-loglevel", "warning", "-nostats", "-progress", "pipe:1",
+            var letterPaths = new List<string>();
+            for (var i = 0; i < assets.TextLetters.Count; i++)
+            {
+                var path = Path.Combine(folder, $"text-letter-{i}.png");
+                await File.WriteAllBytesAsync(path, assets.TextLetters[i], ct).ConfigureAwait(false);
+                letterPaths.Add(path);
+            }
+            var filter = BuildFilter(assets.Layout, sw, sh, regions, start.TotalSeconds, duration.TotalSeconds, fps, p.TextOverlay, assets.TextLetters.Count);
+            List<string> Inputs()
+            {
+                var args = new List<string> { "-y", "-hide_banner", "-loglevel", "warning", "-nostats", "-progress", "pipe:1",
                 "-filter_complex_threads", "2", "-ss", F(start.TotalSeconds), "-t", F(duration.TotalSeconds), "-i", inputPath,
                 "-loop", "1", "-framerate", F(fps), "-i", bg, "-loop", "1", "-framerate", F(fps), "-i", mask,
-                "-loop", "1", "-framerate", F(fps), "-i", overlay, "-loop", "1", "-framerate", F(fps), "-i", text];
+                "-loop", "1", "-framerate", F(fps), "-i", overlay, "-loop", "1", "-framerate", F(fps), "-i", text };
+                foreach (var letterPath in letterPaths)
+                    args.AddRange(["-loop", "1", "-framerate", F(fps), "-i", letterPath]);
+                return args;
+            }
             if (gif)
             {
                 var palette = Path.Combine(folder, "palette.png");
@@ -48,7 +61,7 @@ public static class CompositionExportService
                 var args = Inputs();
                 args.AddRange(["-filter_complex", filter + tail + ",palettegen=stats_mode=diff[palette]", "-map", "[palette]", "-frames:v", "1", palette]);
                 await RunAsync(ffmpeg, args, duration, v => progress?.Report(new("Building GIF palette…", 5 + v * 40)), ct).ConfigureAwait(false);
-                args = Inputs(); args.AddRange(["-i", palette, "-filter_complex", filter + tail + "[small];[small][5:v]paletteuse=dither=sierra2_4a[out]",
+                args = Inputs(); args.AddRange(["-i", palette, "-filter_complex", filter + tail + $"[small];[small][{5 + assets.TextLetters.Count}:v]paletteuse=dither=sierra2_4a[out]",
                     "-map", "[out]", "-an", "-loop", "0", "-t", F(duration.TotalSeconds), partial]);
                 await RunAsync(ffmpeg, args, duration, v => progress?.Report(new("Encoding GIF…", 45 + v * 54)), ct).ConfigureAwait(false);
             }
@@ -94,7 +107,7 @@ public static class CompositionExportService
     }
 
     public static string BuildFilter(CompositionLayout layout, int sw, int sh, IReadOnlyList<ZoomRegion> regions,
-        double start, double duration, double fps, PresentationTextOverlay? text = null)
+        double start, double duration, double fps, PresentationTextOverlay? text = null, int textLetterCount = 0)
     {
         var boundaries = new SortedSet<double> { 0, duration };
         foreach (var region in regions.Where(r => r.Enabled && double.IsFinite(r.StartSeconds) && double.IsFinite(r.EndSeconds) && r.EndSeconds > r.StartSeconds))
@@ -118,7 +131,18 @@ public static class CompositionExportService
         graph.Append($"concat=n={count}:v=1:a=0,fps={F(fps)}[video];[2:v]format=gray[mask];[video][mask]alphamerge=shortest=1[rounded];");
         graph.Append($"[1:v][rounded]overlay=x={layout.Video.X}:y={layout.Video.Y}:shortest=1:format=rgb[base];");
         graph.Append("[base][3:v]overlay=0:0:shortest=1:format=rgb[styled];");
-        if (text is { IsVisible: true })
+        if (text is { IsVisible: true } && text.Animation == "BounceLetters" && textLetterCount > 0)
+        {
+            graph.Append("[styled]");
+            for (var i = 0; i < textLetterCount; i++)
+            {
+                var delay = i * Math.Min(.08, text.AnimationDuration / Math.Max(1, textLetterCount * 2d));
+                var inputIndex = 4 + i;
+                var bounce = $"y='{F(layout.Height * .12)}*(1-min(max((t-{F(delay)})/{F(text.AnimationDuration)},0),1))+sin(min(max((t-{F(delay)})/{F(text.AnimationDuration)},0),1)*PI*2)*{F(layout.Height * .055)}*(1-min(max((t-{F(delay)})/{F(text.AnimationDuration)},0),1))'";
+                graph.Append($"[{inputIndex}:v]overlay=x=0:{bounce}:enable='gte(t,{F(delay)})':shortest=1:format=rgb");
+            }
+        }
+        else if (text is { IsVisible: true })
         {
             var animation = text.Animation switch
             {

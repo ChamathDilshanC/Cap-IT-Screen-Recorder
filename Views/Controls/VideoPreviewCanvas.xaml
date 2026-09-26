@@ -9,6 +9,7 @@
                 </Canvas>
                 <Image x:Name="OverlayLayer" Stretch="Fill" IsHitTestVisible="False" />
                 <Image x:Name="TextLayer" Stretch="Fill" IsHitTestVisible="False" />
+                <Canvas x:Name="TextLettersCanvas" IsHitTestVisible="False" />
             </Canvas>
         </Viewbox>
     </Grid>

@@ -500,7 +500,7 @@
                                 <ComboBox x:Name="TextFontPicker" Header="System font" SelectionChanged="OnTextFontChanged"/>
                                 <ComboBox x:Name="TextAnimationPicker" Header="Intro animation" SelectionChanged="OnTextAnimationChanged">
                                     <ComboBoxItem Tag="None" Content="None"/>
-                                    <ComboBoxItem Tag="Bounce" Content="Bounce"/>
+                                    <ComboBoxItem Tag="BounceLetters" Content="Bounce letters"/>
                                     <ComboBoxItem Tag="Fade" Content="Fade in"/>
                                     <ComboBoxItem Tag="Pop" Content="Pop"/>
                                     <ComboBoxItem Tag="SlideUp" Content="Slide up"/>

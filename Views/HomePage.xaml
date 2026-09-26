@@ -182,7 +182,7 @@
 
                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10"
                             Visibility="{x:Bind ViewModel.ShowPlaceholder, Mode=OneWay}">
-                    <Image Source="ms-appx:///assets/Logo-CapIT.png" Width="72" Height="72" Opacity="0.85" />
+                    <Image Source="ms-appx:///assets/Logo-Mark.png" Width="72" Height="72" Opacity="0.85" />
                     <TextBlock Text="Pick a display or window above to see a live preview"
                                HorizontalAlignment="Center" Foreground="{ThemeResource PreviewTextBrush}" />
                 </StackPanel>

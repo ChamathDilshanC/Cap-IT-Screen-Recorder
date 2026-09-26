@@ -34,7 +34,8 @@ public sealed class PresentationTextOverlay
         Color = PresentationSettings.Color(Color, "#FFFFFF");
         X = double.IsFinite(X) ? Math.Clamp(X, 0, 1) : .5;
         Y = double.IsFinite(Y) ? Math.Clamp(Y, 0, 1) : .5;
-        Animation = Animation is "None" or "Bounce" or "Fade" or "Pop" or "SlideUp" ? Animation : "None";
+        Animation = Animation == "Bounce" ? "BounceLetters" :
+            Animation is "None" or "BounceLetters" or "Fade" or "Pop" or "SlideUp" ? Animation : "None";
         AnimationDuration = double.IsFinite(AnimationDuration) ? Math.Clamp(AnimationDuration, .1, 3) : .8;
     }
 }

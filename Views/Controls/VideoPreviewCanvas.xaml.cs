@@ -3,6 +3,8 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
+using Microsoft.UI.Xaml;
+using Microsoft.UI;
 using ScreenRecorderApp.Models;
 using ScreenRecorderApp.Services.Export;
 using System.Numerics;
@@ -60,6 +62,7 @@ public sealed partial class VideoPreviewCanvas : UserControl
             _geometry.Size = new Vector2(l.Video.Width, l.Video.Height);
             _geometry.CornerRadius = new Vector2((float)l.Radius);
             BackgroundLayer.Source = bg; OverlayLayer.Source = overlay; TextLayer.Source = text;
+            BuildLetterPreview(l, _lastText);
             SetPosition(_lastTime, _lastRegions);
             AssetWarning?.Invoke(assets.Warning);
         }
@@ -72,13 +75,36 @@ public sealed partial class VideoPreviewCanvas : UserControl
     {
         _lastTime = seconds; _lastRegions = regions;
         if (_layout is null) return;
+        UpdateTextAnimation(seconds);
         var crop = CompositionLayout.SourceCrop(_sourceWidth, _sourceHeight, _layout.Video, CompositionLayout.ActiveZoom(regions, seconds));
         if (crop == _lastCrop) return;
         _lastCrop = crop;
         var sx = (double)_layout.Video.Width / crop.Width; var sy = (double)_layout.Video.Height / crop.Height;
         VideoPlayer.Width = _sourceWidth * sx; VideoPlayer.Height = _sourceHeight * sy;
         Canvas.SetLeft(VideoPlayer, -crop.X * sx); Canvas.SetTop(VideoPlayer, -crop.Y * sy);
-        UpdateTextAnimation(seconds);
+    }
+    private void BuildLetterPreview(CompositionLayout layout, PresentationTextOverlay text)
+    {
+        TextLettersCanvas.Children.Clear();
+        TextLettersCanvas.Width = layout.Width; TextLettersCanvas.Height = layout.Height;
+        TextLettersCanvas.Visibility = text.Animation == "BounceLetters" && text.IsVisible ? Visibility.Visible : Visibility.Collapsed;
+        TextLayer.Visibility = TextLettersCanvas.Visibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible;
+        if (TextLettersCanvas.Visibility == Visibility.Collapsed) return;
+        var width = text.FontSize * .62;
+        var start = text.X * layout.Width - text.Text.Length * width / 2;
+        for (var i = 0; i < text.Text.Length; i++)
+        {
+            var letter = new TextBlock
+            {
+                Text = text.Text[i].ToString(), FontSize = text.FontSize,
+                FontFamily = new Microsoft.UI.Xaml.Media.FontFamily(text.FontFamily),
+                Foreground = new SolidColorBrush(ParseTextColor(text.Color)),
+                FontWeight = text.Bold ? Microsoft.UI.Text.FontWeights.Bold : Microsoft.UI.Text.FontWeights.Normal,
+                FontStyle = text.Italic ? Windows.UI.Text.FontStyle.Italic : Windows.UI.Text.FontStyle.Normal
+            };
+            Canvas.SetLeft(letter, start + i * width); Canvas.SetTop(letter, text.Y * layout.Height - text.FontSize / 2);
+            TextLettersCanvas.Children.Add(letter);
+        }
     }
     private void UpdateTextAnimation(double seconds)
     {
@@ -86,6 +112,25 @@ public sealed partial class VideoPreviewCanvas : UserControl
         var text = _lastText;
         var duration = Math.Max(.1, text.AnimationDuration);
         var progress = Math.Clamp(seconds / duration, 0, 1);
+        if (text.Animation == "BounceLetters")
+        {
+            TextLayer.Opacity = 0;
+            for (var i = 0; i < TextLettersCanvas.Children.Count; i++)
+            {
+                if (TextLettersCanvas.Children[i] is not UIElement element) continue;
+                var stagger = i * Math.Min(.08, duration / Math.Max(1, TextLettersCanvas.Children.Count * 2d));
+                var local = Math.Clamp((seconds - stagger) / duration, 0, 1);
+                var letterTransform = new TranslateTransform
+                {
+                    Y = _layout.Height * .12 * (1 - local) -
+                        Math.Sin(local * Math.PI * 2) * _layout.Height * .055 * (1 - local)
+                };
+                element.RenderTransform = letterTransform;
+                element.Opacity = seconds >= stagger ? 1 : 0;
+            }
+            return;
+        }
+        TextLayer.Opacity = 1;
         var transform = new CompositeTransform
         {
             CenterX = text.X * _layout.Width, CenterY = text.Y * _layout.Height,
@@ -107,6 +152,15 @@ public sealed partial class VideoPreviewCanvas : UserControl
         }
         TextLayer.RenderTransform = transform;
         if (text.Animation != "Fade") TextLayer.Opacity = 1;
+    }
+    private static Windows.UI.Color ParseTextColor(string value)
+    {
+        try
+        {
+            var hex = value.TrimStart('#');
+            return Windows.UI.Color.FromArgb(255, Convert.ToByte(hex[0..2], 16), Convert.ToByte(hex[2..4], 16), Convert.ToByte(hex[4..6], 16));
+        }
+        catch { return Colors.White; }
     }
     private static async Task<BitmapImage> DecodeAsync(byte[] bytes)
     {

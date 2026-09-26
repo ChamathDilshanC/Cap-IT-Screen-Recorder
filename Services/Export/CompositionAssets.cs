@@ -6,7 +6,7 @@ using ScreenRecorderApp.Models;
 
 namespace ScreenRecorderApp.Services.Export;
 
-public sealed record CompositionAssets(CompositionLayout Layout, byte[] Background, byte[] Overlay, byte[] Mask, byte[] Text, string? Warning);
+public sealed record CompositionAssets(CompositionLayout Layout, byte[] Background, byte[] Overlay, byte[] Mask, byte[] Text, IReadOnlyList<byte[]> TextLetters, string? Warning);
 
 /// <summary>Renders static artwork once per edit, never per video frame. Preview and export use identical pixels.</summary>
 public static class CompositionAssetRenderer
@@ -111,8 +111,44 @@ public static class CompositionAssetRenderer
             Setup(g);
             DrawTextOverlay(g, p.TextOverlay, l);
         }
+        var textLetters = p.TextOverlay.Animation == "BounceLetters"
+            ? RenderTextLetters(p.TextOverlay, l)
+            : Array.Empty<byte[]>();
         ct.ThrowIfCancellationRequested();
-        return new(l, Png(background), Png(overlay), Png(mask), Png(textLayer), warning);
+        return new(l, Png(background), Png(overlay), Png(mask), Png(textLayer), textLetters, warning);
+    }
+
+    private static IReadOnlyList<byte[]> RenderTextLetters(PresentationTextOverlay text, CompositionLayout layout)
+    {
+        if (!text.IsVisible) return Array.Empty<byte[]>();
+        using var measureBitmap = new Bitmap(1, 1);
+        using var measureGraphics = Graphics.FromImage(measureBitmap);
+        using var font = CreateFont(text);
+        var total = measureGraphics.MeasureString(text.Text, font).Width;
+        var startX = (float)(text.X * layout.Width - total / 2);
+        var result = new List<byte[]>();
+        var cursor = startX;
+        foreach (var letter in text.Text)
+        {
+            var width = Math.Max(1f, measureGraphics.MeasureString(letter.ToString(), font).Width);
+            using var bitmap = new Bitmap(layout.Width, layout.Height, PixelFormat.Format32bppArgb);
+            using var graphics = Graphics.FromImage(bitmap);
+            Setup(graphics);
+            using var brush = new SolidBrush(Parse(text.Color));
+            var size = graphics.MeasureString(letter.ToString(), font);
+            graphics.DrawString(letter.ToString(), font, brush, cursor, (float)(text.Y * layout.Height - size.Height / 2));
+            result.Add(Png(bitmap));
+            cursor += width;
+        }
+        return result;
+    }
+
+    private static Font CreateFont(PresentationTextOverlay text)
+    {
+        var style = (text.Bold ? FontStyle.Bold : FontStyle.Regular) |
+                    (text.Italic ? FontStyle.Italic : FontStyle.Regular);
+        try { return new Font(text.FontFamily, (float)text.FontSize, style, GraphicsUnit.Pixel); }
+        catch (ArgumentException) { return new Font("Segoe UI", (float)text.FontSize, style, GraphicsUnit.Pixel); }
     }
 
     private static void DrawTextOverlay(Graphics g, PresentationTextOverlay text, CompositionLayout layout)
