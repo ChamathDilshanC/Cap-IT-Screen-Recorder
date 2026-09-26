@@ -468,31 +468,6 @@
                                     <Button Content="Choose logo" Click="OnChooseWatermarkClick"/>
                                     <Button Content="Remove" Click="OnRemoveWatermarkClick"/>
                                 </StackPanel>
-                                <StackPanel x:Name="TextSection" Spacing="12" Visibility="Collapsed">
-                                    <TextBlock Text="Text overlay" Style="{StaticResource SectionHeaderText}"/>
-                                    <TextBlock Text="Add a title, label, or callout using any font installed on your Windows system." Style="{StaticResource SectionDescriptionText}" FontSize="12" TextWrapping="Wrap"/>
-                                    <TextBox x:Name="TextOverlayBox" Header="Text" TextChanged="OnTextOverlayChanged" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="72" PlaceholderText="Type text to place on the video"/>
-                                    <ComboBox x:Name="TextFontPicker" Header="System font" SelectionChanged="OnTextFontChanged"/>
-                                    <ComboBox x:Name="TextAnimationPicker" Header="Intro animation" SelectionChanged="OnTextAnimationChanged">
-                                        <ComboBoxItem Tag="None" Content="None"/>
-                                        <ComboBoxItem Tag="Bounce" Content="Bounce"/>
-                                        <ComboBoxItem Tag="Fade" Content="Fade in"/>
-                                        <ComboBoxItem Tag="Pop" Content="Pop"/>
-                                        <ComboBoxItem Tag="SlideUp" Content="Slide up"/>
-                                    </ComboBox>
-                                    <Grid ColumnSpacing="8">
-                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                                        <NumberBox x:Name="TextSizeBox" Header="Size · px" Minimum="8" Maximum="240" ValueChanged="OnTextOverlayNumberChanged" SpinButtonPlacementMode="Compact"/>
-                                        <NumberBox x:Name="TextXBox" Grid.Column="1" Header="X · %" Minimum="0" Maximum="100" ValueChanged="OnTextOverlayNumberChanged" SpinButtonPlacementMode="Compact"/>
-                                    </Grid>
-                                    <NumberBox x:Name="TextYBox" Header="Y · %" Minimum="0" Maximum="100" ValueChanged="OnTextOverlayNumberChanged" SpinButtonPlacementMode="Compact"/>
-                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                        <ToggleButton x:Name="TextBoldButton" Content="Bold" Click="OnTextStyleClick"/>
-                                        <ToggleButton x:Name="TextItalicButton" Content="Italic" Click="OnTextStyleClick"/>
-                                        <Button Content="Clear text" Click="OnClearTextOverlayClick"/>
-                                    </StackPanel>
-                                    <TextBlock Text="Font choices come from installed Windows fonts and fall back to Segoe UI if a font is unavailable." Style="{StaticResource SectionDescriptionText}" FontSize="12" TextWrapping="Wrap"/>
-                                </StackPanel>
                                 <Grid>
                                     <TextBlock Text="Scale · canvas width"/>
                                     <TextBlock Text="{Binding Presentation.WatermarkScale, Converter={StaticResource CompactNumber}}" HorizontalAlignment="Right" Opacity=".65"/>
@@ -517,6 +492,31 @@
                                 <Slider Minimum="0" Maximum="200" StepFrequency="1" Value="{Binding Presentation.WatermarkMargin, Mode=TwoWay}" AutomationProperties.Name="Margin · px"/>
                                 <NumberBox Header="X offset · px" Minimum="-7680" Maximum="7680" Value="{Binding Presentation.WatermarkOffsetX, Mode=TwoWay}" SpinButtonPlacementMode="Compact"/>
                                 <NumberBox Header="Y offset · px" Minimum="-7680" Maximum="7680" Value="{Binding Presentation.WatermarkOffsetY, Mode=TwoWay}" SpinButtonPlacementMode="Compact"/>
+                            </StackPanel>
+                            <StackPanel x:Name="TextSection" Spacing="12" Visibility="Collapsed">
+                                <TextBlock Text="Text overlay" Style="{StaticResource SectionHeaderText}"/>
+                                <TextBlock Text="Add a title, label, or callout using any font installed on your Windows system." Style="{StaticResource SectionDescriptionText}" FontSize="12" TextWrapping="Wrap"/>
+                                <TextBox x:Name="TextOverlayBox" Header="Text" TextChanged="OnTextOverlayChanged" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="72" PlaceholderText="Type text to place on the video"/>
+                                <ComboBox x:Name="TextFontPicker" Header="System font" SelectionChanged="OnTextFontChanged"/>
+                                <ComboBox x:Name="TextAnimationPicker" Header="Intro animation" SelectionChanged="OnTextAnimationChanged">
+                                    <ComboBoxItem Tag="None" Content="None"/>
+                                    <ComboBoxItem Tag="Bounce" Content="Bounce"/>
+                                    <ComboBoxItem Tag="Fade" Content="Fade in"/>
+                                    <ComboBoxItem Tag="Pop" Content="Pop"/>
+                                    <ComboBoxItem Tag="SlideUp" Content="Slide up"/>
+                                </ComboBox>
+                                <Grid ColumnSpacing="8">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                    <NumberBox x:Name="TextSizeBox" Header="Size · px" Minimum="8" Maximum="240" ValueChanged="OnTextOverlayNumberChanged" SpinButtonPlacementMode="Compact"/>
+                                    <NumberBox x:Name="TextXBox" Grid.Column="1" Header="X · %" Minimum="0" Maximum="100" ValueChanged="OnTextOverlayNumberChanged" SpinButtonPlacementMode="Compact"/>
+                                </Grid>
+                                <NumberBox x:Name="TextYBox" Header="Y · %" Minimum="0" Maximum="100" ValueChanged="OnTextOverlayNumberChanged" SpinButtonPlacementMode="Compact"/>
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <ToggleButton x:Name="TextBoldButton" Content="Bold" Click="OnTextStyleClick"/>
+                                    <ToggleButton x:Name="TextItalicButton" Content="Italic" Click="OnTextStyleClick"/>
+                                    <Button Content="Clear text" Click="OnClearTextOverlayClick"/>
+                                </StackPanel>
+                                <TextBlock Text="Font choices come from installed Windows fonts and fall back to Segoe UI if a font is unavailable." Style="{StaticResource SectionDescriptionText}" FontSize="12" TextWrapping="Wrap"/>
                             </StackPanel>
                             <StackPanel x:Name="ExportSection" Spacing="12" Visibility="Collapsed">
                                 <TextBlock Text="Ready to share" Style="{StaticResource SectionHeaderText}"/>

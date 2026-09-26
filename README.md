@@ -9,7 +9,7 @@ tutorial for you** — pick what to record from live thumbnails, let smart zoom 
 actually doing, draw on your screen while you talk, clean up your mic, and export a trimmed GIF, all
 without leaving the app.
 
-[![Release](https://img.shields.io/badge/release-v3.4.0-success?logo=github)](../../releases/latest)
+[![Release](https://img.shields.io/badge/release-v3.4.1-success?logo=github)](../../releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/ChamathDilshanC/Cap-IT-Screen-Recorder/total?color=blue&logo=github)](../../releases)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-0078D6?logo=windows&logoColor=white)](#-installation)
 [![.NET](https://img.shields.io/badge/.NET-8-512BD4?logo=dotnet&logoColor=white)](#%EF%B8%8F-tech-stack)
@@ -74,7 +74,7 @@ Designed and developed by **[Chamath Dilshan](https://github.com/ChamathDilshanC
 
 ---
 
-## 🆕 What's new in v3.4.0
+## 🆕 What's new in v3.4.1
 
 This release introduces a redesigned Review & Export workspace and improves the post-recording experience:
 
@@ -85,6 +85,7 @@ This release introduces a redesigned Review & Export workspace and improves the 
 | 🖼️ **Safer presentation metadata** | Missing or incomplete background-mode values in older recording metadata are handled safely instead of breaking the preview canvas. |
 | 🎥 **Current recording editor** | Review recordings with a MediaPlayer preview, trim timeline, post-record zoom regions, canvas presets, backgrounds, rounded corners, shadows, device frames, watermarks, cursor metadata, and GIF export. |
 | 🔔 **Live update notifications** | The app checks for new GitHub releases at startup and every five minutes while open, so users see an update banner even when a release is published after the app was launched. |
+| ⚡ **Reliable in-app updates** | Update downloads can finish while the app remains open; clicking **Update now** hands off to a background installer that waits for the app to close, installs in place, and relaunches it automatically. |
 | 🧩 **Review workspace** | A dedicated editor layout brings the preview canvas, thumbnail timeline, inspector, trim controls, presentation presets, zoom regions, and export actions into one workspace. |
 | 🎨 **Consistent composition exports** | MP4 and GIF exports share the same presentation settings and composition layout, including canvas size, background, scale, padding, rounded corners, shadow, device frame, and watermark options. |
 | 🔤 **System-font text overlay** | Add editable text in Review & Export using fonts installed on Windows; the same text is rendered in the live preview, MP4, and GIF exports. |
@@ -450,7 +451,7 @@ that can't lose a leg mid-stream.
 
 ## 📦 Installation
 
-Grab **`CapIT-Screen-Recorder-Setup-3.4.0.exe`** from
+Grab **`CapIT-Screen-Recorder-Setup-3.4.1.exe`** from
 **[Releases](../../releases/latest)** and run it. It's a normal Windows installer (built with Inno
 Setup) and it's fully self-contained — no separate .NET runtime, no Windows App SDK runtime, and no
 manual FFmpeg download.

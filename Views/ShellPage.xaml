@@ -58,7 +58,7 @@
 
         <NavigationView.PaneHeader>
             <StackPanel Orientation="Horizontal" Spacing="8" Margin="4,4,0,4">
-                <Image Source="ms-appx:///assets/Logo-CapIT.png" Width="24" Height="24" />
+                <Image Source="ms-appx:///assets/Logo-Mark.png" Width="24" Height="24" />
                 <TextBlock Text="Cap-IT" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
             </StackPanel>
         </NavigationView.PaneHeader>

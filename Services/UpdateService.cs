@@ -123,20 +123,27 @@ public sealed class UpdateService
     }
 
     /// <summary>
-    /// Launches the downloaded installer silently and invokes <paramref name="requestExit"/> so the app
-    /// can close. The installer waits on the app's mutex, closes anything still holding it, installs over
-    /// the existing location, then relaunches the app via its postinstall [Run] entry.
+    /// Starts a detached handoff process. The handoff waits for this process to exit before starting the
+    /// installer, which avoids the race where Inno Setup is launched while the app still owns its mutex
+    /// or has files open. The installer then replaces the app in place and relaunches it.
     /// </summary>
     public void LaunchInstaller(string installerPath, Action requestExit)
     {
-        var startInfo = new ProcessStartInfo(installerPath)
+        var currentProcessId = Environment.ProcessId;
+        var escapedInstallerPath = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(Path.GetFullPath(installerPath)));
+        var script = "$installer = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('"
+            + escapedInstallerPath + "'))\n"
+            + "Wait-Process -Id " + currentProcessId + " -ErrorAction SilentlyContinue\n"
+            + "if (Test-Path -LiteralPath $installer) {\n"
+            + "    Start-Process -FilePath $installer -ArgumentList '/SILENT','/SUPPRESSMSGBOXES','/CLOSEAPPLICATIONS','/FORCECLOSEAPPLICATIONS','/RESTARTAPPLICATIONS','/SP-'\n"
+            + "}\n";
+        var encodedCommand = Convert.ToBase64String(System.Text.Encoding.Unicode.GetBytes(script));
+        var startInfo = new ProcessStartInfo("powershell.exe")
         {
-            UseShellExecute = true,
-            // /SILENT       — progress window only, no wizard pages
-            // /CLOSEAPPLICATIONS + /FORCECLOSEAPPLICATIONS — shut the running app if our own exit lags
-            // No /DIR       — Inno reuses the previous install folder (UsePreviousAppDir), so an update
-            //                 lands exactly where the user originally installed it.
-            Arguments = "/SILENT /CLOSEAPPLICATIONS /FORCECLOSEAPPLICATIONS /NOCANCEL /SP-",
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            WindowStyle = ProcessWindowStyle.Hidden,
+            Arguments = $"-NoProfile -NonInteractive -WindowStyle Hidden -EncodedCommand {encodedCommand}",
         };
 
         Process.Start(startInfo);

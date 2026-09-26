@@ -5,7 +5,7 @@
 ; notes. Requires Inno Setup 6.x (uses the {autopf}/{autodesktop} constants introduced in Inno 6).
 
 #define MyAppName "Cap-IT Screen Recorder"
-#define MyAppVersion "3.4.0"
+#define MyAppVersion "3.4.1"
 #define MyAppPublisher "Chamath Dilshan"
 #define MyAppURL "https://github.com/ChamathDilshanC/Cap-IT-Screen-Recorder"
 #define MyAppExeName "ScreenRecorderApp.exe"
@@ -35,7 +35,7 @@ UsePreviousAppDir=yes
 ; CloseApplications=yes, shut it down cleanly before overwriting files during an auto-update.
 AppMutex=CapITScreenRecorderSingleInstanceMutex
 CloseApplications=yes
-RestartApplications=no
+RestartApplications=yes
 OutputDir=Output
 OutputBaseFilename=CapIT-Screen-Recorder-Setup-{#MyAppVersion}
 SetupIconFile=..\assets\AppIcon.ico
