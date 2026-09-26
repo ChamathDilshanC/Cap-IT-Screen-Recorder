@@ -4,17 +4,9 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:ctcontrols="using:CommunityToolkit.WinUI.Controls"
     xmlns:controls="using:ScreenRecorderApp.Views.Controls"
-    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+    Background="{ThemeResource WorkspaceBrush}">
 
-    <Page.Resources>
-        <Style x:Key="SectionDescriptionText" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="12" />
-            <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
-            <Setter Property="TextWrapping" Value="Wrap" />
-        </Style>
-    </Page.Resources>
-
-    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+<ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <StackPanel Padding="32,28" Spacing="18" HorizontalAlignment="Stretch">
             <StackPanel Spacing="4">
                 <TextBlock Text="Audio" Style="{StaticResource TitleTextBlockStyle}" />
@@ -47,7 +39,7 @@
                     <ctcontrols:SettingsCard Header="Microphone device"
                                               Description="Can be swapped mid-recording too">
                         <StackPanel Orientation="Horizontal" Spacing="8">
-                            <ComboBox MinWidth="260"
+                            <ComboBox PlaceholderText="No microphone available" MinWidth="260"
                                 ItemsSource="{x:Bind ViewModel.Microphones}"
                                 SelectedItem="{x:Bind ViewModel.SelectedMicrophone, Mode=TwoWay}"
                                 IsEnabled="{x:Bind ViewModel.CanChangeAudioLive, Mode=OneWay}" />

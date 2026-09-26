@@ -6,7 +6,7 @@ namespace ScreenRecorderApp.Models;
 /// <summary>Sidecar metadata for a completed recording and its retained cursor presentation settings.</summary>
 public sealed class RecordingMetadata
 {
-    public int SchemaVersion { get; set; } = 1;
+    public int SchemaVersion { get; set; } = 2;
     public DateTime RecordedAtUtc { get; set; } = DateTime.UtcNow;
     public double? DurationSeconds { get; set; }
     public int CaptureWidth { get; set; }
@@ -14,6 +14,9 @@ public sealed class RecordingMetadata
     public int Fps { get; set; }
     public CursorSettings Cursor { get; set; } = new();
     public PresentationSettings Presentation { get; set; } = new();
+    public double TrimStartSeconds { get; set; }
+    public double? TrimEndSeconds { get; set; }
+    public bool PresentationBaked { get; set; }
 
     [JsonIgnore]
     public string CursorSummary => Cursor.Enabled
@@ -31,6 +34,7 @@ public sealed class RecordingMetadata
             var metadata = JsonSerializer.Deserialize<RecordingMetadata>(File.ReadAllText(path));
             if (metadata is not null) metadata.Cursor ??= new CursorSettings();
             if (metadata is not null) metadata.Presentation ??= new PresentationSettings();
+            metadata?.Presentation.Normalize();
             return metadata;
         }
         catch { return null; }
@@ -39,9 +43,22 @@ public sealed class RecordingMetadata
     public void Save(string recordingPath)
     {
         var path = GetPath(recordingPath);
-        var temp = path + ".tmp";
+        var temp = path + $".{Guid.NewGuid():N}.tmp";
         var json = JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true });
         File.WriteAllText(temp, json);
         File.Move(temp, path, true);
+    }
+
+    public async Task SaveAsync(string recordingPath)
+    {
+        var path = GetPath(recordingPath);
+        var temp = path + $".{Guid.NewGuid():N}.tmp";
+        var json = JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true });
+        try
+        {
+            await File.WriteAllTextAsync(temp, json).ConfigureAwait(false);
+            File.Move(temp, path, true);
+        }
+        finally { if (File.Exists(temp)) File.Delete(temp); }
     }
 }

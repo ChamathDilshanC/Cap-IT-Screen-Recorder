@@ -75,6 +75,7 @@ public sealed partial class SourcePickerDialog : ContentDialog
     private void OnOpened(ContentDialog sender, ContentDialogOpenedEventArgs args)
     {
         Rescan();
+        SourceFilter.SelectedIndex = _viewModel.IsWindowCaptureMode ? 1 : 0;
         _refreshTimer.Start();
     }
 
@@ -87,6 +88,13 @@ public sealed partial class SourcePickerDialog : ContentDialog
         {
             _viewModel.PreviewCaptureSource(_initialMonitor, _initialWindow);
         }
+    }
+
+    private void OnFilterChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (DisplaySourcesPanel is null || WindowSourcesPanel is null) return;
+        DisplaySourcesPanel.Visibility = SourceFilter.SelectedIndex == 0 ? Visibility.Visible : Visibility.Collapsed;
+        WindowSourcesPanel.Visibility = SourceFilter.SelectedIndex == 1 ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void OnRescanClick(object sender, RoutedEventArgs e) => Rescan();

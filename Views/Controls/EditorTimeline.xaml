@@ -1,0 +1,56 @@
+<UserControl xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:ct="using:CommunityToolkit.WinUI.Controls" x:Class="ScreenRecorderApp.Views.Controls.EditorTimeline">
+    <UserControl.Resources>
+        <Style x:Key="TrimHandle" TargetType="Thumb">
+            <Setter Property="Width" Value="12"/>
+            <Setter Property="Height" Value="40"/>
+            <Setter Property="IsTabStop" Value="True"/>
+            <Setter Property="UseSystemFocusVisuals" Value="True"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Thumb">
+                        <Border Background="{ThemeResource SystemControlHighlightAccentBrush}" CornerRadius="4">
+                            <VisualStateManager.VisualStateGroups>
+                                <VisualStateGroup x:Name="CommonStates">
+                                    <VisualState x:Name="Normal"/>
+                                    <VisualState x:Name="PointerOver">
+                                        <VisualState.Setters>
+                                            <Setter Target="Grip.Opacity" Value=".6"/>
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="Pressed"/>
+                                    <VisualState x:Name="Disabled">
+                                        <VisualState.Setters>
+                                            <Setter Target="Grip.Opacity" Value=".3"/>
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                </VisualStateGroup>
+                            </VisualStateManager.VisualStateGroups>
+                            <Border x:Name="Grip" Width="2" Height="16" CornerRadius="1" Background="{ThemeResource TextOnAccentFillColorPrimaryBrush}"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+    <Grid RowSpacing="3" SizeChanged="OnSizeChanged">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="18"/>
+            <RowDefinition Height="40"/>
+            <RowDefinition Height="20"/>
+        </Grid.RowDefinitions>
+        <Canvas x:Name="Ruler" Margin="12,0"/>
+        <Grid Grid.Row="1" Margin="12,0" Background="{ThemeResource ElevatedBrush}" CornerRadius="8" PointerPressed="OnSeekPointer">
+            <Image x:Name="Thumbnails" Stretch="Fill" Opacity=".7"/>
+            <Canvas x:Name="RangeCanvas" IsHitTestVisible="False"/>
+            <TextBlock Text="VIDEO" FontSize="10" FontWeight="SemiBold" Margin="12,8" VerticalAlignment="Top"/>
+        </Grid>
+        <Canvas x:Name="ZoomTrack" Grid.Row="2" Margin="12,0" Background="{ThemeResource StageBrush}"/>
+        <Canvas x:Name="HandleCanvas" Grid.Row="1" Margin="12,0">
+            <Thumb x:Name="StartHandle" Style="{StaticResource TrimHandle}" DragDelta="OnStartDrag" KeyDown="OnHandleKey" AutomationProperties.Name="Trim start" ToolTipService.ToolTip="Trim start · drag or use arrow keys"/>
+            <Thumb x:Name="EndHandle" Style="{StaticResource TrimHandle}" DragDelta="OnEndDrag" KeyDown="OnHandleKey" AutomationProperties.Name="Trim end" ToolTipService.ToolTip="Trim end · drag or use arrow keys"/>
+        </Canvas>
+        <Canvas x:Name="PlayheadCanvas" Grid.RowSpan="3" Margin="12,0" IsHitTestVisible="False">
+            <Rectangle x:Name="Playhead" Width="2" Height="84" Fill="{ThemeResource TextFillColorPrimaryBrush}"/>
+        </Canvas>
+    </Grid>
+</UserControl>

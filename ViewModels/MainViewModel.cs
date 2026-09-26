@@ -27,7 +27,7 @@ public partial class MainViewModel : BaseViewModel
     private readonly UpdateService _updateService = new();
     private readonly DispatcherQueueTimer _uiTimer;
     private readonly DispatcherQueueTimer _updateCheckTimer;
-    private TrimExportWindow? _trimExportWindow;
+    private readonly List<TrimExportWindow> _reviewWindows = [];
     private bool _updateCheckInProgress;
 
     // Guards the load-and-apply pass in the constructor so setting ~15 properties from disk doesn't
@@ -442,8 +442,8 @@ public partial class MainViewModel : BaseViewModel
         try { _annotations.Disarm(); } catch { /* best effort */ }
         try
         {
-            _trimExportWindow?.Close();
-            _trimExportWindow = null;
+            foreach (var window in _reviewWindows.ToArray()) window.Close();
+            _reviewWindows.Clear();
         }
         catch { /* best effort */ }
         try { _manager.Dispose(); } catch { /* best effort */ }
@@ -530,8 +530,8 @@ public partial class MainViewModel : BaseViewModel
 
             Fps = FpsOptions.Contains(s.Fps) ? s.Fps : Fps;
             VideoBitrateKbps = s.VideoBitrateKbps;
-            SelectedEncoder = s.Encoder;
-            SelectedContainer = s.Container;
+            SelectedEncoder = Enum.IsDefined(s.Encoder) ? s.Encoder : HardwareEncoder.Auto;
+            SelectedContainer = Enum.IsDefined(s.Container) ? s.Container : OutputContainer.Mp4;
             SelectedResolution = ResolutionOptions.FirstOrDefault(r => r.Value == s.Resolution) ?? SelectedResolution;
             CaptureCursor = s.CaptureCursor;
             SelectedCursorStyle = CursorStyleOptions.FirstOrDefault(c => c.Value == s.CursorStyle) ?? SelectedCursorStyle;
@@ -750,7 +750,11 @@ public partial class MainViewModel : BaseViewModel
         QueueSaveSettings();
     }
 
-    partial void OnSelectedAppThemeChanged(AppThemeOption value) => QueueSaveSettings();
+    partial void OnSelectedAppThemeChanged(AppThemeOption value)
+    {
+        QueueSaveSettings();
+        foreach (var window in _reviewWindows) window.ApplyTheme(value.Value);
+    }
 
     partial void OnSelectedWindowChanged(WindowInfo? value)
     {
@@ -1421,28 +1425,25 @@ public partial class MainViewModel : BaseViewModel
         State = _manager.State; // triggers OnStateChanged, which restarts the live preview since we're idle again
         StatusMessage = path is not null ? $"Saved: {path}" : "Recording stopped.";
 
-        // Phase 7: offer trim/GIF-export/discard right after a successful recording, instead of just
-        // silently saving. A separate Window (not modal to MainWindow) — see TrimExportWindow's remarks
-        // for why — so the user can keep using the app (e.g. start another recording) while reviewing.
-        if (path is not null)
+        if (path is not null) ReviewRecording(path);
+    }
+
+    public void ReviewRecording(string path)
+    {
+        try
         {
-            try
-            {
-                _trimExportWindow?.Close();
-                _trimExportWindow = new TrimExportWindow(path);
-                _trimExportWindow.Closed += (sender, _) =>
-                {
-                    if (ReferenceEquals(_trimExportWindow, sender)) _trimExportWindow = null;
-                };
-                _trimExportWindow.Activate();
-            }
-            catch (Exception ex)
-            {
-                // The recording has already been finalized. A review-window failure must not turn a
-                // successful stop into an unhandled UI exception that closes the whole application.
-                Debug.WriteLine($"Could not open recording review window: {ex}");
-                StatusMessage = $"Saved: {path} (preview could not be opened)";
-            }
+            var existing = _reviewWindows.FirstOrDefault(w => w.ViewModel.FilePath.Equals(path, StringComparison.OrdinalIgnoreCase));
+            if (existing is not null) { existing.Activate(); return; }
+            var window = new TrimExportWindow(path);
+            window.ApplyTheme(SelectedAppTheme.Value);
+            _reviewWindows.Add(window);
+            window.Closed += (_, _) => _reviewWindows.Remove(window);
+            window.Activate();
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Could not open recording review window: {ex}");
+            StatusMessage = $"Saved: {path} (preview could not be opened)";
         }
     }
 

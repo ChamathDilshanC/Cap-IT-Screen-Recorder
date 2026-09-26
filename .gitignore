@@ -1,6 +1,9 @@
 # Build output
 bin/
 obj/
+artifacts/
+.build-*.log
+.test-*.log
 publish/
 
 # Visual Studio / Rider

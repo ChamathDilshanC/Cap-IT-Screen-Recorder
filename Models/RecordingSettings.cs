@@ -77,21 +77,6 @@ public sealed record ResolutionOption(OutputResolution Value, string Label)
     ];
 }
 
-/// <summary>
-/// Which marker is drawn at the live cursor position. DXGI Desktop Duplication reports cursor
-/// position/visibility but never composites the OS pointer bitmap into the captured frame by itself —
-/// <see cref="SystemDefault"/> decodes and draws the real, current Windows cursor shape (whatever cursor
-/// theme the user has set); the others draw a simple stylized marker instead.
-/// </summary>
-public enum CursorStyle
-{
-    SystemDefault,
-    Arrow,
-    CircleHighlight,
-    Dot,
-    Crosshair,
-}
-
 /// <summary>Pairs a <see cref="CursorStyle"/> with a friendly label for display in a ComboBox.</summary>
 public sealed record CursorStyleOption(CursorStyle Value, string Label)
 {

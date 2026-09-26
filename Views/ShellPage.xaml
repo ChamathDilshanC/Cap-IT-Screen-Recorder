@@ -2,13 +2,14 @@
     x:Class="ScreenRecorderApp.Views.ShellPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+    Background="{ThemeResource WorkspaceBrush}">
 
     <NavigationView x:Name="RootNavigationView"
                      PaneDisplayMode="Left"
                      IsBackButtonVisible="Collapsed"
                      IsSettingsVisible="False"
-                     OpenPaneLength="220"
+                     OpenPaneLength="208"
+                     PaneTitle="Cap-IT"
                      SelectionChanged="OnSelectionChanged"
                      Loaded="OnNavigationViewLoaded">
 

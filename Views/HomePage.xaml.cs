@@ -50,6 +50,16 @@ public sealed partial class HomePage : Page
         }
     }
 
+    private async void OnOpenRecordingClick(object sender, RoutedEventArgs e)
+    {
+        var picker = new Windows.Storage.Pickers.FileOpenPicker();
+        picker.FileTypeFilter.Add(".mp4"); picker.FileTypeFilter.Add(".mkv");
+        if ((Application.Current as App)?.MainWindow is not { } window) return;
+        WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(window));
+        var file = await picker.PickSingleFileAsync();
+        if (file is not null) ViewModel.ReviewRecording(file.Path);
+    }
+
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(MainViewModel.PreviewSource))

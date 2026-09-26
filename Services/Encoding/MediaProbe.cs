@@ -10,6 +10,10 @@ namespace ScreenRecorderApp.Services.Encoding;
 /// <param name="Profile">The H.264 profile string, e.g. <c>High</c>, <c>High 4:4:4 Predictive</c>.</param>
 public sealed record MediaProbeResult(TimeSpan? Duration, string? PixelFormat, string? Profile)
 {
+    public int Width { get; init; }
+    public int Height { get; init; }
+    public double FrameRate { get; init; }
+    public bool HasAudio { get; init; }
     /// <summary>
     /// Whether this file uses 4:4:4 chroma, which Windows' built-in H.264 decoder (Media Foundation)
     /// cannot handle — it tops out at High profile 4:2:0. Such a file is perfectly valid and plays in
@@ -57,7 +61,16 @@ public static class MediaProbe
         var stderr = await TryReadStreamSummaryAsync(filePath, cancellationToken);
         if (stderr is null) return new MediaProbeResult(null, null, null);
 
-        return new MediaProbeResult(ParseDuration(stderr), ParsePixelFormat(stderr), ParseProfile(stderr));
+        var video = stderr.Split('\n').FirstOrDefault(line => line.Contains("Video:")) ?? "";
+        var size = Regex.Match(video, @"\b(\d{2,5})x(\d{2,5})\b");
+        var fps = Regex.Match(video, @"([\d.]+) fps");
+        return new MediaProbeResult(ParseDuration(stderr), ParsePixelFormat(stderr), ParseProfile(stderr))
+        {
+            Width = size.Success ? int.Parse(size.Groups[1].Value) : 0,
+            Height = size.Success ? int.Parse(size.Groups[2].Value) : 0,
+            FrameRate = fps.Success ? double.Parse(fps.Groups[1].Value, CultureInfo.InvariantCulture) : 0,
+            HasAudio = stderr.Contains("Audio:")
+        };
     }
 
     /// <summary>Convenience wrapper for callers that only need the duration.</summary>
@@ -88,6 +101,7 @@ public static class MediaProbe
 
             using var process = Process.Start(startInfo);
             if (process is null) return null;
+            using var registration = cancellationToken.Register(() => { try { if (!process.HasExited) process.Kill(true); } catch { } });
 
             // "-i" with no output file makes ffmpeg print the stream summary and exit non-zero
             // ("At least one output file must be specified"). The non-zero exit is expected and

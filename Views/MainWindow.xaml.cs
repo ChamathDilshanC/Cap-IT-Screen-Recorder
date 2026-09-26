@@ -22,6 +22,7 @@ public sealed partial class MainWindow : Window
         InitializeComponent();
 
         Title = "Cap-IT Screen Recorder";
+        SystemBackdrop = new Microsoft.UI.Xaml.Media.MicaBackdrop();
         RootFrame.Navigate(typeof(ShellPage));
         if (RootFrame.Content is ShellPage shell)
         {

@@ -1,158 +1,556 @@
-<Window
-    x:Class="ScreenRecorderApp.Views.TrimExportWindow"
-    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:ctcontrols="using:CommunityToolkit.WinUI.Controls">
-
-    <Grid Padding="24" RowSpacing="16" Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:controls="using:ScreenRecorderApp.Views.Controls" x:Class="ScreenRecorderApp.Views.TrimExportWindow">
+    <Grid x:Name="Root" Background="{ThemeResource WorkspaceBrush}" KeyDown="OnKeyDown">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
+            <RowDefinition Height="56"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-
-        <StackPanel Grid.Row="0" Spacing="4">
-            <TextBlock Text="Recording complete" Style="{StaticResource TitleTextBlockStyle}" />
-            <TextBlock x:Name="FilePathText" Opacity="0.7" TextTrimming="CharacterEllipsis" />
-        </StackPanel>
-
-        <Grid Grid.Row="1" MinHeight="320" x:Name="PreviewCanvas" Background="#15151A"
-              SizeChanged="PreviewCanvas_SizeChanged">
-            <Image x:Name="PreviewBackground" Stretch="UniformToFill" Opacity="0.98" />
-            <Border x:Name="PreviewVideoFrame" Width="900" Height="506"
-                    MaxWidth="1200" MaxHeight="675" Margin="24,16"
-                    HorizontalAlignment="Center" VerticalAlignment="Center"
-                    Background="Black" BorderBrush="#55FFFFFF" BorderThickness="1"
-                    CornerRadius="0" Padding="0">
-                <MediaPlayerElement x:Name="Player" AreTransportControlsEnabled="True"
-                                    Stretch="Uniform" HorizontalAlignment="Stretch"
-                                    VerticalAlignment="Stretch" />
-            </Border>
-
-            <!-- Replaces the player outright when playback fails, rather than sitting on top of it: the
-                 element renders its own bare "Error: Video could not be decoded" text, which says nothing
-                 about whether the recording is actually usable. See ShowPlaybackError. -->
-            <Border x:Name="PlaybackErrorPanel" Visibility="Collapsed"
-                    Background="{ThemeResource LayerFillColorDefaultBrush}"
-                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                    BorderThickness="1" CornerRadius="8" Padding="28">
-                <StackPanel Spacing="10" VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="620">
-                    <FontIcon Glyph="&#xE7BA;" FontSize="28" HorizontalAlignment="Left" />
-                    <TextBlock x:Name="PlaybackErrorTitle"
-                               Style="{StaticResource SubtitleTextBlockStyle}"
-                               TextWrapping="Wrap" />
-                    <TextBlock x:Name="PlaybackErrorDetail"
-                               Opacity="0.8" TextWrapping="Wrap" />
-                </StackPanel>
+        <Grid x:Name="CommandBar" Padding="12,4,148,4" ColumnSpacing="10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <Button Style="{StaticResource IconButtonStyle}" Click="OnKeepOriginalClick" ToolTipService.ToolTip="Back · keep original" AutomationProperties.Name="Back">
+                <FontIcon Glyph="" FontSize="16"/>
+            </Button>
+            <StackPanel x:Name="DragRegion" Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                <TextBlock Text="{Binding RecordingInfo}" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+            </StackPanel>
+            <StackPanel x:Name="EditCommands" Grid.Column="2" Orientation="Horizontal" Spacing="4">
+                <Button Style="{StaticResource IconButtonStyle}" Command="{Binding UndoCommand}" ToolTipService.ToolTip="Undo · Ctrl+Z" AutomationProperties.Name="Undo">
+                    <FontIcon Glyph="" FontSize="16"/>
+                </Button>
+                <Button Style="{StaticResource IconButtonStyle}" Command="{Binding RedoCommand}" ToolTipService.ToolTip="Redo · Ctrl+Y" AutomationProperties.Name="Redo">
+                    <FontIcon Glyph="" FontSize="16"/>
+                </Button>
+                <Button Style="{StaticResource IconButtonStyle}" Command="{Binding ResetStylingCommand}" ToolTipService.ToolTip="Reset styling" AutomationProperties.Name="Reset styling">
+                    <FontIcon Glyph="" FontSize="16"/>
+                </Button>
+                <Button Style="{StaticResource IconButtonStyle}" Click="OnToggleInspectorClick" ToolTipService.ToolTip="Show / hide inspector" AutomationProperties.Name="Toggle inspector">
+                    <FontIcon Glyph="" FontSize="16"/>
+                </Button>
+                <Button x:Name="ExportButton" Content="Export Video" Style="{StaticResource AccentButtonStyle}" Margin="8,0,0,0" Click="OnExportClick"/>
+            </StackPanel>
+        </Grid>
+        <Grid Grid.Row="1" x:Name="Workspace" Padding="12,0,12,8" ColumnSpacing="12" SizeChanged="OnWorkspaceSizeChanged">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition x:Name="InspectorColumn" Width="340"/>
+            </Grid.ColumnDefinitions>
+            <Grid RowSpacing="8">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="44"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <Border CornerRadius="16" BorderBrush="{ThemeResource SubtleBorderBrush}" BorderThickness="1" Background="{ThemeResource StageBrush}">
+                    <Grid>
+                        <controls:VideoPreviewCanvas x:Name="Preview"/>
+                        <StackPanel x:Name="LoadingPanel" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="12">
+                            <ProgressRing IsActive="True" Width="28" Height="28"/>
+                            <TextBlock Text="Preparing your recording…"/>
+                        </StackPanel>
+                        <Border x:Name="PlaybackErrorPanel" Visibility="Collapsed" Background="{ThemeResource SurfaceBrush}" Padding="28" CornerRadius="16" MaxWidth="480" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <StackPanel Spacing="12">
+                                <FontIcon Glyph="" FontSize="30"/>
+                                <TextBlock Text="Preview unavailable" FontSize="22" FontWeight="SemiBold"/>
+                                <TextBlock x:Name="PlaybackErrorDetail" TextWrapping="Wrap"/>
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Button Content="Retry preview" Click="OnRetryClick"/>
+                                    <Button Content="Open externally" Click="OnOpenOriginalClick"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                </Border>
+                <Grid Grid.Row="1" ColumnSpacing="8" Padding="8,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Button Style="{StaticResource IconButtonStyle}" Click="OnPlayClick" AutomationProperties.Name="Play or pause" ToolTipService.ToolTip="Play / pause · Space">
+                        <FontIcon x:Name="PlayIcon" Glyph="" FontSize="16"/>
+                    </Button>
+                    <Button Grid.Column="1" Style="{StaticResource IconButtonStyle}" Click="OnFrameStepClick" AutomationProperties.Name="Next frame" ToolTipService.ToolTip="Next frame">
+                        <FontIcon Glyph="" FontSize="14"/>
+                    </Button>
+                    <TextBlock Grid.Column="2" x:Name="CurrentTimeText" Text="00:00.0" FontFamily="Consolas" FontSize="12" VerticalAlignment="Center"/>
+                    <Slider Grid.Column="3" x:Name="Scrubber" Minimum="0" Maximum="1" StepFrequency=".01" ValueChanged="OnSeekChanged" VerticalAlignment="Center" AutomationProperties.Name="Playback position"/>
+                    <ToggleButton Grid.Column="4" x:Name="MuteButton" Click="OnMuteClick" ToolTipService.ToolTip="Mute" AutomationProperties.Name="Mute">
+                        <FontIcon Glyph="" FontSize="14"/>
+                    </ToggleButton>
+                    <Slider Grid.Column="5" Width="60" Minimum="0" Maximum="1" StepFrequency=".05" Value=".8" ValueChanged="OnVolumeChanged" AutomationProperties.Name="Volume" VerticalAlignment="Center"/>
+                    <Button Grid.Column="6" Style="{StaticResource IconButtonStyle}" Click="OnFullscreenClick" AutomationProperties.Name="Full screen preview" ToolTipService.ToolTip="Full screen / fit · F11">
+                        <FontIcon Glyph="" FontSize="14"/>
+                    </Button>
+                </Grid>
+                <Border x:Name="TimelinePanel" Grid.Row="2" Style="{StaticResource CardStyle}" Padding="10" CornerRadius="12">
+                    <StackPanel Spacing="6">
+                        <Grid>
+                            <TextBlock Text="TIMELINE" FontSize="10" FontWeight="SemiBold" CharacterSpacing="140"/>
+                            <TextBlock Text="{Binding TrimLabel}" HorizontalAlignment="Right" FontSize="11" Opacity=".65"/>
+                        </Grid>
+                        <controls:EditorTimeline x:Name="Timeline"/>
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="140"/>
+                                <ColumnDefinition Width="140"/>
+                            </Grid.ColumnDefinitions>
+                            <Button Content="＋ Zoom region" Click="OnAddZoomClick" HorizontalAlignment="Left"/>
+                            <Grid Grid.Column="1" ColumnSpacing="6">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="In" FontSize="11" Opacity=".65" VerticalAlignment="Center"/>
+                                <NumberBox Grid.Column="1" AutomationProperties.Name="Trim start in seconds" Minimum="0" Maximum="{Binding Duration}" Value="{Binding TrimStart, Mode=TwoWay}" SpinButtonPlacementMode="Compact"/>
+                            </Grid>
+                            <Grid Grid.Column="2" ColumnSpacing="6">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Out" FontSize="11" Opacity=".65" VerticalAlignment="Center"/>
+                                <NumberBox Grid.Column="1" AutomationProperties.Name="Trim end in seconds" Minimum="0" Maximum="{Binding Duration}" Value="{Binding TrimEnd, Mode=TwoWay}" SpinButtonPlacementMode="Compact"/>
+                            </Grid>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+            </Grid>
+            <Border Grid.Column="1" x:Name="Inspector" Style="{StaticResource CardStyle}" Padding="12" CornerRadius="16">
+                <Grid RowSpacing="12">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <GridView x:Name="InspectorTabs" ItemContainerStyle="{StaticResource InspectorTabStyle}" SelectionChanged="OnInspectorChanged" SelectionMode="Single" SelectedIndex="0" ScrollViewer.VerticalScrollBarVisibility="Disabled">
+                        <GridView.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <ItemsWrapGrid Orientation="Horizontal" MaximumRowsOrColumns="3"/>
+                            </ItemsPanelTemplate>
+                        </GridView.ItemsPanel>
+                        <GridViewItem Tag="Canvas" AutomationProperties.Name="Canvas">
+                            <TextBlock Text="Canvas" Width="80" FontSize="12" TextAlignment="Center" Margin="0,2"/>
+                        </GridViewItem>
+                        <GridViewItem Tag="Background" AutomationProperties.Name="Background">
+                            <TextBlock Text="Background" Width="80" FontSize="12" TextAlignment="Center" Margin="0,2"/>
+                        </GridViewItem>
+                        <GridViewItem Tag="Video" AutomationProperties.Name="Video">
+                            <TextBlock Text="Video" Width="80" FontSize="12" TextAlignment="Center" Margin="0,2"/>
+                        </GridViewItem>
+                        <GridViewItem Tag="Corners" AutomationProperties.Name="Corners">
+                            <TextBlock Text="Corners" Width="80" FontSize="12" TextAlignment="Center" Margin="0,2"/>
+                        </GridViewItem>
+                        <GridViewItem Tag="Shadow" AutomationProperties.Name="Shadow">
+                            <TextBlock Text="Shadow" Width="80" FontSize="12" TextAlignment="Center" Margin="0,2"/>
+                        </GridViewItem>
+                        <GridViewItem Tag="Border" AutomationProperties.Name="Border">
+                            <TextBlock Text="Border" Width="80" FontSize="12" TextAlignment="Center" Margin="0,2"/>
+                        </GridViewItem>
+                        <GridViewItem Tag="Frame" AutomationProperties.Name="Frame">
+                            <TextBlock Text="Frame" Width="80" FontSize="12" TextAlignment="Center" Margin="0,2"/>
+                        </GridViewItem>
+                        <GridViewItem Tag="Watermark" AutomationProperties.Name="Watermark">
+                            <TextBlock Text="Watermark" Width="80" FontSize="12" TextAlignment="Center" Margin="0,2"/>
+                        </GridViewItem>
+                        <GridViewItem Tag="Export" AutomationProperties.Name="Export">
+                            <TextBlock Text="Export" Width="80" FontSize="12" TextAlignment="Center" Margin="0,2"/>
+                        </GridViewItem>
+                    </GridView>
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <Grid x:Name="InspectorSections" Padding="2,0,6,12">
+                            <StackPanel x:Name="CanvasSection" Spacing="12" Visibility="Visible">
+                                <TextBlock Text="Composition" Style="{StaticResource SectionHeaderText}"/>
+                                <TextBlock Text="Give your recording room to breathe." Style="{StaticResource SectionDescriptionText}" FontSize="12"/>
+                                <GridView x:Name="AspectPicker" SelectionChanged="OnAspectChanged" SelectionMode="Single" IsItemClickEnabled="False" MaxHeight="190" ScrollViewer.VerticalScrollBarVisibility="Disabled">
+                                    <GridView.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <ItemsWrapGrid Orientation="Horizontal" MaximumRowsOrColumns="4"/>
+                                        </ItemsPanelTemplate>
+                                    </GridView.ItemsPanel>
+                                    <GridViewItem Tag="Original" AutomationProperties.Name="Original">
+                                        <StackPanel Width="49" Height="54" Spacing="6">
+                                            <Grid Height="28">
+                                                <Border Width="28" Height="18" BorderThickness="1.5" BorderBrush="{ThemeResource TextFillColorSecondaryBrush}" CornerRadius="3"/>
+                                            </Grid>
+                                            <TextBlock Text="Original" FontSize="10" HorizontalAlignment="Center"/>
+                                        </StackPanel>
+                                    </GridViewItem>
+                                    <GridViewItem Tag="16:9" AutomationProperties.Name="16:9">
+                                        <StackPanel Width="49" Height="54" Spacing="6">
+                                            <Grid Height="28">
+                                                <Border Width="32" Height="18" BorderThickness="1.5" BorderBrush="{ThemeResource TextFillColorSecondaryBrush}" CornerRadius="3"/>
+                                            </Grid>
+                                            <TextBlock Text="16:9" FontSize="10" HorizontalAlignment="Center"/>
+                                        </StackPanel>
+                                    </GridViewItem>
+                                    <GridViewItem Tag="9:16" AutomationProperties.Name="9:16">
+                                        <StackPanel Width="49" Height="54" Spacing="6">
+                                            <Grid Height="28">
+                                                <Border Width="14" Height="25" BorderThickness="1.5" BorderBrush="{ThemeResource TextFillColorSecondaryBrush}" CornerRadius="3"/>
+                                            </Grid>
+                                            <TextBlock Text="9:16" FontSize="10" HorizontalAlignment="Center"/>
+                                        </StackPanel>
+                                    </GridViewItem>
+                                    <GridViewItem Tag="1:1" AutomationProperties.Name="1:1">
+                                        <StackPanel Width="49" Height="54" Spacing="6">
+                                            <Grid Height="28">
+                                                <Border Width="22" Height="22" BorderThickness="1.5" BorderBrush="{ThemeResource TextFillColorSecondaryBrush}" CornerRadius="3"/>
+                                            </Grid>
+                                            <TextBlock Text="1:1" FontSize="10" HorizontalAlignment="Center"/>
+                                        </StackPanel>
+                                    </GridViewItem>
+                                    <GridViewItem Tag="4:5" AutomationProperties.Name="4:5">
+                                        <StackPanel Width="49" Height="54" Spacing="6">
+                                            <Grid Height="28">
+                                                <Border Width="18" Height="23" BorderThickness="1.5" BorderBrush="{ThemeResource TextFillColorSecondaryBrush}" CornerRadius="3"/>
+                                            </Grid>
+                                            <TextBlock Text="4:5" FontSize="10" HorizontalAlignment="Center"/>
+                                        </StackPanel>
+                                    </GridViewItem>
+                                    <GridViewItem Tag="3:2" AutomationProperties.Name="3:2">
+                                        <StackPanel Width="49" Height="54" Spacing="6">
+                                            <Grid Height="28">
+                                                <Border Width="30" Height="20" BorderThickness="1.5" BorderBrush="{ThemeResource TextFillColorSecondaryBrush}" CornerRadius="3"/>
+                                            </Grid>
+                                            <TextBlock Text="3:2" FontSize="10" HorizontalAlignment="Center"/>
+                                        </StackPanel>
+                                    </GridViewItem>
+                                    <GridViewItem Tag="4:3" AutomationProperties.Name="4:3">
+                                        <StackPanel Width="49" Height="54" Spacing="6">
+                                            <Grid Height="28">
+                                                <Border Width="28" Height="21" BorderThickness="1.5" BorderBrush="{ThemeResource TextFillColorSecondaryBrush}" CornerRadius="3"/>
+                                            </Grid>
+                                            <TextBlock Text="4:3" FontSize="10" HorizontalAlignment="Center"/>
+                                        </StackPanel>
+                                    </GridViewItem>
+                                    <GridViewItem Tag="Custom" AutomationProperties.Name="Custom">
+                                        <StackPanel Width="49" Height="54" Spacing="6">
+                                            <Grid Height="28">
+                                                <Border Width="26" Height="20" BorderThickness="1.5" BorderBrush="{ThemeResource TextFillColorSecondaryBrush}" CornerRadius="3"/>
+                                            </Grid>
+                                            <TextBlock Text="Custom" FontSize="10" HorizontalAlignment="Center"/>
+                                        </StackPanel>
+                                    </GridViewItem>
+                                </GridView>
+                                <ComboBox x:Name="CanvasSizePicker" Header="Canvas size" SelectedIndex="0" SelectionChanged="OnCanvasSizeChanged">
+                                    <x:String>Source / Canvas</x:String>
+                                    <x:String>1080p</x:String>
+                                    <x:String>1440p</x:String>
+                                    <x:String>2160p</x:String>
+                                    <x:String>Custom</x:String>
+                                </ComboBox>
+                                <TextBlock Text="{Binding CanvasLabel}" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                                <StackPanel x:Name="CustomCanvasFields" Visibility="Collapsed" Spacing="8">
+                                    <NumberBox Header="Width · px" Minimum="0" Maximum="7680" Value="{Binding Presentation.CanvasWidth, Mode=TwoWay}" SpinButtonPlacementMode="Compact"/>
+                                    <NumberBox Header="Height · px" Minimum="0" Maximum="7680" Value="{Binding Presentation.CanvasHeight, Mode=TwoWay}" SpinButtonPlacementMode="Compact"/>
+                                </StackPanel>
+                                <Grid>
+                                    <TextBlock Text="Padding · px"/>
+                                    <TextBlock Text="{Binding Presentation.Padding, Converter={StaticResource CompactNumber}}" HorizontalAlignment="Right" Opacity=".65"/>
+                                </Grid>
+                                <Slider Minimum="0" Maximum="200" StepFrequency="1" Value="{Binding Presentation.Padding, Mode=TwoWay}" AutomationProperties.Name="Padding · px"/>
+                                <TextBlock Text="Style presets" Style="{StaticResource SectionHeaderText}"/>
+                                <ComboBox ItemsSource="{Binding Presets}" SelectedItem="{Binding SelectedPreset, Mode=TwoWay}" AutomationProperties.Name="Style preset"/>
+                                <Button Content="Apply style" Command="{Binding ApplyPresetCommand}" HorizontalAlignment="Stretch"/>
+                                <TextBox PlaceholderText="Name your preset" Text="{Binding PresetName, Mode=TwoWay}" AutomationProperties.Name="Custom preset name"/>
+                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                    <Button Content="Save" Command="{Binding SavePresetCommand}"/>
+                                    <Button Content="Rename" Command="{Binding RenamePresetCommand}"/>
+                                    <Button Content="Delete" Command="{Binding DeletePresetCommand}"/>
+                                </StackPanel>
+                            </StackPanel>
+                            <StackPanel x:Name="BackgroundSection" Spacing="12" Visibility="Collapsed">
+                                <TextBlock Text="Set the scene" Style="{StaticResource SectionHeaderText}"/>
+                                <ListBox x:Name="BackgroundModes" Style="{StaticResource SegmentedStyle}" SelectedValuePath="Tag" SelectedValue="{Binding Presentation.BackgroundMode, Mode=TwoWay}">
+                                    <ListBoxItem Tag="none" Content="None"/>
+                                    <ListBoxItem Tag="solid" Content="Colour"/>
+                                    <ListBoxItem Tag="gradient" Content="Gradient"/>
+                                    <ListBoxItem Tag="image" Content="Image"/>
+                                </ListBox>
+                                <TextBlock x:Name="NoBackgroundNote" Text="No background artwork. MP4 and GIF use a black canvas." Style="{StaticResource SectionDescriptionText}" Visibility="Collapsed"/>
+                                <StackPanel x:Name="GradientPalettePanel" Spacing="8">
+                                    <TextBlock Text="Gradient palette" Style="{StaticResource SectionHeaderText}"/>
+                                    <GridView x:Name="GradientPresets" IsItemClickEnabled="True" ItemClick="OnGradientClick" SelectionMode="None">
+                                        <GridView.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <ItemsWrapGrid Orientation="Horizontal" MaximumRowsOrColumns="3"/>
+                                            </ItemsPanelTemplate>
+                                        </GridView.ItemsPanel>
+                                    </GridView>
+                                </StackPanel>
+                                <StackPanel x:Name="ColourSettingsPanel" Spacing="12">
+                                    <TextBlock Text="Colours · recent &amp; favourites" Style="{StaticResource SectionHeaderText}"/>
+                                    <StackPanel x:Name="ColourSwatches" Orientation="Horizontal" Spacing="6"/>
+                                    <TextBox Header="Colour A · HEX" Text="{Binding Presentation.BackgroundColor, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" MaxLength="7" LostFocus="OnHexLostFocus"/>
+                                    <Button Content="Pick colour A" HorizontalAlignment="Stretch">
+                                        <Button.Flyout>
+                                            <Flyout Opening="OnColourPickerOpening" Closed="OnColourPickerClosed">
+                                                <ColorPicker x:Name="BackgroundColourPicker" ColorChanged="OnColourChanged" IsAlphaEnabled="False" IsHexInputVisible="True"/>
+                                            </Flyout>
+                                        </Button.Flyout>
+                                    </Button>
+                                </StackPanel>
+                                <StackPanel x:Name="GradientSettingsPanel" Spacing="12">
+                                    <TextBox Header="Colour B · HEX" Text="{Binding Presentation.BackgroundColor2, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" MaxLength="7"/>
+                                    <Grid>
+                                        <TextBlock Text="Gradient angle · °"/>
+                                        <TextBlock Text="{Binding Presentation.GradientAngle, Converter={StaticResource CompactNumber}}" HorizontalAlignment="Right" Opacity=".65"/>
+                                    </Grid>
+                                    <Slider Minimum="0" Maximum="360" StepFrequency="1" Value="{Binding Presentation.GradientAngle, Mode=TwoWay}" AutomationProperties.Name="Gradient angle"/>
+                                </StackPanel>
+                                <StackPanel x:Name="ImageSettingsPanel" Spacing="12" Visibility="Collapsed">
+                                    <TextBlock Text="Image background" Style="{StaticResource SectionHeaderText}"/>
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <Button Content="Choose / Replace" Click="OnChooseBackgroundClick"/>
+                                        <Button Content="Remove" Click="OnRemoveBackgroundClick"/>
+                                    </StackPanel>
+                                    <Image x:Name="BackgroundThumbnail" Height="80" Stretch="UniformToFill"/>
+                                    <ListBox Style="{StaticResource SegmentedStyle}" SelectedItem="{Binding Presentation.BackgroundImageFit, Mode=TwoWay}" AutomationProperties.Name="BackgroundImageFit">
+                                        <x:String>Fit</x:String>
+                                        <x:String>Fill</x:String>
+                                        <x:String>Stretch</x:String>
+                                    </ListBox>
+                                    <Grid>
+                                        <TextBlock Text="Blur · px"/>
+                                        <TextBlock Text="{Binding Presentation.BackgroundBlur, Converter={StaticResource CompactNumber}}" HorizontalAlignment="Right" Opacity=".65"/>
+                                    </Grid>
+                                    <Slider Minimum="0" Maximum="64" StepFrequency="1" Value="{Binding Presentation.BackgroundBlur, Mode=TwoWay}" AutomationProperties.Name="Background blur"/>
+                                    <Grid>
+                                        <TextBlock Text="Dim"/>
+                                        <TextBlock Text="{Binding Presentation.BackgroundDim, Converter={StaticResource CompactNumber}}" HorizontalAlignment="Right" Opacity=".65"/>
+                                    </Grid>
+                                    <Slider Minimum="0" Maximum="1" StepFrequency=".05" Value="{Binding Presentation.BackgroundDim, Mode=TwoWay}" AutomationProperties.Name="Background dim"/>
+                                    <TextBlock Text="PNG and JPEG images. Missing images use Colour A in preview and export." Style="{StaticResource SectionDescriptionText}" FontSize="12"/>
+                                </StackPanel>
+                            </StackPanel>
+                            <StackPanel x:Name="VideoSection" Spacing="12" Visibility="Collapsed">
+                                <TextBlock Text="Video placement" Style="{StaticResource SectionHeaderText}"/>
+                                <TextBlock Text="{Binding ScaleLabel}" FontSize="28" FontWeight="SemiBold"/>
+                                <Slider Minimum=".4" Maximum="1.2" StepFrequency=".01" Value="{Binding Presentation.VideoScale, Mode=TwoWay}" AutomationProperties.Name="Video scale"/>
+                                <ListBox Style="{StaticResource SegmentedStyle}" SelectedItem="{Binding Presentation.FitMode, Mode=TwoWay}" AutomationProperties.Name="FitMode">
+                                    <x:String>Fit</x:String>
+                                    <x:String>Fill</x:String>
+                                    <x:String>Original</x:String>
+                                    <x:String>Custom</x:String>
+                                </ListBox>
+                                <ComboBox Header="Position" SelectedItem="{Binding Presentation.VideoPosition, Mode=TwoWay}">
+                                    <x:String>Center</x:String>
+                                    <x:String>Top</x:String>
+                                    <x:String>Bottom</x:String>
+                                    <x:String>Left</x:String>
+                                    <x:String>Right</x:String>
+                                    <x:String>Custom</x:String>
+                                </ComboBox>
+                                <NumberBox Header="X offset · px" Minimum="-7680" Maximum="7680" Value="{Binding Presentation.VideoOffsetX, Mode=TwoWay}" SpinButtonPlacementMode="Compact"/>
+                                <NumberBox Header="Y offset · px" Minimum="-7680" Maximum="7680" Value="{Binding Presentation.VideoOffsetY, Mode=TwoWay}" SpinButtonPlacementMode="Compact"/>
+                                <TextBlock Text="Fit preserves the whole recording. Fill crops to the available canvas. Original uses source pixels; Custom uses Fit plus your scale and offsets." Style="{StaticResource SectionDescriptionText}" FontSize="12"/>
+                                <TextBlock Text="Camera moves" Style="{StaticResource SectionHeaderText}"/>
+                                <Button Content="Add zoom at playhead" Click="OnAddZoomClick"/>
+                                <ItemsControl ItemsSource="{Binding ZoomRegions}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Style="{StaticResource CardStyle}" Margin="0,4" Padding="10">
+                                                <StackPanel Spacing="6">
+                                                    <CheckBox Content="Zoom region" IsChecked="{Binding Enabled, Mode=TwoWay}"/>
+                                                    <NumberBox Header="Start · original seconds" Minimum="0" Value="{Binding StartSeconds, Mode=TwoWay}"/>
+                                                    <NumberBox Header="End · original seconds" Minimum="0" Value="{Binding EndSeconds, Mode=TwoWay}"/>
+                                                    <Slider Header="Focus X" Minimum="0" Maximum="1" StepFrequency=".01" Value="{Binding CenterX, Mode=TwoWay}"/>
+                                                    <Slider Header="Focus Y" Minimum="0" Maximum="1" StepFrequency=".01" Value="{Binding CenterY, Mode=TwoWay}"/>
+                                                    <Slider Header="Zoom" Minimum="1" Maximum="4" StepFrequency=".1" Value="{Binding Scale, Mode=TwoWay}"/>
+                                                    <Button Content="Remove region" Click="OnRemoveZoomClick" Tag="{Binding}"/>
+                                                </StackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                            <StackPanel x:Name="CornersSection" Spacing="12" Visibility="Collapsed">
+                                <TextBlock Text="Softer edges" Style="{StaticResource SectionHeaderText}"/>
+                                <TextBlock Text="The video is clipped at the corners during playback and export." Style="{StaticResource SectionDescriptionText}" FontSize="12"/>
+                                <Grid>
+                                    <TextBlock Text="Radius · px"/>
+                                    <TextBlock Text="{Binding Presentation.CornerRadius, Converter={StaticResource CompactNumber}}" HorizontalAlignment="Right" Opacity=".65"/>
+                                </Grid>
+                                <Slider Minimum="0" Maximum="64" StepFrequency="1" Value="{Binding Presentation.CornerRadius, Mode=TwoWay}" AutomationProperties.Name="Radius · px"/>
+                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                    <Button Content="Square" Tag="0" Click="OnCornerPresetClick"/>
+                                    <Button Content="Subtle" Tag="12" Click="OnCornerPresetClick"/>
+                                    <Button Content="Round" Tag="32" Click="OnCornerPresetClick"/>
+                                </StackPanel>
+                            </StackPanel>
+                            <StackPanel x:Name="ShadowSection" Spacing="12" Visibility="Collapsed">
+                                <TextBlock Text="Depth &amp; light" Style="{StaticResource SectionHeaderText}"/>
+                                <CheckBox Content="Enable shadow" IsChecked="{Binding Presentation.Shadow, Mode=TwoWay}"/>
+                                <ComboBox x:Name="ShadowPresetPicker" Header="Shadow preset" SelectedIndex="1" SelectionChanged="OnShadowPresetChanged">
+                                    <x:String>None</x:String>
+                                    <x:String>Soft</x:String>
+                                    <x:String>Medium</x:String>
+                                    <x:String>Floating</x:String>
+                                    <x:String>Strong</x:String>
+                                    <x:String>Custom</x:String>
+                                </ComboBox>
+                                <Grid>
+                                    <TextBlock Text="Blur · px"/>
+                                    <TextBlock Text="{Binding Presentation.ShadowBlur, Converter={StaticResource CompactNumber}}" HorizontalAlignment="Right" Opacity=".65"/>
+                                </Grid>
+                                <Slider Minimum="0" Maximum="100" StepFrequency="1" Value="{Binding Presentation.ShadowBlur, Mode=TwoWay}" AutomationProperties.Name="Blur · px"/>
+                                <Grid>
+                                    <TextBlock Text="Opacity"/>
+                                    <TextBlock Text="{Binding Presentation.ShadowOpacity, Converter={StaticResource CompactNumber}}" HorizontalAlignment="Right" Opacity=".65"/>
+                                </Grid>
+                                <Slider Minimum="0" Maximum="1" StepFrequency=".01" Value="{Binding Presentation.ShadowOpacity, Mode=TwoWay}" AutomationProperties.Name="Opacity"/>
+                                <Grid>
+                                    <TextBlock Text="X offset · px"/>
+                                    <TextBlock Text="{Binding Presentation.ShadowOffsetX, Converter={StaticResource CompactNumber}}" HorizontalAlignment="Right" Opacity=".65"/>
+                                </Grid>
+                                <Slider Minimum="-200" Maximum="200" StepFrequency="1" Value="{Binding Presentation.ShadowOffsetX, Mode=TwoWay}" AutomationProperties.Name="X offset · px"/>
+                                <Grid>
+                                    <TextBlock Text="Y offset · px"/>
+                                    <TextBlock Text="{Binding Presentation.ShadowOffsetY, Converter={StaticResource CompactNumber}}" HorizontalAlignment="Right" Opacity=".65"/>
+                                </Grid>
+                                <Slider Minimum="-200" Maximum="200" StepFrequency="1" Value="{Binding Presentation.ShadowOffsetY, Mode=TwoWay}" AutomationProperties.Name="Y offset · px"/>
+                            </StackPanel>
+                            <StackPanel x:Name="BorderSection" Spacing="12" Visibility="Collapsed">
+                                <TextBlock Text="A finishing touch" Style="{StaticResource SectionHeaderText}"/>
+                                <CheckBox Content="Enable border" IsChecked="{Binding Presentation.BorderEnabled, Mode=TwoWay}"/>
+                                <TextBox Header="Border colour · HEX" Text="{Binding Presentation.BorderColor, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" MaxLength="7"/>
+                                <Grid>
+                                    <TextBlock Text="Width · px"/>
+                                    <TextBlock Text="{Binding Presentation.BorderWidth, Converter={StaticResource CompactNumber}}" HorizontalAlignment="Right" Opacity=".65"/>
+                                </Grid>
+                                <Slider Minimum="0" Maximum="12" StepFrequency=".5" Value="{Binding Presentation.BorderWidth, Mode=TwoWay}" AutomationProperties.Name="Width · px"/>
+                                <Grid>
+                                    <TextBlock Text="Opacity"/>
+                                    <TextBlock Text="{Binding Presentation.BorderOpacity, Converter={StaticResource CompactNumber}}" HorizontalAlignment="Right" Opacity=".65"/>
+                                </Grid>
+                                <Slider Minimum="0" Maximum="1" StepFrequency=".05" Value="{Binding Presentation.BorderOpacity, Mode=TwoWay}" AutomationProperties.Name="Opacity"/>
+                                <TextBlock Text="The border follows the video corners and stays inside the video edge." Style="{StaticResource SectionDescriptionText}" FontSize="12"/>
+                            </StackPanel>
+                            <StackPanel x:Name="FrameSection" Spacing="12" Visibility="Collapsed">
+                                <TextBlock Text="Frame your story" Style="{StaticResource SectionHeaderText}"/>
+                                <ComboBox Header="Window style" SelectedItem="{Binding Presentation.DeviceFrameStyle, Mode=TwoWay}">
+                                    <x:String>None</x:String>
+                                    <x:String>Minimal</x:String>
+                                    <x:String>Browser</x:String>
+                                    <x:String>Studio</x:String>
+                                    <x:String>Windows</x:String>
+                                    <x:String>Device</x:String>
+                                </ComboBox>
+                                <ListBox Style="{StaticResource SegmentedStyle}" SelectedItem="{Binding Presentation.FrameTheme, Mode=TwoWay}" AutomationProperties.Name="FrameTheme">
+                                    <x:String>Dark</x:String>
+                                    <x:String>Light</x:String>
+                                </ListBox>
+                                <CheckBox Content="Show title bar" IsChecked="{Binding Presentation.FrameTitleBar, Mode=TwoWay}"/>
+                                <CheckBox Content="Show window controls" IsChecked="{Binding Presentation.FrameControls, Mode=TwoWay}"/>
+                                <Grid>
+                                    <TextBlock Text="Frame padding · px"/>
+                                    <TextBlock Text="{Binding Presentation.FramePadding, Converter={StaticResource CompactNumber}}" HorizontalAlignment="Right" Opacity=".65"/>
+                                </Grid>
+                                <Slider Minimum="0" Maximum="24" StepFrequency="1" Value="{Binding Presentation.FramePadding, Mode=TwoWay}" AutomationProperties.Name="Frame padding · px"/>
+                                <TextBlock Text="Original, neutral window designs. Frame dimensions are included in the canvas layout." Style="{StaticResource SectionDescriptionText}" FontSize="12"/>
+                            </StackPanel>
+                            <StackPanel x:Name="WatermarkSection" Spacing="12" Visibility="Collapsed">
+                                <TextBlock Text="Make it yours" Style="{StaticResource SectionHeaderText}"/>
+                                <CheckBox Content="Enable watermark" IsChecked="{Binding Presentation.WatermarkEnabled, Mode=TwoWay}"/>
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Button Content="Choose logo" Click="OnChooseWatermarkClick"/>
+                                    <Button Content="Remove" Click="OnRemoveWatermarkClick"/>
+                                </StackPanel>
+                                <Grid>
+                                    <TextBlock Text="Scale · canvas width"/>
+                                    <TextBlock Text="{Binding Presentation.WatermarkScale, Converter={StaticResource CompactNumber}}" HorizontalAlignment="Right" Opacity=".65"/>
+                                </Grid>
+                                <Slider Minimum=".03" Maximum=".5" StepFrequency=".01" Value="{Binding Presentation.WatermarkScale, Mode=TwoWay}" AutomationProperties.Name="Scale · canvas width"/>
+                                <Grid>
+                                    <TextBlock Text="Opacity"/>
+                                    <TextBlock Text="{Binding Presentation.WatermarkOpacity, Converter={StaticResource CompactNumber}}" HorizontalAlignment="Right" Opacity=".65"/>
+                                </Grid>
+                                <Slider Minimum="0" Maximum="1" StepFrequency=".05" Value="{Binding Presentation.WatermarkOpacity, Mode=TwoWay}" AutomationProperties.Name="Opacity"/>
+                                <ComboBox Header="Position" SelectedItem="{Binding Presentation.WatermarkPosition, Mode=TwoWay}">
+                                    <x:String>Top Left</x:String>
+                                    <x:String>Top Right</x:String>
+                                    <x:String>Bottom Left</x:String>
+                                    <x:String>Bottom Right</x:String>
+                                    <x:String>Center</x:String>
+                                </ComboBox>
+                                <Grid>
+                                    <TextBlock Text="Margin · px"/>
+                                    <TextBlock Text="{Binding Presentation.WatermarkMargin, Converter={StaticResource CompactNumber}}" HorizontalAlignment="Right" Opacity=".65"/>
+                                </Grid>
+                                <Slider Minimum="0" Maximum="200" StepFrequency="1" Value="{Binding Presentation.WatermarkMargin, Mode=TwoWay}" AutomationProperties.Name="Margin · px"/>
+                                <NumberBox Header="X offset · px" Minimum="-7680" Maximum="7680" Value="{Binding Presentation.WatermarkOffsetX, Mode=TwoWay}" SpinButtonPlacementMode="Compact"/>
+                                <NumberBox Header="Y offset · px" Minimum="-7680" Maximum="7680" Value="{Binding Presentation.WatermarkOffsetY, Mode=TwoWay}" SpinButtonPlacementMode="Compact"/>
+                            </StackPanel>
+                            <StackPanel x:Name="ExportSection" Spacing="12" Visibility="Collapsed">
+                                <TextBlock Text="Ready to share" Style="{StaticResource SectionHeaderText}"/>
+                                <TextBlock Text="MP4 · H.264" Style="{StaticResource SectionDescriptionText}" FontSize="12"/>
+                                <TextBlock Text="{Binding CanvasLabel}" FontSize="24" FontWeight="SemiBold"/>
+                                <TextBlock Text="Export uses your canvas resolution." Style="{StaticResource SectionDescriptionText}" FontSize="12"/>
+                                <ComboBox Header="Quality" SelectedItem="{Binding Export.Quality, Mode=TwoWay}">
+                                    <x:String>Best Quality</x:String>
+                                    <x:String>Balanced</x:String>
+                                    <x:String>Small File</x:String>
+                                    <x:String>Social</x:String>
+                                    <x:String>Source Quality</x:String>
+                                </ComboBox>
+                                <ComboBox Header="Frame rate" SelectedItem="{Binding Export.FrameRate, Mode=TwoWay}">
+                                    <x:String>Source</x:String>
+                                    <x:String>24</x:String>
+                                    <x:String>30</x:String>
+                                    <x:String>60</x:String>
+                                </ComboBox>
+                                <ComboBox Header="Encoder" SelectedItem="{Binding Export.Encoder, Mode=TwoWay}">
+                                    <x:String>Software (H.264)</x:String>
+                                    <x:String>NVIDIA NVENC</x:String>
+                                    <x:String>Intel Quick Sync</x:String>
+                                    <x:String>AMD AMF</x:String>
+                                </ComboBox>
+                                <CheckBox Content="Include audio" IsChecked="{Binding Export.IncludeAudio, Mode=TwoWay}"/>
+                                <TextBlock Text="Hardware encoders require a compatible GPU. Choose Software if a hardware export fails." Style="{StaticResource SectionDescriptionText}" FontSize="12"/>
+                                <Button Content="Export Video" Style="{StaticResource AccentButtonStyle}" HorizontalAlignment="Stretch" Click="OnExportClick"/>
+                                <Button x:Name="ExportGifButton" Content="Export GIF · 720px / 12 fps" HorizontalAlignment="Stretch" Click="OnExportGifClick"/>
+                                <Button Content="Keep original" HorizontalAlignment="Stretch" Click="OnKeepOriginalClick"/>
+                                <Button Content="Open output folder" HorizontalAlignment="Stretch" Click="OnOpenFolderClick"/>
+                                <Button Content="Discard original…" HorizontalAlignment="Stretch" Click="OnDiscardClick"/>
+                            </StackPanel>
+                        </Grid>
+                    </ScrollViewer>
+                </Grid>
             </Border>
         </Grid>
-
-        <StackPanel Grid.Row="2" Spacing="8">
-            <TextBlock Text="Post-record editor" Style="{StaticResource SubtitleTextBlockStyle}" />
-            <Grid ColumnSpacing="12">
+        <StackPanel Grid.Row="2" Padding="20,4,20,12" Spacing="6">
+            <InfoBar x:Name="AssetWarningBar" IsOpen="False" Severity="Warning" IsClosable="True"/>
+            <Grid x:Name="ExportProgressPanel" Visibility="Collapsed" ColumnSpacing="12">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <ComboBox x:Name="CanvasPresetComboBox" Header="Output canvas"
-                          SelectionChanged="CanvasPreset_SelectionChanged" />
-                <ComboBox x:Name="BackgroundPresetComboBox" Header="Background image"
-                          Grid.Column="1"
-                          SelectionChanged="BackgroundPreset_SelectionChanged" />
-                <Button Grid.Column="2" Content="Choose image…" Click="OnChooseBackgroundClick"
-                        VerticalAlignment="Bottom" />
-                <Slider Grid.Column="3" x:Name="VideoScaleSlider" Header="Video scale"
-                        Minimum="0.55" Maximum="1" StepFrequency="0.05" Value="0.82"
-                        Width="180" ValueChanged="VideoScale_ValueChanged" />
+                <StackPanel Spacing="6">
+                    <TextBlock x:Name="ExportStageText" FontSize="12"/>
+                    <ProgressBar x:Name="ExportProgress" Minimum="0" Maximum="100"/>
+                </StackPanel>
+                <Button Grid.Column="1" Content="Cancel export" Click="OnCancelExportClick"/>
             </Grid>
-            <Slider x:Name="CornerRadiusSlider" Header="Rounded corners" Minimum="0" Maximum="48"
-                    StepFrequency="2" Value="18" ValueChanged="CornerRadius_ValueChanged" />
-            <Grid ColumnSpacing="12">
-                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                <ComboBox x:Name="BackgroundModeComboBox" Header="Background" SelectionChanged="BackgroundMode_SelectionChanged">
-                    <ComboBoxItem Content="Image" Tag="image" />
-                    <ComboBoxItem Content="Solid colour" Tag="solid" />
-                    <ComboBoxItem Content="Gradient" Tag="gradient" />
-                </ComboBox>
-                <TextBox x:Name="BackgroundColorTextBox" Grid.Column="1" Header="Colour" Text="#15151A"
-                         TextChanged="PresentationSetting_TextChanged" />
-                <TextBox x:Name="BackgroundColor2TextBox" Grid.Column="2" Header="Gradient end" Text="#5F4BDB"
-                         TextChanged="PresentationSetting_TextChanged" />
-                <NumberBox x:Name="FramePaddingBox" Grid.Column="3" Header="Frame padding" Minimum="0" Maximum="500"
-                           SmallChange="4" Value="0" ValueChanged="PresentationNumberBox_ValueChanged" />
-            </Grid>
-            <StackPanel Orientation="Horizontal" Spacing="16">
-                <CheckBox x:Name="ShadowCheckBox" Content="Shadow" IsChecked="True" Click="PresentationSetting_Click" />
-                <CheckBox x:Name="DeviceFrameCheckBox" Content="Device frame" Click="PresentationSetting_Click" />
-                <CheckBox x:Name="WatermarkCheckBox" Content="Watermark/logo" Click="PresentationSetting_Click" />
-                <Button Content="Choose watermark…" Click="OnChooseWatermarkClick" />
-            </StackPanel>
-            <TextBlock Text="Cursor (retained for export)" Style="{StaticResource SubtitleTextBlockStyle}" Margin="0,8,0,0" />
-            <Grid ColumnSpacing="12">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-                <ComboBox x:Name="CursorStyleComboBox" Header="Style" SelectionChanged="CursorStyle_SelectionChanged" />
-                <Slider x:Name="CursorSizeSlider" Grid.Column="1" Header="Size"
-                        Minimum="0.5" Maximum="3" StepFrequency="0.1" Value="1"
-                        ValueChanged="CursorSetting_ValueChanged" />
-                <Slider x:Name="CursorSmoothingSlider" Grid.Column="2" Header="Smoothing"
-                        Minimum="0" Maximum="1" StepFrequency="0.05" Value="0.5"
-                        ValueChanged="CursorSetting_ValueChanged" />
-            </Grid>
-            <StackPanel Orientation="Horizontal" Spacing="16">
-                <CheckBox x:Name="CursorHideIdleCheckBox" Content="Hide when idle" Click="CursorSetting_Click" />
-                <CheckBox x:Name="CursorClickEmphasisCheckBox" Content="Emphasize clicks" Click="CursorSetting_Click" />
-                <CheckBox x:Name="CursorTrailCheckBox" Content="Cursor trail" Click="CursorSetting_Click" />
-            </StackPanel>
-            <TextBlock Text="The recorded cursor is already baked into source frames; these settings are retained in the manifest and export metadata."
-                       Opacity="0.65" FontSize="12" TextWrapping="Wrap" />
-        </StackPanel>
-
-        <StackPanel Grid.Row="3" Spacing="4">
-            <Grid ColumnSpacing="12">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0" x:Name="TrimStartText" Text="00:00.0" VerticalAlignment="Center" />
-                <ctcontrols:RangeSelector x:Name="TrimRange" Grid.Column="1"
-                                          Minimum="0" Maximum="1" StepFrequency="0.1"
-                                          ValueChanged="TrimRange_ValueChanged" />
-                <TextBlock Grid.Column="2" x:Name="TrimEndText" Text="00:00.0" VerticalAlignment="Center" />
-            </Grid>
-            <TextBlock x:Name="TrimStatusText" Text="Selected: 0.0s" Opacity="0.7" FontSize="12" TextWrapping="Wrap" />
-        </StackPanel>
-
-        <StackPanel Grid.Row="4" Spacing="8">
             <Grid>
-                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                <TextBlock Text="Manual zoom regions" Style="{StaticResource SubtitleTextBlockStyle}" />
-                <Button Grid.Column="1" Content="＋ Add region" Click="OnAddZoomRegionClick" />
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="{Binding Status}" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                    <Button x:Name="CopyErrorButton" Visibility="Collapsed" Content="Copy details" Click="OnCopyErrorClick"/>
+                    <Button x:Name="OpenOutputButton" Visibility="Collapsed" Content="Open output folder" Click="OnOpenFolderClick"/>
+                </StackPanel>
             </Grid>
-            <TextBlock Text="Add camera moves after recording. Drag the start/end and focus sliders; these are layered after live smart zoom."
-                       Opacity="0.7" FontSize="12" TextWrapping="Wrap" />
-            <ScrollViewer MaxHeight="190" VerticalScrollBarVisibility="Auto">
-                <StackPanel x:Name="ZoomRegionsPanel" Spacing="6" />
-            </ScrollViewer>
-        </StackPanel>
-
-        <StackPanel x:Name="ExportProgressPanel" Grid.Row="5" Spacing="4" Visibility="Collapsed">
-            <TextBlock x:Name="ExportStageText" Text="Generating palette…" FontSize="12" />
-            <ProgressBar x:Name="ExportProgress" Minimum="0" Maximum="100" />
-        </StackPanel>
-
-        <StackPanel Grid.Row="6" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
-            <Button x:Name="DiscardButton" Content="Discard" Click="OnDiscardClick" />
-            <Button x:Name="ExportGifButton" Content="Export GIF" Click="OnExportGifClick" />
-            <Button x:Name="SaveButton" Content="Export MP4" Style="{StaticResource AccentButtonStyle}" Click="OnSaveClick" />
         </StackPanel>
     </Grid>
 </Window>

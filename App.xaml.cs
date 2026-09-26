@@ -19,24 +19,36 @@ public partial class App : Application
     private static Mutex? _singleInstanceMutex;
 
     private Window? _window;
+    public Window? MainWindow => _window;
 
     public App()
     {
         InitializeComponent();
+#if DEBUG
+        if (Environment.GetEnvironmentVariable("CAPIT_REVIEW_SMOKE_DIR") is { Length: > 0 } diagnosticFolder)
+        {
+            Directory.CreateDirectory(diagnosticFolder);
+            DebugSettings.BindingFailed += (_, e) => File.AppendAllText(Path.Combine(diagnosticFolder, "binding-errors.txt"), e.Message + Environment.NewLine);
+        }
+#endif
         UnhandledException += OnXamlUnhandledException;
         AppDomain.CurrentDomain.UnhandledException += OnAppDomainUnhandledException;
     }
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
-        if (!TryAcquireSingleInstance())
+        var arguments = Environment.GetCommandLineArgs();
+        var reviewRequested = arguments.Length >= 3 && arguments[1] == "--review" && File.Exists(arguments[2]);
+        // A standalone review owns no capture devices and may coexist with the recording instance.
+        if (!reviewRequested && !TryAcquireSingleInstance())
         {
             FocusExistingInstance();
             Exit();
             return;
         }
 
-        _window = new MainWindow();
+        _window = reviewRequested
+            ? new TrimExportWindow(Path.GetFullPath(arguments[2])) : new MainWindow();
         _window.Activate();
     }
 
