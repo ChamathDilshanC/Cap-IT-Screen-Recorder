@@ -1,19 +1,17 @@
-<div align="center">
+<div align="left">
 
-<img src="assets/Logo-Mark.png" alt="Cap-IT logo" width="96" />
+<img src="assets/Logo-Mark.png" alt="Cap-IT logo" width="72" />
 
 # Cap-IT Screen Recorder
 
-### A focused, GPU-assisted screen recorder for polished tutorials, demos, bug reports, and social clips.
+### A focused, GPU-assisted Windows screen recorder for polished tutorials, demos, bug reports, and social clips.
 
-Capture the right source, follow the action with smart zoom, draw over the desktop, clean up audio,
-compose the result, and export without leaving the app.
+Capture the right source, follow the action with smart zoom, draw over the desktop, clean up audio, compose
+the result, and export without leaving the app.
 
-<p>
-  <a href="https://github.com/ChamathDilshanC/Cap-IT-Screen-Recorder/releases/latest"><strong>Download for Windows</strong></a>
-  · <a href="docs/screenshots/README.md">Screenshot gallery</a>
-  · <a href="https://github.com/ChamathDilshanC/Cap-IT-Screen-Recorder/issues">Report an issue</a>
-</p>
+<a href="https://github.com/ChamathDilshanC/Cap-IT-Screen-Recorder/releases/latest"><img src="https://img.shields.io/badge/Download-Windows%20Installer-18dce8?style=for-the-badge&logo=windows&logoColor=white" alt="Download Windows installer" /></a>
+<a href="docs/screenshots/README.md"><img src="https://img.shields.io/badge/Explore-Screenshot%20Gallery-7c5cff?style=for-the-badge&logo=googleimages&logoColor=white" alt="Explore screenshot gallery" /></a>
+<a href="https://github.com/ChamathDilshanC/Cap-IT-Screen-Recorder/issues"><img src="https://img.shields.io/badge/Report-an%20Issue-24292f?style=for-the-badge&logo=github&logoColor=white" alt="Report an issue" /></a>
 
 <img src="https://img.shields.io/github/v/release/ChamathDilshanC/Cap-IT-Screen-Recorder?display_name=tag&sort=semver&color=18dce8&label=latest" alt="Latest release" />
 <img src="https://img.shields.io/github/downloads/ChamathDilshanC/Cap-IT-Screen-Recorder/total?color=7c5cff&label=downloads" alt="Downloads" />
