@@ -40,6 +40,22 @@
                         <ToggleSwitch OnContent="On" OffContent="Off"
                                       IsOn="{x:Bind ViewModel.ZoomOnClickOnly, Mode=TwoWay}" />
                     </ctcontrols:SettingsCard>
+
+                    <ctcontrols:SettingsCard Header="Instant zoom out"
+                                              Description="Return to the full desktop immediately when the smart zoom is released. Zoom-in animation remains smooth.">
+                        <ToggleSwitch OnContent="On" OffContent="Off"
+                                      IsOn="{x:Bind ViewModel.InstantZoomOut, Mode=TwoWay}" />
+                    </ctcontrols:SettingsCard>
+
+                    <ctcontrols:SettingsCard Header="Zoom animation speed"
+                                              Description="0% keeps the current smooth timing. Higher values make zoom in and zoom out faster.">
+                        <StackPanel MinWidth="220" Spacing="4">
+                            <Slider Minimum="0" Maximum="50" StepFrequency="1"
+                                    Value="{x:Bind ViewModel.ZoomAnimationSpeedPercent, Mode=TwoWay}" />
+                            <TextBlock Text="{x:Bind ViewModel.ZoomAnimationSpeedPercent, Mode=OneWay}"
+                                       Opacity=".7" />
+                        </StackPanel>
+                    </ctcontrols:SettingsCard>
                 </ctcontrols:SettingsExpander.Items>
             </ctcontrols:SettingsExpander>
 

@@ -131,6 +131,8 @@ public partial class MainViewModel : BaseViewModel
     [ObservableProperty] private bool _mouseTrackingZoomEnabled;
     [ObservableProperty] private ZoomLevelOption _selectedZoomLevel = ZoomLevelOption.All[0];
     [ObservableProperty] private bool _zoomOnClickOnly;
+    [ObservableProperty] private bool _instantZoomOut;
+    [ObservableProperty] private double _zoomAnimationSpeedPercent;
     [ObservableProperty] private bool _keystrokeOverlayEnabled;
 
     // Circular webcam PiP overlay (Phase 3 Step 1 — device selection/persistence only; VideoCaptureService
@@ -541,6 +543,8 @@ public partial class MainViewModel : BaseViewModel
             MouseTrackingZoomEnabled = s.MouseTrackingZoomEnabled;
             SelectedZoomLevel = ZoomLevelOptions.FirstOrDefault(z => z.Factor == s.ZoomFactor) ?? SelectedZoomLevel;
             ZoomOnClickOnly = s.ZoomOnClickOnly;
+            InstantZoomOut = s.InstantZoomOut;
+            ZoomAnimationSpeedPercent = Math.Clamp(s.ZoomAnimationSpeedPercent, 0, 50);
             KeystrokeOverlayEnabled = s.KeystrokeOverlayEnabled;
             SpotlightEnabled = s.SpotlightEnabled;
             SpotlightRadius = s.SpotlightRadius;
@@ -581,6 +585,8 @@ public partial class MainViewModel : BaseViewModel
         MouseTrackingZoomEnabled = MouseTrackingZoomEnabled,
         ZoomFactor = SelectedZoomLevel.Factor,
         ZoomOnClickOnly = ZoomOnClickOnly,
+        InstantZoomOut = InstantZoomOut,
+        ZoomAnimationSpeedPercent = ZoomAnimationSpeedPercent,
         KeystrokeOverlayEnabled = KeystrokeOverlayEnabled,
         WebcamEnabled = WebcamEnabled,
         WebcamDeviceId = SelectedWebcam?.Id,
@@ -619,6 +625,8 @@ public partial class MainViewModel : BaseViewModel
             MouseTrackingZoomEnabled = p.MouseTrackingZoomEnabled;
             SelectedZoomLevel = ZoomLevelOptions.FirstOrDefault(x => x.Factor == p.ZoomFactor) ?? SelectedZoomLevel;
             ZoomOnClickOnly = p.ZoomOnClickOnly;
+            InstantZoomOut = p.InstantZoomOut;
+            ZoomAnimationSpeedPercent = Math.Clamp(p.ZoomAnimationSpeedPercent, 0, 50);
             KeystrokeOverlayEnabled = p.KeystrokeOverlayEnabled;
             WebcamEnabled = p.WebcamEnabled;
             CaptureSystemAudio = p.CaptureSystemAudio;
@@ -677,6 +685,7 @@ public partial class MainViewModel : BaseViewModel
         Name = name, Fps = Fps, Resolution = SelectedResolution.Value, CaptureCursor = CaptureCursor,
         CursorStyle = SelectedCursorStyle.Value, MouseTrackingZoomEnabled = MouseTrackingZoomEnabled,
         ZoomFactor = SelectedZoomLevel.Factor, ZoomOnClickOnly = ZoomOnClickOnly,
+        InstantZoomOut = InstantZoomOut, ZoomAnimationSpeedPercent = ZoomAnimationSpeedPercent,
         KeystrokeOverlayEnabled = KeystrokeOverlayEnabled, WebcamEnabled = WebcamEnabled,
         CaptureSystemAudio = CaptureSystemAudio, CaptureMicrophone = CaptureMicrophone,
         EnableMicNoiseSuppression = EnableMicNoiseSuppression, AnnotationsEnabled = AnnotationsEnabled,
@@ -799,14 +808,14 @@ public partial class MainViewModel : BaseViewModel
 
     partial void OnMouseTrackingZoomEnabledChanged(bool value)
     {
-        _manager.UpdateZoom(value, SelectedZoomLevel.Factor, ZoomOnClickOnly);
+        _manager.UpdateZoom(value, SelectedZoomLevel.Factor, ZoomOnClickOnly, InstantZoomOut, ZoomAnimationSpeedPercent);
         RestartPreviewIfIdle();
         QueueSaveSettings();
     }
 
     partial void OnSelectedZoomLevelChanged(ZoomLevelOption value)
     {
-        _manager.UpdateZoom(MouseTrackingZoomEnabled, value.Factor, ZoomOnClickOnly);
+        _manager.UpdateZoom(MouseTrackingZoomEnabled, value.Factor, ZoomOnClickOnly, InstantZoomOut, ZoomAnimationSpeedPercent);
         RestartPreviewIfIdle();
         QueueSaveSettings();
     }
@@ -818,7 +827,23 @@ public partial class MainViewModel : BaseViewModel
     /// </summary>
     partial void OnZoomOnClickOnlyChanged(bool value)
     {
-        _manager.UpdateZoom(MouseTrackingZoomEnabled, SelectedZoomLevel.Factor, value);
+        _manager.UpdateZoom(MouseTrackingZoomEnabled, SelectedZoomLevel.Factor, value, InstantZoomOut, ZoomAnimationSpeedPercent);
+        RestartPreviewIfIdle();
+        QueueSaveSettings();
+    }
+
+    partial void OnInstantZoomOutChanged(bool value)
+    {
+        _manager.UpdateZoom(MouseTrackingZoomEnabled, SelectedZoomLevel.Factor, ZoomOnClickOnly, value, ZoomAnimationSpeedPercent);
+        RestartPreviewIfIdle();
+        QueueSaveSettings();
+    }
+
+    partial void OnZoomAnimationSpeedPercentChanged(double value)
+    {
+        var clamped = Math.Clamp(value, 0, 50);
+        if (Math.Abs(value - clamped) > .001) { ZoomAnimationSpeedPercent = clamped; return; }
+        _manager.UpdateZoom(MouseTrackingZoomEnabled, SelectedZoomLevel.Factor, ZoomOnClickOnly, InstantZoomOut, clamped);
         RestartPreviewIfIdle();
         QueueSaveSettings();
     }
@@ -1150,7 +1175,8 @@ public partial class MainViewModel : BaseViewModel
             {
                 _manager.StartPreview(targetKind, monitor, window, cursor, cursorStyle, zoomEnabled, zoomFactor, keystrokeOverlay,
                     webcamEnabled, webcamDeviceId, spotlightEnabled, spotlightRadius, clickRipplesEnabled, zoomClickOnly, webcamTemplate,
-                    WebcamBrightness, WebcamContrast, WebcamSaturation, WebcamWarmth, WebcamSmoothing);
+                    WebcamBrightness, WebcamContrast, WebcamSaturation, WebcamWarmth, WebcamSmoothing,
+                    InstantZoomOut, ZoomAnimationSpeedPercent);
             }
             catch { /* best effort: live preview is a convenience, not required to record */ }
         });

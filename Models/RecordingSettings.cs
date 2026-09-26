@@ -258,6 +258,8 @@ public sealed class RecordingSettings
     // out a couple of seconds later. Separate from MouseTrackingZoomEnabled rather than a third state of
     // it, because it is a modifier on how the same feature is triggered, not a different feature.
     public bool ZoomOnClickOnly { get; set; } = false;
+    public bool InstantZoomOut { get; set; }
+    public double ZoomAnimationSpeedPercent { get; set; }
     public bool KeystrokeOverlayEnabled { get; set; } = false;
 
     // Circular webcam PiP overlay (Phase 3). WebcamDeviceId is the WinRT DeviceInformation.Id string —

@@ -12,6 +12,8 @@ public sealed class RecordingPreset
     public bool MouseTrackingZoomEnabled { get; set; }
     public double ZoomFactor { get; set; } = 2;
     public bool ZoomOnClickOnly { get; set; }
+    public bool InstantZoomOut { get; set; }
+    public double ZoomAnimationSpeedPercent { get; set; }
     public bool KeystrokeOverlayEnabled { get; set; }
     public bool WebcamEnabled { get; set; }
     public bool CaptureSystemAudio { get; set; } = true;

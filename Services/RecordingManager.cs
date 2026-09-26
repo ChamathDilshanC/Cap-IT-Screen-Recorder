@@ -137,7 +137,8 @@ public sealed class RecordingManager : IDisposable
         bool spotlightEnabled = false, double spotlightRadius = 180, bool clickRipplesEnabled = false,
         bool zoomOnClickOnly = false, string webcamTemplate = "circle",
         double webcamBrightness = 0, double webcamContrast = 1, double webcamSaturation = 1,
-        double webcamWarmth = 0, double webcamSmoothing = 0)
+        double webcamWarmth = 0, double webcamSmoothing = 0, bool instantZoomOut = false,
+        double zoomAnimationSpeedPercent = 0)
     {
         // Same single-authority rule StartAsync applies — the chosen target kind decides, so the preview
         // can never end up showing a different source than a recording started from the same selection.
@@ -171,7 +172,7 @@ public sealed class RecordingManager : IDisposable
             try
             {
                 _video.Prepare(monitor, window, captureCursor, cursorStyle, zoomEnabled, zoomFactor, keystrokeOverlayEnabled,
-                    spotlightEnabled, spotlightRadius, clickRipplesEnabled, zoomOnClickOnly);
+                    spotlightEnabled, spotlightRadius, clickRipplesEnabled, zoomOnClickOnly, instantZoomOut, zoomAnimationSpeedPercent);
                 _video.BeginCapture();
                 _previewMonitorHandle = monitor?.Handle;
                 _previewWindowHandle = window?.Handle;
@@ -222,12 +223,12 @@ public sealed class RecordingManager : IDisposable
     }
 
     /// <inheritdoc cref="UpdateCursor"/>
-    public void UpdateZoom(bool enabled, double factor, bool clickOnly = false)
+    public void UpdateZoom(bool enabled, double factor, bool clickOnly = false, bool instantZoomOut = false, double zoomAnimationSpeedPercent = 0)
     {
         _previewZoomEnabled = enabled;
         _previewZoomFactor = factor;
         _previewZoomOnClickOnly = clickOnly;
-        lock (_videoLock) { _video.UpdateZoom(enabled, factor, clickOnly); }
+        lock (_videoLock) { _video.UpdateZoom(enabled, factor, clickOnly, instantZoomOut, zoomAnimationSpeedPercent); }
     }
 
     /// <inheritdoc cref="UpdateCursor"/>
@@ -326,7 +327,7 @@ public sealed class RecordingManager : IDisposable
             await Task.Run(() => { lock (_videoLock) { _video.Prepare(monitor, window, settings.CaptureCursor, settings.CursorStyle,
                 settings.MouseTrackingZoomEnabled, settings.ZoomFactor, settings.KeystrokeOverlayEnabled,
                 settings.SpotlightEnabled, settings.SpotlightRadius, settings.ClickRipplesEnabled,
-                settings.ZoomOnClickOnly); } });
+                settings.ZoomOnClickOnly, settings.InstantZoomOut, settings.ZoomAnimationSpeedPercent); } });
 
             _finalPath = settings.BuildOutputFilePath();
             // MP4 is recorded to a fragmented ".part.mp4" and remuxed to a faststart MP4 on stop

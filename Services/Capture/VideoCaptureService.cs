@@ -114,8 +114,8 @@ public sealed class VideoCaptureService : IDisposable
     // smoothly (C1-continuous through a target change) and, being critically damped, settles without any
     // overshoot or bounce. Separate in/out smooth times because a push-in that lands a touch quicker than
     // it pulls back out reads as intentional camera work rather than a rubber band.
-    private const double ZoomInSmoothTime = 0.50;  // seconds to (approximately) settle when pushing in
-    private const double ZoomOutSmoothTime = 0.75; // slower on the way out — an unhurried release
+    private const double ZoomInSmoothTime = 0.50;
+    private const double ZoomOutSmoothTime = 0.75;
     private const double ZoomPanSmoothTime = 0.32; // the camera's lateral follow, snappier than the push
     private const double IdleTimeoutSeconds = 1.5;
     // Click-triggered mode holds the zoom longer than plain idle does: the point of a click zoom is to
@@ -143,6 +143,8 @@ public sealed class VideoCaptureService : IDisposable
     private const int MovementActivityThresholdPx = 3;
     private bool _zoomEnabled;
     private bool _zoomOnClickOnly;
+    private bool _instantZoomOut;
+    private double _zoomAnimationSpeedPercent;
     private double _zoomTargetFactor = 1.0;
     private double _zoomCurrentFactor = 1.0;
     private double _zoomFactorVelocity;
@@ -297,7 +299,7 @@ public sealed class VideoCaptureService : IDisposable
     public void Prepare(MonitorInfo? monitor, WindowInfo? window, bool captureCursor, CursorStyle cursorStyle = CursorStyle.Arrow,
         bool zoomEnabled = false, double zoomFactor = 2.0, bool keystrokeOverlayEnabled = false,
         bool spotlightEnabled = false, double spotlightRadius = 180, bool clickRipplesEnabled = false,
-        bool zoomOnClickOnly = false)
+        bool zoomOnClickOnly = false, bool instantZoomOut = false, double zoomAnimationSpeedPercent = 0)
     {
         if (_prepared) return;
         if (monitor is null && window is null)
@@ -320,6 +322,8 @@ public sealed class VideoCaptureService : IDisposable
 
         _zoomEnabled = zoomEnabled;
         _zoomOnClickOnly = zoomOnClickOnly;
+        _instantZoomOut = instantZoomOut;
+        _zoomAnimationSpeedPercent = Math.Clamp(zoomAnimationSpeedPercent, 0, 50);
         _zoomTargetFactor = zoomFactor;
         _zoomCurrentFactor = 1.0;
         _zoomFactorVelocity = 0;
@@ -614,11 +618,13 @@ public sealed class VideoCaptureService : IDisposable
     /// which may not exist if the session started with zoom off — <see cref="EnsureActivityHooks"/>
     /// installs them on demand.
     /// </summary>
-    public void UpdateZoom(bool enabled, double factor, bool clickOnly = false)
+    public void UpdateZoom(bool enabled, double factor, bool clickOnly = false, bool instantZoomOut = false, double zoomAnimationSpeedPercent = 0)
     {
         _zoomTargetFactor = factor;
         _zoomEnabled = enabled;
         _zoomOnClickOnly = clickOnly;
+        _instantZoomOut = instantZoomOut;
+        _zoomAnimationSpeedPercent = Math.Clamp(zoomAnimationSpeedPercent, 0, 50);
         if (enabled) EnsureActivityHooks(needKeyboard: true, needMouse: true);
     }
 
@@ -1612,7 +1618,10 @@ public sealed class VideoCaptureService : IDisposable
         _lastZoomFrameSeconds = nowSeconds;
 
         var targetFactor = CurrentZoomTargetFactor();
-        var factorSmoothTime = targetFactor > _zoomCurrentFactor ? ZoomInSmoothTime : ZoomOutSmoothTime;
+        var factorSmoothTime = targetFactor > _zoomCurrentFactor
+            ? ZoomInSmoothTime
+            : _instantZoomOut ? .01 : ZoomOutSmoothTime;
+        factorSmoothTime *= 1 - _zoomAnimationSpeedPercent / 100;
         _zoomCurrentFactor = SmoothDamp(_zoomCurrentFactor, targetFactor, ref _zoomFactorVelocity, factorSmoothTime, dt);
         if (_zoomCurrentFactor < 1.0)
         {

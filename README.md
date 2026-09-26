@@ -9,7 +9,7 @@ tutorial for you** — pick what to record from live thumbnails, let smart zoom 
 actually doing, draw on your screen while you talk, clean up your mic, and export a trimmed GIF, all
 without leaving the app.
 
-[![Release](https://img.shields.io/badge/release-v3.5.0-success?logo=github)](../../releases/latest)
+[![Release](https://img.shields.io/badge/release-v3.6.0-success?logo=github)](../../releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/ChamathDilshanC/Cap-IT-Screen-Recorder/total?color=blue&logo=github)](../../releases)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-0078D6?logo=windows&logoColor=white)](#-installation)
 [![.NET](https://img.shields.io/badge/.NET-8-512BD4?logo=dotnet&logoColor=white)](#%EF%B8%8F-tech-stack)
@@ -64,6 +64,8 @@ flowchart LR
 | Encoders | NVIDIA NVENC, AMD AMF, Intel QSV, software H.264 fallback |
 | Audio | System audio, microphone, live meters, Studio Mic cleanup |
 | Visual effects | Smart zoom, cursor spotlight, click ripples, keystrokes, webcam PiP |
+
+Smart Tracking also provides an optional **instant zoom-out** and an animation-speed control from **0% to 50%**. The default `0%` setting preserves the smooth timing used by previous releases.
 | Annotations | Pen, line, arrow, rectangle, ellipse, text, undo, clear, fade modes |
 | Post-production | Preview, trim, zoom regions, canvas composition, MP4 and two-pass GIF export |
 | Deployment | Self-contained Windows installer; no separate .NET or Windows App SDK runtime |
@@ -74,7 +76,7 @@ Designed and developed by **[Chamath Dilshan](https://github.com/ChamathDilshanC
 
 ---
 
-## 🆕 What's new in v3.5.0
+## 🆕 What's new in v3.6.0
 
 This release introduces a redesigned Review & Export workspace and improves the post-recording experience:
 
@@ -451,7 +453,7 @@ that can't lose a leg mid-stream.
 
 ## 📦 Installation
 
-Grab **`CapIT-Screen-Recorder-Setup-3.5.0.exe`** from
+Grab **`CapIT-Screen-Recorder-Setup-3.6.0.exe`** from
 **[Releases](../../releases/latest)** and run it. It's a normal Windows installer (built with Inno
 Setup) and it's fully self-contained — no separate .NET runtime, no Windows App SDK runtime, and no
 manual FFmpeg download.

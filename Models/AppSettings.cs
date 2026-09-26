@@ -45,6 +45,8 @@ public sealed class AppSettings
     // out a couple of seconds later. Separate from MouseTrackingZoomEnabled rather than a third state of
     // it, because it is a modifier on how the same feature is triggered, not a different feature.
     public bool ZoomOnClickOnly { get; set; } = false;
+    public bool InstantZoomOut { get; set; } = false;
+    public double ZoomAnimationSpeedPercent { get; set; } = 0;
     public bool KeystrokeOverlayEnabled { get; set; } = false;
 
     public bool WebcamEnabled { get; set; } = false;

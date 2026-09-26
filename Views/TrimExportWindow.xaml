@@ -131,7 +131,7 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
-                    <GridView x:Name="InspectorTabs" ItemContainerStyle="{StaticResource InspectorTabStyle}" SelectionChanged="OnInspectorChanged" SelectionMode="Single" SelectedIndex="0" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Auto">
+                    <GridView x:Name="InspectorTabs" ItemContainerStyle="{StaticResource InspectorTabStyle}" SelectionChanged="OnInspectorChanged" SelectionMode="Single" SelectedIndex="0" ScrollViewer.VerticalScrollBarVisibility="Hidden" ScrollViewer.HorizontalScrollBarVisibility="Hidden">
                         <GridView.ItemsPanel>
                             <ItemsPanelTemplate>
                                 <ItemsWrapGrid Orientation="Horizontal" MaximumRowsOrColumns="3"/>
@@ -168,12 +168,12 @@
                             <TextBlock Text="Export" Width="80" FontSize="12" TextAlignment="Center" Margin="0,2"/>
                         </GridViewItem>
                     </GridView>
-                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Hidden" HorizontalScrollBarVisibility="Hidden">
                         <Grid x:Name="InspectorSections" Padding="2,0,6,12">
                             <StackPanel x:Name="CanvasSection" Spacing="12" Visibility="Visible">
                                 <TextBlock Text="Composition" Style="{StaticResource SectionHeaderText}"/>
                                 <TextBlock Text="Give your recording room to breathe." Style="{StaticResource SectionDescriptionText}" FontSize="12"/>
-                                <GridView x:Name="AspectPicker" SelectionChanged="OnAspectChanged" SelectionMode="Single" IsItemClickEnabled="False" MaxHeight="190" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Auto">
+                                <GridView x:Name="AspectPicker" SelectionChanged="OnAspectChanged" SelectionMode="Single" IsItemClickEnabled="False" MaxHeight="190" ScrollViewer.VerticalScrollBarVisibility="Hidden" ScrollViewer.HorizontalScrollBarVisibility="Hidden">
                                     <GridView.ItemsPanel>
                                         <ItemsPanelTemplate>
                                             <ItemsWrapGrid Orientation="Horizontal" MaximumRowsOrColumns="4"/>

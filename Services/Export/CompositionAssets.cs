@@ -225,6 +225,11 @@ public static class CompositionAssetRenderer
         if (!p.FrameTitleBar || p.DeviceFrameStyle == "Device") return;
         using var ink = new SolidBrush(light ? Color.FromArgb(100, 104, 118) : Color.FromArgb(180, 187, 202));
         var yy = f.Y + 16;
+        if (p.DeviceFrameStyle == "Browser")
+        {
+            DrawBrowserChrome(g, new RectangleF(f.X, f.Y, f.Width, f.Height), light, p.FrameControls);
+            return;
+        }
         if (p.FrameControls)
         {
             if (p.DeviceFrameStyle == "Windows")
@@ -238,12 +243,52 @@ public static class CompositionAssetRenderer
             else if (p.DeviceFrameStyle == "Minimal") g.FillEllipse(ink, f.X + f.Width - 24, yy - 3, 6, 6);
             else for (var i = 0; i < 3; i++) g.FillEllipse(ink, f.X + 14 + i * 16, yy - 4, 8, 8);
         }
-        if (p.DeviceFrameStyle == "Browser" && f.Width > 180)
+    }
+
+    private static void DrawBrowserChrome(Graphics g, RectangleF frame, bool light, bool controls)
+    {
+        var chrome = light ? Color.FromArgb(238, 239, 242) : Color.FromArgb(31, 34, 42);
+        var toolbar = light ? Color.FromArgb(248, 249, 250) : Color.FromArgb(24, 27, 34);
+        using var chromeBrush = new SolidBrush(chrome);
+        using var toolbarBrush = new SolidBrush(toolbar);
+        g.FillRectangle(chromeBrush, frame.X, frame.Y, frame.Width, 32);
+        g.FillRectangle(toolbarBrush, frame.X, frame.Y + 32, frame.Width, 34);
+
+        if (controls)
         {
-            using var address = Rounded(new RectangleF(f.X + 80, f.Y + 8, Math.Max(20, f.Width - 160), 17), 5);
-            using var muted = new SolidBrush(light ? Color.White : Color.FromArgb(54, 59, 70));
-            g.FillPath(muted, address);
+            var y = frame.Y + 16;
+            var colors = new[] { Color.FromArgb(255, 255, 95, 86), Color.FromArgb(255, 255, 189, 46), Color.FromArgb(255, 39, 201, 63) };
+            for (var i = 0; i < colors.Length; i++)
+            {
+                using var dot = new SolidBrush(colors[i]);
+                g.FillEllipse(dot, frame.X + 14 + i * 16, y - 5, 10, 10);
+            }
         }
+
+        using var muted = new SolidBrush(light ? Color.FromArgb(95, 99, 108) : Color.FromArgb(164, 170, 182));
+        using var line = new Pen(muted, 1.4f);
+        var navY = frame.Y + 49;
+        var navLeft = frame.X + 18;
+        g.DrawLine(line, navLeft + 7, navY - 5, navLeft, navY);
+        g.DrawLine(line, navLeft, navY, navLeft + 7, navY + 5);
+        g.DrawLine(line, navLeft + 21, navY - 5, navLeft + 28, navY);
+        g.DrawLine(line, navLeft + 28, navY, navLeft + 21, navY + 5);
+
+        var address = new RectangleF(frame.X + 92, frame.Y + 39, Math.Max(80, frame.Width - 184), 20);
+        using var addressBrush = new SolidBrush(light ? Color.FromArgb(224, 226, 230) : Color.FromArgb(49, 53, 63));
+        using var addressPath = Rounded(address, 6);
+        g.FillPath(addressBrush, addressPath);
+        using var addressText = new SolidBrush(light ? Color.FromArgb(75, 79, 88) : Color.FromArgb(196, 201, 211));
+        using var font = new Font("Segoe UI", Math.Max(8, frame.Height / 90f), FontStyle.Regular, GraphicsUnit.Pixel);
+        var label = "example.com";
+        g.DrawString(label, font, addressText, address.X + 10, address.Y + 4);
+
+        var right = frame.Right - 22;
+        g.DrawEllipse(line, right - 42, navY - 5, 10, 10);
+        g.DrawLine(line, right - 37, navY, right - 32, navY);
+        g.DrawLine(line, right - 32, navY, right - 34, navY - 3);
+        g.DrawLine(line, right - 32, navY, right - 32, navY + 3);
+        g.DrawEllipse(line, right - 14, navY - 5, 10, 10);
     }
 
     private static void DrawImage(Graphics g, Image image, int w, int h, string fit)
