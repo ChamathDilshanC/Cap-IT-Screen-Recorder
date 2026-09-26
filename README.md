@@ -10,6 +10,7 @@ Capture the right source, follow the action with smart zoom, draw over the deskt
 the result, and export without leaving the app.
 
 <a href="https://github.com/ChamathDilshanC/Cap-IT-Screen-Recorder/releases/latest"><img src="https://img.shields.io/badge/Download-Windows%20Installer-18dce8?style=for-the-badge&logo=windows&logoColor=white" alt="Download Windows installer" /></a>
+<a href="https://github.com/ChamathDilshanC/Cap-IT-Screen-Recorder/releases/download/v3.6.0/CapIT-Screen-Recorder-Setup-3.6.0.exe"><img src="https://img.shields.io/badge/Direct%20Download-v3.6.0-10b981?style=for-the-badge&logo=windows&logoColor=white" alt="Direct download Cap-IT v3.6.0 installer" /></a>
 <a href="docs/screenshots/README.md"><img src="https://img.shields.io/badge/Explore-Screenshot%20Gallery-7c5cff?style=for-the-badge&logo=googleimages&logoColor=white" alt="Explore screenshot gallery" /></a>
 <a href="https://github.com/ChamathDilshanC/Cap-IT-Screen-Recorder/issues"><img src="https://img.shields.io/badge/Report-an%20Issue-24292f?style=for-the-badge&logo=github&logoColor=white" alt="Report an issue" /></a>
 
