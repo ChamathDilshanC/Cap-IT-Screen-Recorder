@@ -9,7 +9,7 @@ tutorial for you** — pick what to record from live thumbnails, let smart zoom 
 actually doing, draw on your screen while you talk, clean up your mic, and export a trimmed GIF, all
 without leaving the app.
 
-[![Release](https://img.shields.io/badge/release-v3.3.0-success?logo=github)](../../releases/latest)
+[![Release](https://img.shields.io/badge/release-v3.4.0-success?logo=github)](../../releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/ChamathDilshanC/Cap-IT-Screen-Recorder/total?color=blue&logo=github)](../../releases)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-0078D6?logo=windows&logoColor=white)](#-installation)
 [![.NET](https://img.shields.io/badge/.NET-8-512BD4?logo=dotnet&logoColor=white)](#%EF%B8%8F-tech-stack)
@@ -74,7 +74,7 @@ Designed and developed by **[Chamath Dilshan](https://github.com/ChamathDilshanC
 
 ---
 
-## 🆕 What's new in v3.3.0
+## 🆕 What's new in v3.4.0
 
 This release introduces a redesigned Review & Export workspace and improves the post-recording experience:
 
@@ -87,8 +87,11 @@ This release introduces a redesigned Review & Export workspace and improves the 
 | 🔔 **Live update notifications** | The app checks for new GitHub releases at startup and every five minutes while open, so users see an update banner even when a release is published after the app was launched. |
 | 🧩 **Review workspace** | A dedicated editor layout brings the preview canvas, thumbnail timeline, inspector, trim controls, presentation presets, zoom regions, and export actions into one workspace. |
 | 🎨 **Consistent composition exports** | MP4 and GIF exports share the same presentation settings and composition layout, including canvas size, background, scale, padding, rounded corners, shadow, device frame, and watermark options. |
+| 🔤 **System-font text overlay** | Add editable text in Review & Export using fonts installed on Windows; the same text is rendered in the live preview, MP4, and GIF exports. |
+| 📁 **Organized recording data** | Generated metadata and zoom JSON files are kept in a `Cap-IT Metadata` folder beside the recording, while legacy sidecars remain readable. |
+| 📜 **Scrollable settings** | Inspector tabs and settings panels expose scrollbars so controls remain reachable on smaller windows. |
 
-> **Upgrade note:** recordings and preferences are preserved. Settings remain outside the install directory at `%LocalAppData%\Cap-IT Screen Recorder\settings.json`, and recording metadata is stored beside each video.
+> **Upgrade note:** recordings and preferences are preserved. Settings remain outside the install directory at `%LocalAppData%\Cap-IT Screen Recorder\settings.json`, and new recording metadata is stored in `Cap-IT Metadata` beside each video.
 
 ---
 
@@ -128,7 +131,7 @@ preferences in `%LocalAppData%\Cap-IT Screen Recorder\settings.json`.
 
 After recording, the Review & Export window retains cursor presentation metadata and exposes controls
 for style, size, smoothing, hide-when-idle, click emphasis, and a cursor trail. The settings are saved
-next to the recording as `<recording>.<extension>.metadata.json` and are carried into MP4 export
+in the recording's `Cap-IT Metadata` folder as `<recording>.<extension>.metadata.json` and are carried into MP4 export
 metadata; GIF exports receive the same sidecar metadata. Older recordings without a sidecar continue
 to open and export normally.
 
@@ -147,6 +150,9 @@ recording metadata sidecar and are applied consistently to MP4 and GIF exports; 
 post-record zoom regions remain relative to the original recording timeline.
 
 Cursor settings remain metadata-only because the cursor is rasterized into the captured frames.
+The Text inspector also provides a post-record text overlay with content, size, position, style,
+and a picker for fonts installed on Windows. Intro animations include Bounce, Fade in, Pop, and
+Slide up; they are rendered consistently in preview, MP4, and GIF.
 Very large source recordings, unusual FFmpeg builds without the `gradients` filter, or watermark files
 removed before export may require falling back to an image/solid background.
 
@@ -444,7 +450,7 @@ that can't lose a leg mid-stream.
 
 ## 📦 Installation
 
-Grab **`CapIT-Screen-Recorder-Setup-3.3.0.exe`** from
+Grab **`CapIT-Screen-Recorder-Setup-3.4.0.exe`** from
 **[Releases](../../releases/latest)** and run it. It's a normal Windows installer (built with Inno
 Setup) and it's fully self-contained — no separate .NET runtime, no Windows App SDK runtime, and no
 manual FFmpeg download.

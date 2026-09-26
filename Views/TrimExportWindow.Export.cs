@@ -30,6 +30,7 @@ public sealed partial class TrimExportWindow
             {
                 File.Delete(ViewModel.FilePath);
                 File.Delete(RecordingMetadata.GetPath(ViewModel.FilePath)); File.Delete(ZoomRegionStore.GetPath(ViewModel.FilePath));
+                File.Delete(ViewModel.FilePath + ".metadata.json"); File.Delete(ViewModel.FilePath + ".zoom.json");
             });
             await RequestCloseAsync();
         }

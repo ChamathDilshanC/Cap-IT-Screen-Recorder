@@ -8,6 +8,7 @@
                     <MediaPlayerElement x:Name="VideoPlayer" AreTransportControlsEnabled="False" Stretch="Fill" />
                 </Canvas>
                 <Image x:Name="OverlayLayer" Stretch="Fill" IsHitTestVisible="False" />
+                <Image x:Name="TextLayer" Stretch="Fill" IsHitTestVisible="False" />
             </Canvas>
         </Viewbox>
     </Grid>

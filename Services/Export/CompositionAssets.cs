@@ -6,7 +6,7 @@ using ScreenRecorderApp.Models;
 
 namespace ScreenRecorderApp.Services.Export;
 
-public sealed record CompositionAssets(CompositionLayout Layout, byte[] Background, byte[] Overlay, byte[] Mask, string? Warning);
+public sealed record CompositionAssets(CompositionLayout Layout, byte[] Background, byte[] Overlay, byte[] Mask, byte[] Text, string? Warning);
 
 /// <summary>Renders static artwork once per edit, never per video frame. Preview and export use identical pixels.</summary>
 public static class CompositionAssetRenderer
@@ -18,6 +18,7 @@ public static class CompositionAssetRenderer
         string? warning = null;
         using var background = new Bitmap(l.Width, l.Height, PixelFormat.Format32bppArgb);
         using var overlay = new Bitmap(l.Width, l.Height, PixelFormat.Format32bppArgb);
+        using var textLayer = new Bitmap(l.Width, l.Height, PixelFormat.Format32bppArgb);
         using var mask = new Bitmap(l.Video.Width, l.Video.Height, PixelFormat.Format32bppArgb);
         using (var g = Graphics.FromImage(background))
         {
@@ -105,8 +106,38 @@ public static class CompositionAssetRenderer
                 { warning = "Watermark image unavailable. It is omitted from preview and export. Choose a replacement image."; }
             }
         }
+        using (var g = Graphics.FromImage(textLayer))
+        {
+            Setup(g);
+            DrawTextOverlay(g, p.TextOverlay, l);
+        }
         ct.ThrowIfCancellationRequested();
-        return new(l, Png(background), Png(overlay), Png(mask), warning);
+        return new(l, Png(background), Png(overlay), Png(mask), Png(textLayer), warning);
+    }
+
+    private static void DrawTextOverlay(Graphics g, PresentationTextOverlay text, CompositionLayout layout)
+    {
+        if (!text.IsVisible) return;
+        try
+        {
+            var style = (text.Bold ? FontStyle.Bold : FontStyle.Regular) |
+                        (text.Italic ? FontStyle.Italic : FontStyle.Regular);
+            using var font = new Font(text.FontFamily, (float)text.FontSize, style, GraphicsUnit.Pixel);
+            using var brush = new SolidBrush(Parse(text.Color));
+            var size = g.MeasureString(text.Text, font);
+            g.DrawString(text.Text, font, brush,
+                (float)(text.X * layout.Width - size.Width / 2),
+                (float)(text.Y * layout.Height - size.Height / 2));
+        }
+        catch (ArgumentException)
+        {
+            using var font = new Font("Segoe UI", (float)text.FontSize, FontStyle.Regular, GraphicsUnit.Pixel);
+            using var brush = new SolidBrush(Parse(text.Color));
+            var size = g.MeasureString(text.Text, font);
+            g.DrawString(text.Text, font, brush,
+                (float)(text.X * layout.Width - size.Width / 2),
+                (float)(text.Y * layout.Height - size.Height / 2));
+        }
     }
 
     private static void DrawFrame(Graphics g, PresentationSettings p, CompositionLayout l)

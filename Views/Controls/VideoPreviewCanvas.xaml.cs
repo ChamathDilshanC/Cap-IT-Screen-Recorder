@@ -21,6 +21,7 @@ public sealed partial class VideoPreviewCanvas : UserControl
     private PixelRect? _lastCrop;
     private int _generation;
     private string? _lastSettings;
+    private PresentationTextOverlay _lastText = new();
 
     public VideoPreviewCanvas() => InitializeComponent();
 
@@ -33,6 +34,7 @@ public sealed partial class VideoPreviewCanvas : UserControl
         var cts = _renderCts = new(); var ct = cts.Token; var generation = ++_generation;
         _sourceWidth = sourceWidth; _sourceHeight = sourceHeight;
         var snapshot = settings.Clone(); snapshot.Normalize();
+        _lastText = snapshot.TextOverlay;
         // Geometry is cheap. Commit it together with the matching static artwork to avoid stale shadows.
         try
         {
@@ -40,11 +42,12 @@ public sealed partial class VideoPreviewCanvas : UserControl
             var assets = await Task.Run(() => CompositionAssetRenderer.Render(snapshot, sourceWidth, sourceHeight, ct), ct);
             var bg = await DecodeAsync(assets.Background);
             var overlay = await DecodeAsync(assets.Overlay);
+            var text = await DecodeAsync(assets.Text);
             if (generation != _generation || ct.IsCancellationRequested) return;
             _layout = assets.Layout; _lastCrop = null;
             var l = _layout;
-            CompositionCanvas.Width = BackgroundLayer.Width = OverlayLayer.Width = l.Width;
-            CompositionCanvas.Height = BackgroundLayer.Height = OverlayLayer.Height = l.Height;
+            CompositionCanvas.Width = BackgroundLayer.Width = OverlayLayer.Width = TextLayer.Width = l.Width;
+            CompositionCanvas.Height = BackgroundLayer.Height = OverlayLayer.Height = TextLayer.Height = l.Height;
             CompositionCanvas.Clip = new RectangleGeometry { Rect = new(0, 0, l.Width, l.Height) };
             VideoViewport.Width = l.Video.Width; VideoViewport.Height = l.Video.Height;
             Canvas.SetLeft(VideoViewport, l.Video.X); Canvas.SetTop(VideoViewport, l.Video.Y);
@@ -56,7 +59,7 @@ public sealed partial class VideoPreviewCanvas : UserControl
             }
             _geometry.Size = new Vector2(l.Video.Width, l.Video.Height);
             _geometry.CornerRadius = new Vector2((float)l.Radius);
-            BackgroundLayer.Source = bg; OverlayLayer.Source = overlay;
+            BackgroundLayer.Source = bg; OverlayLayer.Source = overlay; TextLayer.Source = text;
             SetPosition(_lastTime, _lastRegions);
             AssetWarning?.Invoke(assets.Warning);
         }
@@ -75,6 +78,35 @@ public sealed partial class VideoPreviewCanvas : UserControl
         var sx = (double)_layout.Video.Width / crop.Width; var sy = (double)_layout.Video.Height / crop.Height;
         VideoPlayer.Width = _sourceWidth * sx; VideoPlayer.Height = _sourceHeight * sy;
         Canvas.SetLeft(VideoPlayer, -crop.X * sx); Canvas.SetTop(VideoPlayer, -crop.Y * sy);
+        UpdateTextAnimation(seconds);
+    }
+    private void UpdateTextAnimation(double seconds)
+    {
+        if (_layout is null) return;
+        var text = _lastText;
+        var duration = Math.Max(.1, text.AnimationDuration);
+        var progress = Math.Clamp(seconds / duration, 0, 1);
+        var transform = new CompositeTransform
+        {
+            CenterX = text.X * _layout.Width, CenterY = text.Y * _layout.Height,
+            ScaleX = 1, ScaleY = 1, TranslateY = 0, TranslateX = 0
+        };
+        switch (text.Animation)
+        {
+            case "Bounce":
+                transform.TranslateX = Math.Sin(progress * Math.PI * 3) * _layout.Width * .018 * (1 - progress);
+                break;
+            case "Fade": TextLayer.Opacity = progress; break;
+            case "Pop":
+                transform.ScaleX = transform.ScaleY = .75 + .25 * progress;
+                break;
+            case "SlideUp":
+                transform.TranslateY = _layout.Height * .08 * (1 - progress);
+                break;
+            default: TextLayer.Opacity = 1; break;
+        }
+        TextLayer.RenderTransform = transform;
+        if (text.Animation != "Fade") TextLayer.Opacity = 1;
     }
     private static async Task<BitmapImage> DecodeAsync(byte[] bytes)
     {

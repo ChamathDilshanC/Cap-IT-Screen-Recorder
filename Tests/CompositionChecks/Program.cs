@@ -14,6 +14,7 @@ void Check(bool value, string message) { if (!value) throw new Exception(message
 
 // Missing, legacy, explicit-null and damaged sidecars must be safe to open.
 var legacyPath = Path.Combine(root, "legacy.mp4");
+Directory.CreateDirectory(Path.GetDirectoryName(RecordingMetadata.GetPath(legacyPath))!);
 await File.WriteAllTextAsync(RecordingMetadata.GetPath(legacyPath), """{"SchemaVersion":1,"Cursor":null,"Presentation":{"DeviceFrame":true,"BackgroundMode":null,"BackgroundColor":"bad","VideoScale":99}}""");
 var legacy = RecordingMetadata.Load(legacyPath)!;
 Check(legacy.Cursor is not null && legacy.Presentation.DeviceFrameStyle == "Minimal", "Legacy frame migration");

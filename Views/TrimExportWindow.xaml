@@ -131,7 +131,7 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
-                    <GridView x:Name="InspectorTabs" ItemContainerStyle="{StaticResource InspectorTabStyle}" SelectionChanged="OnInspectorChanged" SelectionMode="Single" SelectedIndex="0" ScrollViewer.VerticalScrollBarVisibility="Disabled">
+                    <GridView x:Name="InspectorTabs" ItemContainerStyle="{StaticResource InspectorTabStyle}" SelectionChanged="OnInspectorChanged" SelectionMode="Single" SelectedIndex="0" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Auto">
                         <GridView.ItemsPanel>
                             <ItemsPanelTemplate>
                                 <ItemsWrapGrid Orientation="Horizontal" MaximumRowsOrColumns="3"/>
@@ -161,6 +161,9 @@
                         <GridViewItem Tag="Watermark" AutomationProperties.Name="Watermark">
                             <TextBlock Text="Watermark" Width="80" FontSize="12" TextAlignment="Center" Margin="0,2"/>
                         </GridViewItem>
+                        <GridViewItem Tag="Text" AutomationProperties.Name="Text">
+                            <TextBlock Text="Text" Width="80" FontSize="12" TextAlignment="Center" Margin="0,2"/>
+                        </GridViewItem>
                         <GridViewItem Tag="Export" AutomationProperties.Name="Export">
                             <TextBlock Text="Export" Width="80" FontSize="12" TextAlignment="Center" Margin="0,2"/>
                         </GridViewItem>
@@ -170,7 +173,7 @@
                             <StackPanel x:Name="CanvasSection" Spacing="12" Visibility="Visible">
                                 <TextBlock Text="Composition" Style="{StaticResource SectionHeaderText}"/>
                                 <TextBlock Text="Give your recording room to breathe." Style="{StaticResource SectionDescriptionText}" FontSize="12"/>
-                                <GridView x:Name="AspectPicker" SelectionChanged="OnAspectChanged" SelectionMode="Single" IsItemClickEnabled="False" MaxHeight="190" ScrollViewer.VerticalScrollBarVisibility="Disabled">
+                                <GridView x:Name="AspectPicker" SelectionChanged="OnAspectChanged" SelectionMode="Single" IsItemClickEnabled="False" MaxHeight="190" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Auto">
                                     <GridView.ItemsPanel>
                                         <ItemsPanelTemplate>
                                             <ItemsWrapGrid Orientation="Horizontal" MaximumRowsOrColumns="4"/>
@@ -464,6 +467,31 @@
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <Button Content="Choose logo" Click="OnChooseWatermarkClick"/>
                                     <Button Content="Remove" Click="OnRemoveWatermarkClick"/>
+                                </StackPanel>
+                                <StackPanel x:Name="TextSection" Spacing="12" Visibility="Collapsed">
+                                    <TextBlock Text="Text overlay" Style="{StaticResource SectionHeaderText}"/>
+                                    <TextBlock Text="Add a title, label, or callout using any font installed on your Windows system." Style="{StaticResource SectionDescriptionText}" FontSize="12" TextWrapping="Wrap"/>
+                                    <TextBox x:Name="TextOverlayBox" Header="Text" TextChanged="OnTextOverlayChanged" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="72" PlaceholderText="Type text to place on the video"/>
+                                    <ComboBox x:Name="TextFontPicker" Header="System font" SelectionChanged="OnTextFontChanged"/>
+                                    <ComboBox x:Name="TextAnimationPicker" Header="Intro animation" SelectionChanged="OnTextAnimationChanged">
+                                        <ComboBoxItem Tag="None" Content="None"/>
+                                        <ComboBoxItem Tag="Bounce" Content="Bounce"/>
+                                        <ComboBoxItem Tag="Fade" Content="Fade in"/>
+                                        <ComboBoxItem Tag="Pop" Content="Pop"/>
+                                        <ComboBoxItem Tag="SlideUp" Content="Slide up"/>
+                                    </ComboBox>
+                                    <Grid ColumnSpacing="8">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                        <NumberBox x:Name="TextSizeBox" Header="Size · px" Minimum="8" Maximum="240" ValueChanged="OnTextOverlayNumberChanged" SpinButtonPlacementMode="Compact"/>
+                                        <NumberBox x:Name="TextXBox" Grid.Column="1" Header="X · %" Minimum="0" Maximum="100" ValueChanged="OnTextOverlayNumberChanged" SpinButtonPlacementMode="Compact"/>
+                                    </Grid>
+                                    <NumberBox x:Name="TextYBox" Header="Y · %" Minimum="0" Maximum="100" ValueChanged="OnTextOverlayNumberChanged" SpinButtonPlacementMode="Compact"/>
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <ToggleButton x:Name="TextBoldButton" Content="Bold" Click="OnTextStyleClick"/>
+                                        <ToggleButton x:Name="TextItalicButton" Content="Italic" Click="OnTextStyleClick"/>
+                                        <Button Content="Clear text" Click="OnClearTextOverlayClick"/>
+                                    </StackPanel>
+                                    <TextBlock Text="Font choices come from installed Windows fonts and fall back to Segoe UI if a font is unavailable." Style="{StaticResource SectionDescriptionText}" FontSize="12" TextWrapping="Wrap"/>
                                 </StackPanel>
                                 <Grid>
                                     <TextBlock Text="Scale · canvas width"/>

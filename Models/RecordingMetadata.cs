@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using ScreenRecorderApp.Services;
 
 namespace ScreenRecorderApp.Models;
 
@@ -23,13 +24,17 @@ public sealed class RecordingMetadata
         ? $"{Cursor.Style}, {Cursor.Size:0.##}×, smoothing {Cursor.Smoothing:0.##}"
         : "Hidden";
 
-    public static string GetPath(string recordingPath) => recordingPath + ".metadata.json";
+    public static string GetPath(string recordingPath) =>
+        RecordingDataPaths.FileInDirectory(recordingPath, ".metadata.json");
+
+    private static string LegacyPath(string recordingPath) => recordingPath + ".metadata.json";
 
     public static RecordingMetadata? Load(string recordingPath)
     {
         try
         {
             var path = GetPath(recordingPath);
+            if (!File.Exists(path)) path = LegacyPath(recordingPath);
             if (!File.Exists(path)) return null;
             var metadata = JsonSerializer.Deserialize<RecordingMetadata>(File.ReadAllText(path));
             if (metadata is not null) metadata.Cursor ??= new CursorSettings();
@@ -43,6 +48,7 @@ public sealed class RecordingMetadata
     public void Save(string recordingPath)
     {
         var path = GetPath(recordingPath);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         var temp = path + $".{Guid.NewGuid():N}.tmp";
         var json = JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true });
         File.WriteAllText(temp, json);
@@ -52,6 +58,7 @@ public sealed class RecordingMetadata
     public async Task SaveAsync(string recordingPath)
     {
         var path = GetPath(recordingPath);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         var temp = path + $".{Guid.NewGuid():N}.tmp";
         var json = JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true });
         try

@@ -31,15 +31,16 @@ public static class CompositionExportService
         {
             progress?.Report(new("Preparing composition…", 0));
             var assets = await Task.Run(() => CompositionAssetRenderer.Render(p, sw, sh, ct), ct).ConfigureAwait(false);
-            var bg = Path.Combine(folder, "background.png"); var overlay = Path.Combine(folder, "overlay.png"); var mask = Path.Combine(folder, "mask.png");
+            var bg = Path.Combine(folder, "background.png"); var overlay = Path.Combine(folder, "overlay.png"); var mask = Path.Combine(folder, "mask.png"); var text = Path.Combine(folder, "text.png");
             await File.WriteAllBytesAsync(bg, assets.Background, ct).ConfigureAwait(false);
             await File.WriteAllBytesAsync(overlay, assets.Overlay, ct).ConfigureAwait(false);
             await File.WriteAllBytesAsync(mask, assets.Mask, ct).ConfigureAwait(false);
-            var filter = BuildFilter(assets.Layout, sw, sh, regions, start.TotalSeconds, duration.TotalSeconds, fps);
+            await File.WriteAllBytesAsync(text, assets.Text, ct).ConfigureAwait(false);
+            var filter = BuildFilter(assets.Layout, sw, sh, regions, start.TotalSeconds, duration.TotalSeconds, fps, p.TextOverlay);
             List<string> Inputs() => ["-y", "-hide_banner", "-loglevel", "warning", "-nostats", "-progress", "pipe:1",
                 "-filter_complex_threads", "2", "-ss", F(start.TotalSeconds), "-t", F(duration.TotalSeconds), "-i", inputPath,
                 "-loop", "1", "-framerate", F(fps), "-i", bg, "-loop", "1", "-framerate", F(fps), "-i", mask,
-                "-loop", "1", "-framerate", F(fps), "-i", overlay];
+                "-loop", "1", "-framerate", F(fps), "-i", overlay, "-loop", "1", "-framerate", F(fps), "-i", text];
             if (gif)
             {
                 var palette = Path.Combine(folder, "palette.png");
@@ -47,7 +48,7 @@ public static class CompositionExportService
                 var args = Inputs();
                 args.AddRange(["-filter_complex", filter + tail + ",palettegen=stats_mode=diff[palette]", "-map", "[palette]", "-frames:v", "1", palette]);
                 await RunAsync(ffmpeg, args, duration, v => progress?.Report(new("Building GIF palette…", 5 + v * 40)), ct).ConfigureAwait(false);
-                args = Inputs(); args.AddRange(["-i", palette, "-filter_complex", filter + tail + "[small];[small][4:v]paletteuse=dither=sierra2_4a[out]",
+                args = Inputs(); args.AddRange(["-i", palette, "-filter_complex", filter + tail + "[small];[small][5:v]paletteuse=dither=sierra2_4a[out]",
                     "-map", "[out]", "-an", "-loop", "0", "-t", F(duration.TotalSeconds), partial]);
                 await RunAsync(ffmpeg, args, duration, v => progress?.Report(new("Encoding GIF…", 45 + v * 54)), ct).ConfigureAwait(false);
             }
@@ -93,7 +94,7 @@ public static class CompositionExportService
     }
 
     public static string BuildFilter(CompositionLayout layout, int sw, int sh, IReadOnlyList<ZoomRegion> regions,
-        double start, double duration, double fps)
+        double start, double duration, double fps, PresentationTextOverlay? text = null)
     {
         var boundaries = new SortedSet<double> { 0, duration };
         foreach (var region in regions.Where(r => r.Enabled && double.IsFinite(r.StartSeconds) && double.IsFinite(r.EndSeconds) && r.EndSeconds > r.StartSeconds))
@@ -116,7 +117,23 @@ public static class CompositionExportService
         for (var i = 0; i < count; i++) graph.Append($"[v{i}]");
         graph.Append($"concat=n={count}:v=1:a=0,fps={F(fps)}[video];[2:v]format=gray[mask];[video][mask]alphamerge=shortest=1[rounded];");
         graph.Append($"[1:v][rounded]overlay=x={layout.Video.X}:y={layout.Video.Y}:shortest=1:format=rgb[base];");
-        graph.Append("[base][3:v]overlay=0:0:shortest=1:format=rgb,setsar=1[composed]");
+        graph.Append("[base][3:v]overlay=0:0:shortest=1:format=rgb[styled];");
+        if (text is { IsVisible: true })
+        {
+            var animation = text.Animation switch
+            {
+                "Bounce" => $"x='({layout.Width * text.X:F3}-overlay_w/2)+sin(min(t/{F(text.AnimationDuration)},1)*PI*3)*{Math.Max(6, layout.Width * .018):F3}*(1-min(t/{F(text.AnimationDuration)},1))':y='({layout.Height * text.Y:F3}-overlay_h/2)':enable='between(t,0,{F(text.AnimationDuration)})'",
+                "Fade" => $"x={layout.Width * text.X:F3}-overlay_w/2:y={layout.Height * text.Y:F3}-overlay_h/2",
+                "Pop" => $"x={layout.Width * text.X:F3}-overlay_w/2:y={layout.Height * text.Y:F3}-overlay_h/2:enable='gte(t,0)'",
+                "SlideUp" => $"x={layout.Width * text.X:F3}-overlay_w/2:y='({layout.Height * text.Y:F3}-overlay_h/2)+{layout.Height * .08:F3}*(1-min(t/{F(text.AnimationDuration)},1))'",
+                _ => $"x={layout.Width * text.X:F3}-overlay_w/2:y={layout.Height * text.Y:F3}-overlay_h/2"
+            };
+            if (text.Animation == "Fade")
+                graph.Append($"[4:v]format=rgba,colorchannelmixer=aa='if(lt(t,{F(text.AnimationDuration)}),t/{F(text.AnimationDuration)},1)'[animatedtext];[styled][animatedtext]overlay={animation}:shortest=1:format=rgb");
+            else
+                graph.Append($"[styled][4:v]overlay={animation}:shortest=1:format=rgb");
+        }
+        else graph.Append("[styled]setsar=1[composed]");
         return graph.ToString();
     }
 

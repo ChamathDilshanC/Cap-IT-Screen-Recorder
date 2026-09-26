@@ -12,6 +12,7 @@ using ScreenRecorderApp.ViewModels;
 using Windows.Media.Core;
 using Windows.Media.Playback;
 using Windows.System;
+using System.Drawing;
 
 namespace ScreenRecorderApp.Views;
 
@@ -59,6 +60,8 @@ public sealed partial class TrimExportWindow : Window
         Closed += OnClosed;
         BuildGradientPresets();
         RenderColourSwatches();
+        foreach (var family in System.Drawing.FontFamily.Families.OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase))
+            TextFontPicker.Items.Add(family.Name);
     }
 
     public void ApplyTheme(AppTheme theme)
@@ -76,12 +79,14 @@ public sealed partial class TrimExportWindow : Window
             if (_closed) return;
             _ready = true; Scrubber.Maximum = ViewModel.Duration;
             OnCompositionChanged(this, EventArgs.Empty);
+            SyncTextControls();
             OpenPlayer(); _playbackTimer.Start();
             _ = LoadTimelineAsync();
 #if DEBUG
             _ = RunDiagnosticsAsync();
 #endif
         }
+
         catch (OperationCanceledException) { }
         catch (Exception ex)
         {
@@ -90,6 +95,30 @@ public sealed partial class TrimExportWindow : Window
             ShowPlaybackError("This recording could not be opened. The original file has not been changed. Try opening it externally.");
         }
     }
+        private void SyncTextControls()
+        {
+            var text = ViewModel.Presentation.TextOverlay;
+            TextOverlayBox.Text = text.Text;
+            TextFontPicker.SelectedItem = TextFontPicker.Items.Cast<string>().FirstOrDefault(x => x.Equals(text.FontFamily, StringComparison.OrdinalIgnoreCase)) ?? "Segoe UI";
+            TextAnimationPicker.SelectedItem = TextAnimationPicker.Items.OfType<ComboBoxItem>().FirstOrDefault(x => (string)x.Tag == text.Animation);
+            TextSizeBox.Value = text.FontSize; TextXBox.Value = text.X * 100; TextYBox.Value = text.Y * 100;
+            TextBoldButton.IsChecked = text.Bold; TextItalicButton.IsChecked = text.Italic;
+        }
+        private void OnTextOverlayChanged(object sender, TextChangedEventArgs e)
+        { if (_ready && !_syncing) ViewModel.UpdateTextOverlay(t => t.Text = TextOverlayBox.Text); }
+        private void OnTextFontChanged(object sender, SelectionChangedEventArgs e)
+        { if (_ready && !_syncing && TextFontPicker.SelectedItem is string font) ViewModel.UpdateTextOverlay(t => t.FontFamily = font); }
+        private void OnTextAnimationChanged(object sender, SelectionChangedEventArgs e)
+        { if (_ready && !_syncing && TextAnimationPicker.SelectedItem is ComboBoxItem item && item.Tag is string animation) ViewModel.UpdateTextOverlay(t => t.Animation = animation); }
+        private void OnTextOverlayNumberChanged(NumberBox sender, NumberBoxValueChangedEventArgs e)
+        {
+            if (!_ready || _syncing) return;
+            ViewModel.UpdateTextOverlay(t => { t.FontSize = TextSizeBox.Value; t.X = TextXBox.Value / 100; t.Y = TextYBox.Value / 100; });
+        }
+        private void OnTextStyleClick(object sender, RoutedEventArgs e)
+        { if (_ready && !_syncing) ViewModel.UpdateTextOverlay(t => { t.Bold = TextBoldButton.IsChecked == true; t.Italic = TextItalicButton.IsChecked == true; }); }
+        private void OnClearTextOverlayClick(object sender, RoutedEventArgs e)
+        { if (_ready) { ViewModel.UpdateTextOverlay(t => t.Text = ""); SyncTextControls(); } }
     private void OpenPlayer()
     {
         ReleasePlayer();

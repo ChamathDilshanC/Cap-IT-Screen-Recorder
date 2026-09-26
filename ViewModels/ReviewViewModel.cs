@@ -34,6 +34,12 @@ public sealed partial class ReviewViewModel : ObservableObject
     public string ScaleLabel => $"{Presentation.VideoScale:P0}";
     public string CanvasLabel { get { var (w,h) = Presentation.ResolveCanvas(SourceWidth, SourceHeight); return $"{w} × {h}"; } }
     public string TrimLabel => $"{Math.Max(0, TrimEnd - TrimStart):0.0}s selected";
+    public void UpdateTextOverlay(Action<PresentationTextOverlay> update)
+    {
+        update(Presentation.TextOverlay);
+        Presentation.TextOverlay.Normalize();
+        Changed();
+    }
     private readonly DispatcherQueueTimer _commitTimer;
     private readonly SemaphoreSlim _saveLock = new(1, 1);
     private readonly List<string> _history = [];

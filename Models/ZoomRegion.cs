@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using ScreenRecorderApp.Services;
 
 namespace ScreenRecorderApp.Models;
 
@@ -34,13 +35,17 @@ public sealed class ZoomRegion : INotifyPropertyChanged
 public static class ZoomRegionStore
 {
     private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
-    public static string GetPath(string recordingPath) => recordingPath + ".zoom.json";
+    public static string GetPath(string recordingPath) =>
+        RecordingDataPaths.FileInDirectory(recordingPath, ".zoom.json");
+
+    private static string LegacyPath(string recordingPath) => recordingPath + ".zoom.json";
 
     public static List<ZoomRegion> Load(string recordingPath)
     {
         try
         {
             var path = GetPath(recordingPath);
+            if (!File.Exists(path)) path = LegacyPath(recordingPath);
             return File.Exists(path)
                 ? JsonSerializer.Deserialize<List<ZoomRegion>>(File.ReadAllText(path), Options) ?? []
                 : [];
@@ -52,7 +57,9 @@ public static class ZoomRegionStore
     {
         try
         {
-            File.WriteAllText(GetPath(recordingPath), JsonSerializer.Serialize(regions, Options));
+            var path = GetPath(recordingPath);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, JsonSerializer.Serialize(regions, Options));
         }
         catch { /* sidecar retention must never block recording/export */ }
     }
