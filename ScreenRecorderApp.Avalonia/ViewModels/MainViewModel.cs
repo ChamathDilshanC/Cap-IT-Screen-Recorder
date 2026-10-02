@@ -26,6 +26,14 @@ public partial class MainViewModel : ObservableObject
 
 public enum WorkspacePage
 {
+    Home,
+    Capture,
+    Tracking,
+    Webcam,
+    Annotations,
+    Effects,
+    Audio,
+    Settings,
     Review,
     Export
 }

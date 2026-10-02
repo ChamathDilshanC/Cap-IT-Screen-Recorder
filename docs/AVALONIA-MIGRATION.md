@@ -39,9 +39,10 @@ overlay, source-picker, and review-window services behind interfaces and complet
 
 ## 5. Screens migrated
 
-The Avalonia shell and Review/Export workspace entry point are migrated. Capture, Smart Tracking,
-Webcam, Annotations, Effects, Audio, Settings, and the full interactive editor remain on the
-legacy host until their service boundaries and parity checks are complete.
+The Avalonia shell and Review/Export workspace are migrated with real shared composition state,
+padding/fit/transform controls, latest-recording loading, and MP4 export through the engine
+adapter. Capture, Smart Tracking, Webcam, Annotations, Effects, Audio, Settings, and live media
+preview remain on the legacy host until their service boundaries and parity checks are complete.
 
 ## 6. Shared controls/themes created
 

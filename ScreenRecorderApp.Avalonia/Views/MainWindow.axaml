@@ -8,20 +8,24 @@
         MinWidth="960"
         MinHeight="620"
         Background="{DynamicResource CapItBackgroundBrush}">
-  <Grid ColumnDefinitions="236,*">
+  <Grid ColumnDefinitions="224,*" Background="{DynamicResource CapItWorkspaceBrush}">
     <Border Grid.Column="0" Background="{DynamicResource CapItSurfaceBrush}" Padding="20,24">
       <DockPanel>
         <StackPanel DockPanel.Dock="Top" Spacing="6">
           <TextBlock Text="CAP-IT" FontSize="24" FontWeight="Bold" Foreground="White" />
           <TextBlock Text="Screen recorder" Foreground="{DynamicResource CapItMutedTextBrush}" />
         </StackPanel>
-        <StackPanel Margin="0,42,0,0" Spacing="8">
-          <Button Classes="rail" Command="{Binding SelectPageCommand}" CommandParameter="{x:Static local:WorkspacePage.Review}">
-            <StackPanel Orientation="Horizontal" Spacing="12"><TextBlock Text="◉" /><TextBlock Text="Review" /></StackPanel>
-          </Button>
-          <Button Classes="rail" Command="{Binding SelectPageCommand}" CommandParameter="{x:Static local:WorkspacePage.Export}">
-            <StackPanel Orientation="Horizontal" Spacing="12"><TextBlock Text="⇧" /><TextBlock Text="Export" /></StackPanel>
-          </Button>
+        <StackPanel Margin="0,42,0,0" Spacing="4">
+          <Button Classes="rail" Command="{Binding SelectPageCommand}" CommandParameter="{x:Static local:WorkspacePage.Home}" Content="Home" />
+          <Button Classes="rail" Command="{Binding SelectPageCommand}" CommandParameter="{x:Static local:WorkspacePage.Capture}" Content="Capture" />
+          <Button Classes="rail" Command="{Binding SelectPageCommand}" CommandParameter="{x:Static local:WorkspacePage.Tracking}" Content="Smart Tracking" />
+          <Button Classes="rail" Command="{Binding SelectPageCommand}" CommandParameter="{x:Static local:WorkspacePage.Webcam}" Content="Webcam" />
+          <Button Classes="rail" Command="{Binding SelectPageCommand}" CommandParameter="{x:Static local:WorkspacePage.Annotations}" Content="Annotations" />
+          <Button Classes="rail" Command="{Binding SelectPageCommand}" CommandParameter="{x:Static local:WorkspacePage.Effects}" Content="Effects" />
+          <Button Classes="rail" Command="{Binding SelectPageCommand}" CommandParameter="{x:Static local:WorkspacePage.Audio}" Content="Audio" />
+          <Button Classes="rail" Command="{Binding SelectPageCommand}" CommandParameter="{x:Static local:WorkspacePage.Settings}" Content="Settings" />
+          <Separator Margin="0,14" />
+          <Button Classes="rail" Command="{Binding SelectPageCommand}" CommandParameter="{x:Static local:WorkspacePage.Review}" Content="Review &amp; Export" />
         </StackPanel>
       </DockPanel>
     </Border>
@@ -31,7 +35,7 @@
         <TextBlock Text="Prepare your recording before sharing it." Margin="0,6,0,24"
                    Foreground="{DynamicResource CapItMutedTextBrush}" />
       </StackPanel>
-      <Border Grid.Row="1" Background="{DynamicResource CapItSurfaceBrush}"
+      <Border Grid.Row="1" Classes="panel" Background="{DynamicResource CapItSurfaceBrush}"
               CornerRadius="{DynamicResource CapItCardRadius}" Padding="{DynamicResource CapItCardPadding}">
         <ContentControl Content="{Binding SelectedPage}">
           <ContentControl.DataTemplates>
@@ -39,13 +43,42 @@
               <Border>
                 <StackPanel Spacing="18">
                   <TextBlock Text="{Binding}" Foreground="{DynamicResource CapItAccentBrush}" FontSize="16" />
-                  <TextBlock Text="The workspace is ready for the platform adapter." FontSize="22" Foreground="White" />
-                  <TextBlock Text="Use the navigation rail to switch between review and export. Capture and encoding remain behind IRecordingWorkspaceAdapter."
-                             TextWrapping="Wrap" MaxWidth="620" Foreground="{DynamicResource CapItMutedTextBrush}" />
-                  <Button Content="Load latest recording" Command="{Binding $parent[Window].DataContext.Review.LoadLatestCommand}"
-                          HorizontalAlignment="Left" Classes="accent" />
-                  <TextBlock Text="{Binding $parent[Window].DataContext.Review.StatusMessage}"
-                             Foreground="{DynamicResource CapItMutedTextBrush}" />
+                  <Grid ColumnDefinitions="*,340">
+                    <Border Grid.Column="0" Classes="panel" Background="{DynamicResource CapItBackgroundBrush}" Padding="24" MinHeight="360">
+                      <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="14">
+                        <TextBlock Text="Preview" FontSize="16" Foreground="{DynamicResource CapItMutedTextBrush}" HorizontalAlignment="Center"/>
+                        <TextBlock Text="{Binding $parent[Window].DataContext.Review.Recording.Title, FallbackValue=No recording loaded}"
+                                   FontSize="22" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                        <Button Content="Load latest recording" Command="{Binding $parent[Window].DataContext.Review.LoadLatestCommand}"
+                                Classes="accent" HorizontalAlignment="Center"/>
+                        <TextBlock Text="{Binding $parent[Window].DataContext.Review.StatusMessage}" Foreground="{DynamicResource CapItMutedTextBrush}" />
+                      </StackPanel>
+                    </Border>
+                    <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto">
+                      <StackPanel Spacing="14">
+                        <TextBlock Text="Inspector" FontSize="18" FontWeight="SemiBold"/>
+                        <TextBlock Text="Canvas" Foreground="{DynamicResource CapItAccentBrush}" FontWeight="SemiBold"/>
+                        <ComboBox ItemsSource="{Binding $parent[Window].DataContext.Review.CanvasPresets}"
+                                  SelectedItem="{Binding $parent[Window].DataContext.Review.Presentation.CanvasPreset}"/>
+                        <Grid ColumnDefinitions="*,90,Auto">
+                          <TextBlock Text="Padding" VerticalAlignment="Center"/>
+                          <NumericUpDown Grid.Column="1" Minimum="0" Maximum="240" Increment="1"
+                                         Value="{Binding $parent[Window].DataContext.Review.Presentation.Padding}"/>
+                          <Button Grid.Column="2" Content="Reset" Command="{Binding $parent[Window].DataContext.Review.ResetPaddingCommand}"/>
+                        </Grid>
+                        <Slider Minimum="0" Maximum="240" Value="{Binding $parent[Window].DataContext.Review.Presentation.Padding}"/>
+                        <TextBlock Text="Video" Foreground="{DynamicResource CapItAccentBrush}" FontWeight="SemiBold"/>
+                        <ComboBox ItemsSource="{Binding $parent[Window].DataContext.Review.FitModes}"
+                                  SelectedItem="{Binding $parent[Window].DataContext.Review.Presentation.FitMode}"/>
+                        <TextBlock Text="Scale"/>
+                        <Slider Minimum=".4" Maximum="1.2" Value="{Binding $parent[Window].DataContext.Review.Presentation.VideoScale}"/>
+                        <TextBlock Text="Rotation Z"/>
+                        <Slider Minimum="-15" Maximum="15" Value="{Binding $parent[Window].DataContext.Review.Presentation.RotationZ}"/>
+                        <Button Content="Reset transform" Command="{Binding $parent[Window].DataContext.Review.ResetTransformCommand}"/>
+                        <Button Content="Export MP4" Classes="accent" Command="{Binding $parent[Window].DataContext.Review.ExportCommand}"/>
+                      </StackPanel>
+                    </ScrollViewer>
+                  </Grid>
                 </StackPanel>
               </Border>
             </DataTemplate>
