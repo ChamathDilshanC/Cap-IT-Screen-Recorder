@@ -156,35 +156,35 @@
                     <GridView Grid.Row="1" x:Name="InspectorTabs" ItemContainerStyle="{StaticResource InspectorTabStyle}" SelectionChanged="OnInspectorChanged" SelectionMode="Single" SelectedIndex="0" ScrollViewer.VerticalScrollBarVisibility="Hidden" ScrollViewer.HorizontalScrollBarVisibility="Auto">
                         <GridView.ItemsPanel>
                             <ItemsPanelTemplate>
-                                <StackPanel Orientation="Horizontal"/>
+                                <ItemsWrapGrid Orientation="Horizontal" MaximumRowsOrColumns="5" ItemWidth="70"/>
                             </ItemsPanelTemplate>
                         </GridView.ItemsPanel>
-                        <GridViewItem Tag="Canvas" AutomationProperties.Name="Canvas">
-                            <StackPanel Width="80" Spacing="4" Margin="0,2">
+                        <GridViewItem Tag="Canvas" AutomationProperties.Name="Canvas" HorizontalContentAlignment="Stretch">
+                            <StackPanel Spacing="4" Margin="0,2">
                                 <FontIcon Glyph="&#xE7C3;" FontSize="16"/>
                                 <TextBlock Text="Canvas" FontSize="12" TextAlignment="Center"/>
                             </StackPanel>
                         </GridViewItem>
-                        <GridViewItem Tag="Video" AutomationProperties.Name="Video">
-                            <StackPanel Width="80" Spacing="4" Margin="0,2">
+                        <GridViewItem Tag="Video" AutomationProperties.Name="Video" HorizontalContentAlignment="Stretch">
+                            <StackPanel Spacing="4" Margin="0,2">
                                 <FontIcon Glyph="&#xE714;" FontSize="16"/>
                                 <TextBlock Text="Video" FontSize="12" TextAlignment="Center"/>
                             </StackPanel>
                         </GridViewItem>
-                        <GridViewItem Tag="Style" AutomationProperties.Name="Style">
-                            <StackPanel Width="80" Spacing="4" Margin="0,2">
+                        <GridViewItem Tag="Style" AutomationProperties.Name="Style" HorizontalContentAlignment="Stretch">
+                            <StackPanel Spacing="4" Margin="0,2">
                                 <FontIcon Glyph="&#xE790;" FontSize="16"/>
                                 <TextBlock Text="Style" FontSize="12" TextAlignment="Center"/>
                             </StackPanel>
                         </GridViewItem>
-                        <GridViewItem Tag="Text" AutomationProperties.Name="Text">
-                            <StackPanel Width="80" Spacing="4" Margin="0,2">
+                        <GridViewItem Tag="Text" AutomationProperties.Name="Text" HorizontalContentAlignment="Stretch">
+                            <StackPanel Spacing="4" Margin="0,2">
                                 <FontIcon Glyph="&#xE8D2;" FontSize="16"/>
                                 <TextBlock Text="Text" FontSize="12" TextAlignment="Center"/>
                             </StackPanel>
                         </GridViewItem>
-                        <GridViewItem Tag="Export" AutomationProperties.Name="Export">
-                            <StackPanel Width="80" Spacing="4" Margin="0,2">
+                        <GridViewItem Tag="Export" AutomationProperties.Name="Export" HorizontalContentAlignment="Stretch">
+                            <StackPanel Spacing="4" Margin="0,2">
                                 <FontIcon Glyph="&#xE78C;" FontSize="16"/>
                                 <TextBlock Text="Export" FontSize="12" TextAlignment="Center"/>
                             </StackPanel>
