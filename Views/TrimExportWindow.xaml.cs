@@ -60,6 +60,7 @@ public sealed partial class TrimExportWindow : Window
         Root.Loaded += OnLoaded;
         Closed += OnClosed;
         BuildGradientPresets();
+        BuildBackgroundPresetGallery();
         RenderColourSwatches();
         foreach (var family in System.Drawing.FontFamily.Families.OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase))
             TextFontPicker.Items.Add(family.Name);

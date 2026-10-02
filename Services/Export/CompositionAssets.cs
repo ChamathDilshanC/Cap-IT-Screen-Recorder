@@ -23,8 +23,24 @@ public static class CompositionAssetRenderer
         using (var g = Graphics.FromImage(background))
         {
             Setup(g); g.Clear(Parse(p.BackgroundColor));
+            var preset = BackgroundPreset.All.FirstOrDefault(x => x.Key == p.BackgroundPreset);
+            var aurora = false;
+            if (preset is not null && preset.Key != "None" && preset.Key != "Custom")
+            {
+                p.BackgroundColor = preset.Color1;
+                p.BackgroundColor2 = preset.Color2;
+                p.BackgroundMode = preset.Pattern ? "pattern" : "gradient";
+                aurora = preset.Key == "Aurora Orbit";
+            }
             if (p.BackgroundMode == "none") g.Clear(Color.Black); // MP4 has no alpha channel.
-            if (p.BackgroundMode == "gradient")
+            if (aurora)
+                DrawAurora(g, l.Width, l.Height);
+            else if (p.BackgroundMode == "pattern")
+            {
+                g.Clear(Parse(p.BackgroundColor));
+                DrawPattern(g, l.Width, l.Height, p.BackgroundPreset);
+            }
+            else if (p.BackgroundMode == "gradient")
             {
                 using var brush = new LinearGradientBrush(new Rectangle(0, 0, l.Width, l.Height), Parse(p.BackgroundColor),
                     Parse(p.BackgroundColor2), (float)p.GradientAngle);
@@ -297,6 +313,30 @@ public static class CompositionAssetRenderer
         var scale = fit == "Fit" ? Math.Min((double)w / image.Width, (double)h / image.Height) : Math.Max((double)w / image.Width, (double)h / image.Height);
         var iw = (float)(image.Width * scale); var ih = (float)(image.Height * scale);
         g.DrawImage(image, (w - iw) / 2, (h - ih) / 2, iw, ih);
+    }
+    private static void DrawPattern(Graphics g, int width, int height, string preset)
+    {
+        var warm = preset == "Warm Grid";
+        using var dot = new SolidBrush(Color.FromArgb(55, warm ? 24 : 255, warm ? 24 : 195, warm ? 27 : 0));
+        for (var y = 1; y < height; y += 18)
+            for (var x = 1; x < width; x += 18)
+                g.FillEllipse(dot, x, y, 2, 2);
+        if (warm)
+        {
+            using var top = new LinearGradientBrush(new Rectangle(0, 0, width, height), Color.FromArgb(140, Color.White), Color.Transparent, 90);
+            g.FillRectangle(top, 0, 0, width, height * .4f);
+        }
+    }
+    private static void DrawAurora(Graphics g, int width, int height)
+    {
+        using var cyan = new PathGradientBrush(new[] { new Point(width / 5, height / 5), new Point(width / 2, height / 5), new Point(width / 2, height / 2), new Point(width / 5, height / 2) })
+        { CenterColor = Color.FromArgb(80, 34, 211, 238), SurroundColors = [Color.Transparent, Color.Transparent, Color.Transparent, Color.Transparent] };
+        using var purple = new PathGradientBrush(new[] { new Point(width * 3 / 4, height * 2 / 3), new Point(width, height * 2 / 3), new Point(width, height), new Point(width * 3 / 4, height) })
+        { CenterColor = Color.FromArgb(65, 99, 102, 241), SurroundColors = [Color.Transparent, Color.Transparent, Color.Transparent, Color.Transparent] };
+        using var baseBrush = new SolidBrush(Parse("#020617"));
+        g.FillRectangle(baseBrush, 0, 0, width, height);
+        g.FillRectangle(cyan, 0, 0, width, height);
+        g.FillRectangle(purple, 0, 0, width, height);
     }
     private static void Setup(Graphics g) { g.SmoothingMode = SmoothingMode.AntiAlias; g.InterpolationMode = InterpolationMode.HighQualityBicubic; g.PixelOffsetMode = PixelOffsetMode.HighQuality; }
     private static Color Parse(string hex) => ColorTranslator.FromHtml(hex);

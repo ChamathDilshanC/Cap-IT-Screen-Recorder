@@ -29,6 +29,8 @@ public sealed partial class ReviewViewModel : ObservableObject
     public ExportSettings Export { get; } = new();
     public ObservableCollection<ZoomRegion> ZoomRegions { get; } = [];
     public ObservableCollection<PresentationPreset> Presets { get; } = new(PresentationPreset.BuiltIns);
+    public IReadOnlyList<BackgroundPreset> BackgroundPresets { get; } = BackgroundPreset.All;
+    public IReadOnlyList<PerspectivePreset> PerspectivePresets { get; } = PerspectivePreset.All;
     [ObservableProperty] private int _selectedTextOverlayIndex;
     public event EventHandler? CompositionChanged;
     public string RecordingInfo => $@"{TimeSpan.FromSeconds(Duration):mm\:ss}  ·  {SourceWidth} × {SourceHeight}  ·  {Probe?.FrameRate:0.##} fps";
@@ -64,6 +66,23 @@ public sealed partial class ReviewViewModel : ObservableObject
         SelectedTextOverlay.X = Math.Clamp(x, 0, 1);
         SelectedTextOverlay.Y = Math.Clamp(y, 0, 1);
         if (notify) Changed();
+    }
+    public void ApplyPerspective(PerspectivePreset preset)
+    {
+        Commit();
+        Presentation.RotationX = preset.X; Presentation.RotationY = preset.Y; Presentation.RotationZ = preset.Z;
+        Presentation.VideoScale = preset.Scale;
+        Presentation.Shadow = preset.Key != "Flat";
+        if (preset.Key != "Flat") { Presentation.ShadowBlur = 32; Presentation.ShadowOpacity = .32; Presentation.ShadowOffsetY = 18; }
+        Commit();
+    }
+    public void ResetTransform()
+    {
+        Commit();
+        Presentation.RotationX = 0; Presentation.RotationY = 0; Presentation.RotationZ = 0;
+        Presentation.VideoScale = .92; Presentation.VideoOffsetX = 0; Presentation.VideoOffsetY = 0;
+        Presentation.PerspectiveDepth = 1200;
+        Commit();
     }
     private readonly DispatcherQueueTimer _commitTimer;
     private readonly SemaphoreSlim _saveLock = new(1, 1);

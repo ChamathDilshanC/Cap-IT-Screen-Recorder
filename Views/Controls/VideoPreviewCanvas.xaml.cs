@@ -73,6 +73,7 @@ public sealed partial class VideoPreviewCanvas : UserControl
             }
             _geometry.Size = new Vector2(l.Video.Width, l.Video.Height);
             _geometry.CornerRadius = new Vector2((float)l.Radius);
+            ApplyTransform(snapshot, l);
             BackgroundLayer.Source = bg; OverlayLayer.Source = overlay; TextLayer.Source = text;
             BuildLetterPreview(l, texts);
             _renderedTextX = _lastText.X; _renderedTextY = _lastText.Y;
@@ -82,6 +83,25 @@ public sealed partial class VideoPreviewCanvas : UserControl
         catch (OperationCanceledException) { }
         catch (Exception ex) { if (generation == _generation) AssetWarning?.Invoke("Composition preview could not update. Try a smaller canvas. " + ex.GetType().Name); }
     }
+        private void ApplyTransform(PresentationSettings settings, CompositionLayout layout)
+        {
+            var visual = ElementCompositionPreview.GetElementVisual(VideoViewport);
+            visual.CenterPoint = new Vector3(layout.Video.Width / 2f, layout.Video.Height / 2f, 0);
+            var axis = Math.Abs(settings.RotationY) >= Math.Abs(settings.RotationX)
+                ? new Vector3(0, 1, 0) : new Vector3(1, 0, 0);
+            if (Math.Abs(settings.RotationX) < .01 && Math.Abs(settings.RotationY) < .01) axis = new Vector3(0, 0, 1);
+            visual.RotationAxis = axis;
+            var targetAngle = Math.Abs(settings.RotationY) >= Math.Abs(settings.RotationX) ? (float)settings.RotationY
+                : Math.Abs(settings.RotationX) > .01 ? (float)settings.RotationX : (float)settings.RotationZ;
+            var compositor = visual.Compositor;
+            var easing = compositor.CreateCubicBezierEasingFunction(new Vector2(.22f, 1), new Vector2(.36f, 1));
+            var rotation = compositor.CreateScalarKeyFrameAnimation();
+            rotation.InsertKeyFrame(1, targetAngle, easing); rotation.Duration = TimeSpan.FromMilliseconds(600);
+            var scale = compositor.CreateVector3KeyFrameAnimation();
+            scale.InsertKeyFrame(1, new Vector3((float)settings.VideoScale), easing); scale.Duration = TimeSpan.FromMilliseconds(600);
+            visual.StartAnimation(nameof(visual.RotationAngleInDegrees), rotation);
+            visual.StartAnimation(nameof(visual.Scale), scale);
+        }
     private double _lastTime;
     private IReadOnlyList<ZoomRegion> _lastRegions = [];
     public void SetPosition(double seconds, IReadOnlyList<ZoomRegion> regions)

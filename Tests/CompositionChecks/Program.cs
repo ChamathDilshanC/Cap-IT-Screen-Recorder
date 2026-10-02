@@ -28,6 +28,10 @@ Check(RecordingMetadata.Load(legacyPath) is { TrimStartSeconds: 1.2, TrimEndSeco
 var settings = new PresentationSettings { CornerRadius = double.NaN, VideoScale = double.PositiveInfinity, WatermarkOpacity = -1 };
 settings.Normalize();
 Check(settings.CornerRadius == 20 && settings.VideoScale == .92 && settings.WatermarkOpacity == 0, "Non-finite sanitation");
+var transform = new PresentationSettings { RotationX = 99, RotationY = -99, RotationZ = 99, PerspectiveDepth = 10, BackgroundPreset = "Aurora Orbit" };
+transform.Normalize();
+Check(transform.RotationX == 35 && transform.RotationY == -35 && transform.RotationZ == 15 && transform.PerspectiveDepth == 400, "Transform sanitation");
+Check(BackgroundPreset.All.Count >= 10 && BackgroundPreset.All.Any(x => x.Key == "Warm Grid" && x.Pattern), "Background preset catalogue");
 
 foreach (var aspect in new[] { "Original", "16:9", "9:16", "1:1", "4:5", "3:2", "4:3", "Custom" })
 foreach (var fit in new[] { "Fit", "Fill", "Original", "Custom" })
@@ -54,6 +58,13 @@ var photo = Path.Combine(root, "background.jpg");
 using (var bg = new Bitmap(100, 100)) { using var g = Graphics.FromImage(bg); g.Clear(Color.SteelBlue); bg.Save(photo, ImageFormat.Jpeg); }
 var pBase = new PresentationSettings { CanvasPreset = "Custom", CanvasWidth = 320, CanvasHeight = 320, Padding = 24, VideoScale = .92, CornerRadius = 24,
     BorderEnabled = true, BorderWidth = 2, Shadow = true, ShadowBlur = 16, WatermarkEnabled = true, WatermarkPath = watermark, WatermarkScale = .1 };
+foreach (var preset in new[] { "Midnight Gold", "Warm Grid", "Aurora Orbit" })
+{
+    var presetSettings = pBase.Clone();
+    presetSettings.BackgroundPreset = preset;
+    var rendered = CompositionAssetRenderer.Render(presetSettings, 320, 180);
+    Check(rendered.Warning is null && rendered.Background.Length > 100, preset + " background render");
+}
 var regions = new List<ZoomRegion> { new() { StartSeconds = .5, EndSeconds = 1.5, Scale = 2, CenterX = 1, CenterY = 0 }, new() { StartSeconds = 1.4, EndSeconds = 2.0, Scale = 1.5, CenterX = 0, CenterY = 1 } };
 Check(ReferenceEquals(CompositionLayout.ActiveZoom(regions, 1.45), regions[1]), "Overlap precedence");
 Check(CompositionLayout.ActiveZoom(regions, 2) is null, "Exclusive zoom end");

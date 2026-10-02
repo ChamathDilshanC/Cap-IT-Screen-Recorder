@@ -12,6 +12,8 @@ public sealed partial class PresentationSettings : ObservableObject
     [ObservableProperty] private int _canvasWidth = 0;
     [ObservableProperty] private int _canvasHeight = 0;
     [ObservableProperty] private string _backgroundMode = "gradient";
+    [ObservableProperty] private string _backgroundPreset = "Custom";
+    [ObservableProperty] private bool _backgroundAnimationEnabled;
     [ObservableProperty] private string _backgroundPath = "";
     [ObservableProperty] private string _backgroundColor = "#202838";
     [ObservableProperty] private string _backgroundColor2 = "#716B91";
@@ -21,6 +23,10 @@ public sealed partial class PresentationSettings : ObservableObject
     [ObservableProperty] private double _backgroundDim = 0;
     [ObservableProperty] private int _padding = 64;
     [ObservableProperty] private double _videoScale = .92;
+    [ObservableProperty] private double _rotationX;
+    [ObservableProperty] private double _rotationY;
+    [ObservableProperty] private double _rotationZ;
+    [ObservableProperty] private double _perspectiveDepth = 1200;
     [ObservableProperty] private string _fitMode = "Fit";
     [ObservableProperty] private double _videoOffsetX = 0;
     [ObservableProperty] private double _videoOffsetY = 0;
@@ -76,12 +82,16 @@ public sealed partial class PresentationSettings : ObservableObject
         CanvasWidth = CanvasWidth >= 64 ? Even(CanvasWidth) : 0;
         CanvasHeight = CanvasHeight >= 64 ? Even(CanvasHeight) : 0;
         BackgroundMode = Option(BackgroundMode, "gradient", "solid", "gradient", "image", "none");
+        BackgroundPreset = Option(BackgroundPreset, "Custom", "Custom", "None", "Midnight Gold", "Warm Grid", "Aurora Orbit",
+            "Deep Space", "Midnight Gradient", "Soft Lavender", "Ocean Glow", "Warm Sunset", "Graphite", "Frost", "Studio Dark", "Studio Light");
         BackgroundPath ??= ""; WatermarkPath ??= "";
         BackgroundColor = Color(BackgroundColor, "#202838"); BackgroundColor2 = Color(BackgroundColor2, "#716B91");
         GradientAngle = Safe(GradientAngle, 45, 0, 360);
         BackgroundImageFit = Option(BackgroundImageFit, "Fill", "Fit", "Fill", "Stretch");
         BackgroundBlur = Safe(BackgroundBlur, 0, 0, 64); BackgroundDim = Safe(BackgroundDim, 0, 0, 1);
         Padding = Math.Clamp(Padding, 0, 200); VideoScale = Safe(VideoScale, .92, .4, 1.2);
+        RotationX = Safe(RotationX, 0, -35, 35); RotationY = Safe(RotationY, 0, -35, 35); RotationZ = Safe(RotationZ, 0, -15, 15);
+        PerspectiveDepth = Safe(PerspectiveDepth, 1200, 400, 3000);
         FitMode = Option(FitMode, "Fit", "Fit", "Fill", "Original", "Custom");
         VideoPosition = Option(VideoPosition, "Center", "Center", "Top", "Bottom", "Left", "Right", "Custom");
         VideoOffsetX = Safe(VideoOffsetX, 0, -7680, 7680); VideoOffsetY = Safe(VideoOffsetY, 0, -7680, 7680);

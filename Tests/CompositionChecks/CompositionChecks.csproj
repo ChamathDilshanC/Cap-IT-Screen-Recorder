@@ -7,6 +7,7 @@
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.3.2" />
     <PackageReference Include="System.Drawing.Common" Version="8.0.10" />
     <Compile Include="../../Models/PresentationSettings.cs" Link="Models/PresentationSettings.cs" />
+    <Compile Include="../../Models/BackgroundPreset.cs" Link="Models/BackgroundPreset.cs" />
     <Compile Include="../../Models/PresentationTextOverlay.cs" Link="Models/PresentationTextOverlay.cs" />
     <Compile Include="../../Models/PresentationPreset.cs" Link="Models/PresentationPreset.cs" />
     <Compile Include="../../Models/RecordingMetadata.cs" Link="Models/RecordingMetadata.cs" />

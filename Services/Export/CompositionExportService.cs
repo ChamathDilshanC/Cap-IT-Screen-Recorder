@@ -44,7 +44,7 @@ public static class CompositionExportService
                 letterPaths.Add(path);
             }
             var texts = p.TextOverlays.Count > 0 ? p.TextOverlays : [p.TextOverlay];
-            var filter = BuildFilter(assets.Layout, sw, sh, regions, start.TotalSeconds, duration.TotalSeconds, fps, texts, assets.TextLetters.Count);
+            var filter = BuildFilter(assets.Layout, sw, sh, regions, start.TotalSeconds, duration.TotalSeconds, fps, texts, assets.TextLetters.Count, p);
             List<string> Inputs()
             {
                 var args = new List<string> { "-y", "-hide_banner", "-loglevel", "warning", "-nostats", "-progress", "pipe:1",
@@ -108,7 +108,8 @@ public static class CompositionExportService
     }
 
     public static string BuildFilter(CompositionLayout layout, int sw, int sh, IReadOnlyList<ZoomRegion> regions,
-        double start, double duration, double fps, IReadOnlyList<PresentationTextOverlay>? texts = null, int textLetterCount = 0)
+        double start, double duration, double fps, IReadOnlyList<PresentationTextOverlay>? texts = null, int textLetterCount = 0,
+        PresentationSettings? presentation = null)
     {
         var boundaries = new SortedSet<double> { 0, duration };
         foreach (var region in regions.Where(r => r.Enabled && double.IsFinite(r.StartSeconds) && double.IsFinite(r.EndSeconds) && r.EndSeconds > r.StartSeconds))
@@ -126,7 +127,9 @@ public static class CompositionExportService
             var zoom = CompositionLayout.ActiveZoom(regions, start + (points[i] + points[i + 1]) / 2);
             var crop = CompositionLayout.SourceCrop(sw, sh, layout.Video, zoom);
             graph.Append($"[s{i}]trim=start={F(points[i])}:end={F(points[i + 1])},setpts=PTS-STARTPTS,");
-            graph.Append($"crop={crop.Width}:{crop.Height}:{crop.X}:{crop.Y}:exact=1,scale={layout.Video.Width}:{layout.Video.Height}:flags=lanczos,setsar=1,format=rgba[v{i}];");
+            var angle = presentation?.RotationZ ?? 0;
+            var transform = Math.Abs(angle) > .01 ? $",rotate={F(angle)}*PI/180:fillcolor=none:ow=rotw(iw):oh=roth(ih),scale={layout.Video.Width}:{layout.Video.Height}:flags=lanczos" : "";
+            graph.Append($"crop={crop.Width}:{crop.Height}:{crop.X}:{crop.Y}:exact=1,scale={layout.Video.Width}:{layout.Video.Height}:flags=lanczos{transform},setsar=1,format=rgba[v{i}];");
         }
         for (var i = 0; i < count; i++) graph.Append($"[v{i}]");
         graph.Append($"concat=n={count}:v=1:a=0,fps={F(fps)}[video];[2:v]format=gray[mask];[video][mask]alphamerge=shortest=1[rounded];");

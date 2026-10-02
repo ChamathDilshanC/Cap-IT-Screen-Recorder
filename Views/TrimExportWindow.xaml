@@ -273,6 +273,8 @@
                             </StackPanel>
                             <StackPanel x:Name="BackgroundSection" Spacing="12" Visibility="Collapsed">
                                 <TextBlock Text="Set the scene" Style="{StaticResource SectionHeaderText}"/>
+                                <TextBlock Text="Background presets" Style="{StaticResource SectionHeaderText}"/>
+                                <ItemsControl x:Name="BackgroundPresetGallery"/>
                                 <ListBox x:Name="BackgroundModes" Style="{StaticResource SegmentedStyle}" SelectedValuePath="Tag" SelectedValue="{Binding Presentation.BackgroundMode, Mode=TwoWay}">
                                     <ListBoxItem Tag="none" Content="None"/>
                                     <ListBoxItem Tag="solid" Content="Colour"/>
@@ -337,6 +339,13 @@
                             </StackPanel>
                             <StackPanel x:Name="VideoSection" Spacing="12" Visibility="Collapsed">
                                 <TextBlock Text="Video placement" Style="{StaticResource SectionHeaderText}"/>
+                                <TextBlock Text="Perspective" Style="{StaticResource SectionHeaderText}"/>
+                                <ItemsControl x:Name="PerspectivePresetGallery"/>
+                                <Button Content="Reset transform" Click="OnResetTransformClick"/>
+                                <Slider Header="Rotation X" Minimum="-35" Maximum="35" Value="{Binding Presentation.RotationX, Mode=TwoWay}"/>
+                                <Slider Header="Rotation Y" Minimum="-35" Maximum="35" Value="{Binding Presentation.RotationY, Mode=TwoWay}"/>
+                                <Slider Header="Rotation Z" Minimum="-15" Maximum="15" Value="{Binding Presentation.RotationZ, Mode=TwoWay}"/>
+                                <Slider Header="Perspective depth" Minimum="400" Maximum="3000" Value="{Binding Presentation.PerspectiveDepth, Mode=TwoWay}"/>
                                 <TextBlock Text="{Binding ScaleLabel}" FontSize="28" FontWeight="SemiBold"/>
                                 <Slider Minimum=".4" Maximum="1.2" StepFrequency=".01" Value="{Binding Presentation.VideoScale, Mode=TwoWay}" AutomationProperties.Name="Video scale"/>
                                 <ListBox Style="{StaticResource SegmentedStyle}" SelectedItem="{Binding Presentation.FitMode, Mode=TwoWay}" AutomationProperties.Name="FitMode">

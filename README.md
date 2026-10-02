@@ -10,7 +10,7 @@ Capture the right source, follow the action with smart zoom, draw over the deskt
 the result, and export without leaving the app.
 
 <a href="https://github.com/ChamathDilshanC/Cap-IT-Screen-Recorder/releases/latest"><img src="https://img.shields.io/badge/Download-Windows%20Installer-18dce8?style=for-the-badge&logo=windows&logoColor=white" alt="Download Windows installer" /></a>
-<a href="https://github.com/ChamathDilshanC/Cap-IT-Screen-Recorder/releases/download/v3.6.0/CapIT-Screen-Recorder-Setup-3.6.0.exe"><img src="https://img.shields.io/badge/Direct%20Download-v3.6.0-10b981?style=for-the-badge&logo=windows&logoColor=white" alt="Direct download Cap-IT v3.6.0 installer" /></a>
+<a href="https://github.com/ChamathDilshanC/Cap-IT-Screen-Recorder/releases/download/v3.7.0/CapIT-Screen-Recorder-Setup-3.7.0.exe"><img src="https://img.shields.io/badge/Direct%20Download-v3.7.0-10b981?style=for-the-badge&logo=windows&logoColor=white" alt="Direct download Cap-IT v3.7.0 installer" /></a>
 <a href="docs/screenshots/README.md"><img src="https://img.shields.io/badge/Explore-Screenshot%20Gallery-7c5cff?style=for-the-badge&logo=googleimages&logoColor=white" alt="Explore screenshot gallery" /></a>
 <a href="https://github.com/ChamathDilshanC/Cap-IT-Screen-Recorder/issues"><img src="https://img.shields.io/badge/Report-an%20Issue-24292f?style=for-the-badge&logo=github&logoColor=white" alt="Report an issue" /></a>
 
@@ -90,6 +90,7 @@ flowchart LR
 
 - Cursor spotlight with adjustable radius
 - Left and right click ripples
+- Configurable click sounds with four selectable effects and volume control
 - Selectable cursor styles
 - Webcam picture-in-picture templates
 - Keystroke overlay
@@ -132,7 +133,7 @@ The complete native **1920 × 1080** gallery is available in
 </tr>
 <tr>
 <td align="center"><sub><b>Webcam</b> · picture-in-picture templates</sub></td>
-<td align="center"><sub><b>Effects</b> · spotlight and click ripples</sub></td>
+<td align="center"><sub><b>Effects</b> · spotlight, click ripples, and click sounds</sub></td>
 </tr>
 <tr>
 <td><img src="docs/screenshots/app/05-annotations.png" alt="Annotations screen" width="440" /></td>
@@ -176,7 +177,7 @@ dedicated `Cap-IT Metadata` folder. Older sidecar files remain readable for comp
 
 ## Installation
 
-Download **`CapIT-Screen-Recorder-Setup-3.6.0.exe`** from
+Download **`CapIT-Screen-Recorder-Setup-3.7.0.exe`** from
 the [latest GitHub Release](https://github.com/ChamathDilshanC/Cap-IT-Screen-Recorder/releases/latest)
 and run it. The installer is self-contained: no separate .NET runtime, Windows App SDK runtime, or
 manual FFmpeg setup is required.
@@ -199,6 +200,7 @@ relaunches Cap-IT.
 1. Open **Choose source** and select a display or window.
 2. Check system audio and microphone levels on **Audio**.
 3. Enable **Smart Tracking**, **Webcam**, **Effects**, or **Annotations** as needed.
+   In **Effects**, you can enable click sounds, choose one of four bundled effects, and adjust the volume.
 4. Press **Start Recording**.
 5. Stop recording to open **Review & Export**.
 6. Trim, compose, add text or frames, then keep the MP4 or export a GIF.
@@ -284,6 +286,7 @@ shared preview/export rendering path.
 
 | Version | Highlights |
 |---|---|
+| [v3.7.0](https://github.com/ChamathDilshanC/Cap-IT-Screen-Recorder/releases/tag/v3.7.0) | Configurable click sounds with four selectable effects, volume control, and bundled WAV/MP3 assets |
 | [v3.6.0](https://github.com/ChamathDilshanC/Cap-IT-Screen-Recorder/releases/tag/v3.6.0) | Smart Tracking instant zoom-out, adjustable animation speed, live propagation, and preset persistence |
 | [v3.5.0](https://github.com/ChamathDilshanC/Cap-IT-Screen-Recorder/releases/tag/v3.5.0) | Multiple text layers, alignment, colors, opacity, bounce-letter animation, and Safari-style browser frame |
 | [v3.4.3](https://github.com/ChamathDilshanC/Cap-IT-Screen-Recorder/releases/tag/v3.4.3) | Responsive text dragging and review-canvas interaction |

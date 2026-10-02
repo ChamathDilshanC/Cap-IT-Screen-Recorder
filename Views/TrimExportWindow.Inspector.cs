@@ -13,6 +13,37 @@ public sealed partial class TrimExportWindow
 {
     private readonly List<string> _recentColours = ["#202838", "#DCE2E8", "#26374A", "#A89B88", "#86596C", "#21463F"];
     private string? _thumbnailBackgroundPath;
+    private void BuildBackgroundPresetGallery()
+    {
+        BackgroundPresetGallery.Items.Clear();
+        foreach (var preset in ViewModel.BackgroundPresets)
+        {
+            var button = new Button { Content = preset.Label, Tag = preset, Padding = new(8, 6, 8, 6), Margin = new(0, 0, 4, 4) };
+            button.Click += OnBackgroundPresetClick;
+            BackgroundPresetGallery.Items.Add(button);
+        }
+        PerspectivePresetGallery.Items.Clear();
+        foreach (var preset in ViewModel.PerspectivePresets)
+        {
+            var button = new Button { Content = preset.Label, Tag = preset, Padding = new(8, 6, 8, 6), Margin = new(0, 0, 4, 4) };
+            button.Click += OnPerspectivePresetClick;
+            PerspectivePresetGallery.Items.Add(button);
+        }
+    }
+    private void OnBackgroundPresetClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: BackgroundPreset preset }) return;
+        var p = ViewModel.Presentation;
+        p.BackgroundPreset = preset.Key;
+        p.BackgroundAnimationEnabled = preset.Animated;
+        p.BackgroundMode = preset.Key == "None" ? "none" : preset.Pattern ? "pattern" : "gradient";
+        p.BackgroundColor = preset.Color1; p.BackgroundColor2 = preset.Color2;
+    }
+    private void OnPerspectivePresetClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: PerspectivePreset preset }) ViewModel.ApplyPerspective(preset);
+    }
+    private void OnResetTransformClick(object sender, RoutedEventArgs e) => ViewModel.ResetTransform();
     private void RefreshBackgroundControls()
     {
         var p = ViewModel.Presentation;
