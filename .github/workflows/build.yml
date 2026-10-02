@@ -23,7 +23,7 @@ jobs:
           dotnet-version: 8.0.x
 
       - name: Restore
-        run: dotnet restore -p:Platform=x64
+        run: dotnet restore CapIT.sln -p:Platform=x64
 
       - name: Build
-        run: dotnet build -c Release -p:Platform=x64 --no-restore
+        run: dotnet build CapIT.sln -c Release -p:Platform=x64 --no-restore

@@ -65,7 +65,7 @@ jobs:
         run: choco install innosetup --no-progress --yes
 
       - name: Restore
-        run: dotnet restore -p:Platform=x64
+        run: dotnet restore ScreenRecorderApp.csproj -p:Platform=x64
 
       - name: Publish self-contained app
         run: dotnet publish ScreenRecorderApp.csproj -c Release -p:Platform=x64 -r win-x64 --self-contained true -o publish
