@@ -83,8 +83,18 @@ public sealed partial class TrimExportWindow
     private void OnInspectorChanged(object sender, SelectionChangedEventArgs e)
     {
         if (InspectorSections is null || InspectorTabs.SelectedItem is not GridViewItem item) return;
+        var visibleSections = (item.Tag as string) switch
+        {
+            "Canvas" => new[] { "CanvasSection", "BackgroundSection" },
+            "Video" => new[] { "VideoSection" },
+            "Style" => new[] { "CornersSection", "ShadowSection", "BorderSection", "FrameSection", "WatermarkSection" },
+            "Text" => new[] { "TextSection" },
+            "Export" => new[] { "ExportSection" },
+            _ => Array.Empty<string>()
+        };
         foreach (var child in InspectorSections.Children.OfType<FrameworkElement>())
-            child.Visibility = child.Name == $"{item.Tag}Section" ? Visibility.Visible : Visibility.Collapsed;
+            child.Visibility = visibleSections.Contains(child.Name, StringComparer.Ordinal)
+                ? Visibility.Visible : Visibility.Collapsed;
     }
     private void OnAspectChanged(object sender, SelectionChangedEventArgs e)
     {

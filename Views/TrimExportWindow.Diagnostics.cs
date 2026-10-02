@@ -57,10 +57,10 @@ public sealed partial class TrimExportWindow
             Assert(Math.Abs(ViewModel.Presentation.VideoScale - .75) < .001, "Two-way scale binding");
             var padding = FindControls<Slider>(CanvasSection).First(); padding.Value = 80;
             await Task.Delay(80); Assert(ViewModel.Presentation.Padding == 80, "Two-way padding binding");
-            for (var i = 0; i < 9; i++)
+            for (var i = 0; i < 5; i++)
             {
                 InspectorTabs.SelectedIndex = i;
-                Assert(InspectorSections.Children.OfType<FrameworkElement>().Count(c => c.Visibility == Visibility.Visible) == 1, "Inspector section " + i);
+                Assert(InspectorSections.Children.OfType<FrameworkElement>().Any(c => c.Visibility == Visibility.Visible), "Inspector section " + i);
                 await Task.Delay(50);
                 foreach (var combo in FindControls<ComboBox>(InspectorSections).Where(c => c.Items.Count > 0))
                     Assert(combo.SelectedIndex >= 0, "Nonblank selector: " + (combo.Header ?? combo.Name));

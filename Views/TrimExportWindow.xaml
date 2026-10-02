@@ -153,35 +153,20 @@
                             <TextBlock Text="Inspector" FontSize="17" FontWeight="SemiBold"/>
                             <TextBlock Text="{Binding CanvasLabel}" HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                         </Grid>
-                    <GridView Grid.Row="1" x:Name="InspectorTabs" ItemContainerStyle="{StaticResource InspectorTabStyle}" SelectionChanged="OnInspectorChanged" SelectionMode="Single" SelectedIndex="0" ScrollViewer.VerticalScrollBarVisibility="Hidden" ScrollViewer.HorizontalScrollBarVisibility="Hidden">
+                    <GridView Grid.Row="1" x:Name="InspectorTabs" ItemContainerStyle="{StaticResource InspectorTabStyle}" SelectionChanged="OnInspectorChanged" SelectionMode="Single" SelectedIndex="0" ScrollViewer.VerticalScrollBarVisibility="Hidden" ScrollViewer.HorizontalScrollBarVisibility="Auto">
                         <GridView.ItemsPanel>
                             <ItemsPanelTemplate>
-                                <ItemsWrapGrid Orientation="Horizontal" MaximumRowsOrColumns="3"/>
+                                <StackPanel Orientation="Horizontal"/>
                             </ItemsPanelTemplate>
                         </GridView.ItemsPanel>
                         <GridViewItem Tag="Canvas" AutomationProperties.Name="Canvas">
                             <TextBlock Text="Canvas" Width="80" FontSize="12" TextAlignment="Center" Margin="0,2"/>
                         </GridViewItem>
-                        <GridViewItem Tag="Background" AutomationProperties.Name="Background">
-                            <TextBlock Text="Background" Width="80" FontSize="12" TextAlignment="Center" Margin="0,2"/>
-                        </GridViewItem>
                         <GridViewItem Tag="Video" AutomationProperties.Name="Video">
                             <TextBlock Text="Video" Width="80" FontSize="12" TextAlignment="Center" Margin="0,2"/>
                         </GridViewItem>
-                        <GridViewItem Tag="Corners" AutomationProperties.Name="Corners">
-                            <TextBlock Text="Corners" Width="80" FontSize="12" TextAlignment="Center" Margin="0,2"/>
-                        </GridViewItem>
-                        <GridViewItem Tag="Shadow" AutomationProperties.Name="Shadow">
-                            <TextBlock Text="Shadow" Width="80" FontSize="12" TextAlignment="Center" Margin="0,2"/>
-                        </GridViewItem>
-                        <GridViewItem Tag="Border" AutomationProperties.Name="Border">
-                            <TextBlock Text="Border" Width="80" FontSize="12" TextAlignment="Center" Margin="0,2"/>
-                        </GridViewItem>
-                        <GridViewItem Tag="Frame" AutomationProperties.Name="Frame">
-                            <TextBlock Text="Frame" Width="80" FontSize="12" TextAlignment="Center" Margin="0,2"/>
-                        </GridViewItem>
-                        <GridViewItem Tag="Watermark" AutomationProperties.Name="Watermark">
-                            <TextBlock Text="Watermark" Width="80" FontSize="12" TextAlignment="Center" Margin="0,2"/>
+                        <GridViewItem Tag="Style" AutomationProperties.Name="Style">
+                            <TextBlock Text="Style" Width="80" FontSize="12" TextAlignment="Center" Margin="0,2"/>
                         </GridViewItem>
                         <GridViewItem Tag="Text" AutomationProperties.Name="Text">
                             <TextBlock Text="Text" Width="80" FontSize="12" TextAlignment="Center" Margin="0,2"/>

@@ -231,7 +231,7 @@ public sealed partial class TrimExportWindow : Window
     {
         if (!_ready || _exporting) return;
         ViewModel.AddZoom(_player?.PlaybackSession.Position.TotalSeconds ?? ViewModel.TrimStart);
-        InspectorTabs.SelectedIndex = 2; SetInspector(true);
+        InspectorTabs.SelectedIndex = 1; SetInspector(true);
     }
     private void OnRemoveZoomClick(object sender, RoutedEventArgs e)
     { if (sender is Button { Tag: ZoomRegion region }) ViewModel.ZoomRegions.Remove(region); }
