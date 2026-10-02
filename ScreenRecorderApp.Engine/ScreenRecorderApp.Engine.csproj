@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>ScreenRecorderApp</RootNamespace>
+    <AssemblyName>ScreenRecorderApp.Engine</AssemblyName>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.3.2" />
+    <PackageReference Include="System.Drawing.Common" Version="8.0.10" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Models\PresentationSettings.cs" Link="Models\PresentationSettings.cs" />
+    <Compile Include="..\Models\PresentationTextOverlay.cs" Link="Models\PresentationTextOverlay.cs" />
+    <Compile Include="..\Models\RecordingMetadata.cs" Link="Models\RecordingMetadata.cs" />
+    <Compile Include="..\Models\CursorSettings.cs" Link="Models\CursorSettings.cs" />
+    <Compile Include="..\Models\CursorStyle.cs" Link="Models\CursorStyle.cs" />
+    <Compile Include="..\Models\ZoomRegion.cs" Link="Models\ZoomRegion.cs" />
+    <Compile Include="..\Models\ExportSettings.cs" Link="Models\ExportSettings.cs" />
+    <Compile Include="..\Models\BackgroundPreset.cs" Link="Models\BackgroundPreset.cs" />
+    <Compile Include="..\Models\PerspectivePreset.cs" Link="Models\PerspectivePreset.cs" />
+    <Compile Include="..\Services\RecordingDataPaths.cs" Link="Services\RecordingDataPaths.cs" />
+    <Compile Include="..\Services\Export\*.cs" Link="Services\Export\%(Filename)%(Extension)" />
+    <Compile Include="..\Services\Encoding\FFmpegLocator.cs" Link="Services\Encoding\FFmpegLocator.cs" />
+    <Compile Include="..\Services\Encoding\MediaProbe.cs" Link="Services\Encoding\MediaProbe.cs" />
+  </ItemGroup>
+</Project>

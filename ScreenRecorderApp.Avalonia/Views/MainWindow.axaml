@@ -1,0 +1,57 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="using:ScreenRecorderApp.Avalonia.ViewModels"
+        x:Class="ScreenRecorderApp.Avalonia.Views.MainWindow"
+        Title="Cap-IT Screen Recorder"
+        Width="1180"
+        Height="760"
+        MinWidth="960"
+        MinHeight="620"
+        Background="{DynamicResource CapItBackgroundBrush}">
+  <Grid ColumnDefinitions="236,*">
+    <Border Grid.Column="0" Background="{DynamicResource CapItSurfaceBrush}" Padding="20,24">
+      <DockPanel>
+        <StackPanel DockPanel.Dock="Top" Spacing="6">
+          <TextBlock Text="CAP-IT" FontSize="24" FontWeight="Bold" Foreground="White" />
+          <TextBlock Text="Screen recorder" Foreground="{DynamicResource CapItMutedTextBrush}" />
+        </StackPanel>
+        <StackPanel Margin="0,42,0,0" Spacing="8">
+          <Button Classes="rail" Command="{Binding SelectPageCommand}" CommandParameter="{x:Static local:WorkspacePage.Review}">
+            <StackPanel Orientation="Horizontal" Spacing="12"><TextBlock Text="◉" /><TextBlock Text="Review" /></StackPanel>
+          </Button>
+          <Button Classes="rail" Command="{Binding SelectPageCommand}" CommandParameter="{x:Static local:WorkspacePage.Export}">
+            <StackPanel Orientation="Horizontal" Spacing="12"><TextBlock Text="⇧" /><TextBlock Text="Export" /></StackPanel>
+          </Button>
+        </StackPanel>
+      </DockPanel>
+    </Border>
+    <Grid Grid.Column="1" RowDefinitions="Auto,*" Margin="36,28,42,36">
+      <StackPanel Grid.Row="0">
+        <TextBlock Text="Review &amp; Export" FontSize="30" FontWeight="SemiBold" Foreground="White" />
+        <TextBlock Text="Prepare your recording before sharing it." Margin="0,6,0,24"
+                   Foreground="{DynamicResource CapItMutedTextBrush}" />
+      </StackPanel>
+      <Border Grid.Row="1" Background="{DynamicResource CapItSurfaceBrush}"
+              CornerRadius="{DynamicResource CapItCardRadius}" Padding="{DynamicResource CapItCardPadding}">
+        <ContentControl Content="{Binding SelectedPage}">
+          <ContentControl.DataTemplates>
+            <DataTemplate DataType="{x:Type local:WorkspacePage}">
+              <Border>
+                <StackPanel Spacing="18">
+                  <TextBlock Text="{Binding}" Foreground="{DynamicResource CapItAccentBrush}" FontSize="16" />
+                  <TextBlock Text="The workspace is ready for the platform adapter." FontSize="22" Foreground="White" />
+                  <TextBlock Text="Use the navigation rail to switch between review and export. Capture and encoding remain behind IRecordingWorkspaceAdapter."
+                             TextWrapping="Wrap" MaxWidth="620" Foreground="{DynamicResource CapItMutedTextBrush}" />
+                  <Button Content="Load latest recording" Command="{Binding $parent[Window].DataContext.Review.LoadLatestCommand}"
+                          HorizontalAlignment="Left" Classes="accent" />
+                  <TextBlock Text="{Binding $parent[Window].DataContext.Review.StatusMessage}"
+                             Foreground="{DynamicResource CapItMutedTextBrush}" />
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ContentControl.DataTemplates>
+        </ContentControl>
+      </Border>
+    </Grid>
+  </Grid>
+</Window>

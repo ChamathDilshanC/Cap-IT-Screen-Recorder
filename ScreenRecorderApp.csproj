@@ -44,8 +44,13 @@
 
   <ItemGroup>
     <Compile Remove="Tests\**\*.cs" />
+    <Compile Remove="ScreenRecorderApp.Avalonia\**\*.cs" />
+    <Compile Remove="ScreenRecorderApp.Engine\**\*.cs" />
     <Page Remove="Tests\**\*.xaml" />
+    <Page Remove="ScreenRecorderApp.Avalonia\**\*.axaml" />
     <None Remove="Tests\**" />
+    <None Remove="ScreenRecorderApp.Avalonia\**" />
+    <None Remove="ScreenRecorderApp.Engine\**" />
     <Manifest Include="$(ApplicationManifest)" />
   </ItemGroup>
 

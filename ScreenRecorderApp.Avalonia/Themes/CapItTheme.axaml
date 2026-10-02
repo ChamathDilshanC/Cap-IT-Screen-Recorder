@@ -1,0 +1,33 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Styles.Resources>
+    <Color x:Key="CapItBlue">#2F80ED</Color>
+    <Color x:Key="CapItNavy">#101828</Color>
+    <Color x:Key="CapItSurface">#182230</Color>
+    <Color x:Key="CapItSurfaceRaised">#202B3A</Color>
+    <Color x:Key="CapItMutedText">#98A2B3</Color>
+    <SolidColorBrush x:Key="CapItBackgroundBrush" Color="{DynamicResource CapItNavy}" />
+    <SolidColorBrush x:Key="CapItSurfaceBrush" Color="{DynamicResource CapItSurface}" />
+    <SolidColorBrush x:Key="CapItSurfaceRaisedBrush" Color="{DynamicResource CapItSurfaceRaised}" />
+    <SolidColorBrush x:Key="CapItAccentBrush" Color="{DynamicResource CapItBlue}" />
+    <SolidColorBrush x:Key="CapItMutedTextBrush" Color="{DynamicResource CapItMutedText}" />
+    <SolidColorBrush x:Key="CapItBorderBrush" Color="#344054" />
+    <Thickness x:Key="CapItCardPadding">20</Thickness>
+    <CornerRadius x:Key="CapItCardRadius">10</CornerRadius>
+  </Styles.Resources>
+  <Style Selector="Button.rail">
+    <Setter Property="HorizontalContentAlignment" Value="Left" />
+    <Setter Property="Padding" Value="12" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Foreground" Value="#D0D5DD" />
+    <Setter Property="FontSize" Value="15" />
+  </Style>
+  <Style Selector="Button.rail:pointerover">
+    <Setter Property="Background" Value="{DynamicResource CapItSurfaceRaisedBrush}" />
+  </Style>
+  <Style Selector="Button.accent">
+    <Setter Property="Background" Value="{DynamicResource CapItAccentBrush}" />
+    <Setter Property="Foreground" Value="White" />
+    <Setter Property="Padding" Value="16,10" />
+  </Style>
+</Styles>
