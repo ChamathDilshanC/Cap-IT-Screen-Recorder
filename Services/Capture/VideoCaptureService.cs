@@ -281,6 +281,7 @@ public sealed class VideoCaptureService : IDisposable
     private double _webcamSmoothing;
 
     public event Action<byte[], int, int>? WebcamFrameReady;
+    public event Action? ClickDetected;
 
     // Raw pointer-shape scratch buffer for GetFramePointerShape(), grown as needed and reused across
     // shape updates; the decoded/converted result is cached separately since the shape only changes
@@ -740,6 +741,8 @@ public sealed class VideoCaptureService : IDisposable
     /// </summary>
     private void OnMouseClickAt(int screenX, int screenY)
     {
+        ClickDetected?.Invoke();
+
         // Click-only zoom's trigger, recorded before the visibility test below so it is unconditional:
         // unlike a ripple (which has to be drawn *somewhere* and so needs a point inside the frame), the
         // zoom only needs to know that a click happened — it takes its aim from the cursor either way.

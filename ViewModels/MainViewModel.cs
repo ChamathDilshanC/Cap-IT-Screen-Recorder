@@ -61,6 +61,7 @@ public partial class MainViewModel : BaseViewModel
     public IReadOnlyList<ZoomLevelOption> ZoomLevelOptions { get; } = ZoomLevelOption.All;
     public IReadOnlyList<WebcamTemplateOption> WebcamTemplateOptions { get; } = WebcamTemplateOption.All;
     public IReadOnlyList<AppThemeOption> AppThemeOptions { get; } = AppThemeOption.All;
+    public IReadOnlyList<ClickSoundOption> ClickSoundOptions { get; } = ClickSoundOption.All;
     [ObservableProperty] private AppThemeOption _selectedAppTheme = AppThemeOption.All[0];
 
     [ObservableProperty] private CaptureTargetKindOption _selectedCaptureTargetKind = CaptureTargetKindOption.All[0];
@@ -156,6 +157,10 @@ public partial class MainViewModel : BaseViewModel
     [ObservableProperty] private double _spotlightRadius = 180;
     public string SpotlightRadiusLabel => $"{SpotlightRadius:0}px";
     [ObservableProperty] private bool _clickRipplesEnabled;
+    [ObservableProperty] private bool _clickSoundsEnabled;
+    [ObservableProperty] private ClickSoundOption _selectedClickSound = ClickSoundOption.All[0];
+    [ObservableProperty] private double _clickSoundVolume = 75;
+    public string ClickSoundVolumeLabel => $"{ClickSoundVolume:0}%";
 
     // Live screen annotations (Phase 6 Step 1 — overlay window + click-through toggle + global hotkey
     // only; no InkCanvas/drawing surface yet, that's Step 2). Settings-only like WebcamEnabled:
@@ -549,6 +554,9 @@ public partial class MainViewModel : BaseViewModel
             SpotlightEnabled = s.SpotlightEnabled;
             SpotlightRadius = s.SpotlightRadius;
             ClickRipplesEnabled = s.ClickRipplesEnabled;
+            ClickSoundsEnabled = s.ClickSoundsEnabled;
+            SelectedClickSound = ClickSoundOptions.FirstOrDefault(x => x.Key == s.ClickSoundKey) ?? ClickSoundOptions[0];
+            ClickSoundVolume = Math.Clamp(s.ClickSoundVolume * 100, 0, 100);
             AnnotationsEnabled = s.AnnotationsEnabled;
             SelectedAnnotationColor = AnnotationColorOptions.FirstOrDefault(c => c.Label == s.AnnotationColorLabel) ?? SelectedAnnotationColor;
             AnnotationStrokeThickness = s.AnnotationStrokeThickness > 0 ? s.AnnotationStrokeThickness : AnnotationStrokeThickness;
@@ -599,6 +607,9 @@ public partial class MainViewModel : BaseViewModel
         SpotlightEnabled = SpotlightEnabled,
         SpotlightRadius = SpotlightRadius,
         ClickRipplesEnabled = ClickRipplesEnabled,
+        ClickSoundsEnabled = ClickSoundsEnabled,
+        ClickSoundKey = SelectedClickSound.Key,
+        ClickSoundVolume = ClickSoundVolume / 100,
         AnnotationsEnabled = AnnotationsEnabled,
         AnnotationColorLabel = SelectedAnnotationColor.Label,
         AnnotationStrokeThickness = AnnotationStrokeThickness,
@@ -932,6 +943,28 @@ public partial class MainViewModel : BaseViewModel
         RestartPreviewIfIdle();
         QueueSaveSettings();
     }
+
+    partial void OnClickSoundsEnabledChanged(bool value)
+    {
+        UpdateClickSound();
+        QueueSaveSettings();
+    }
+
+    partial void OnSelectedClickSoundChanged(ClickSoundOption value)
+    {
+        UpdateClickSound();
+        QueueSaveSettings();
+    }
+
+    partial void OnClickSoundVolumeChanged(double value)
+    {
+        OnPropertyChanged(nameof(ClickSoundVolumeLabel));
+        UpdateClickSound();
+        QueueSaveSettings();
+    }
+
+    private void UpdateClickSound() =>
+        _manager.UpdateClickSound(ClickSoundsEnabled, SelectedClickSound.FileName, ClickSoundVolume / 100);
 
     partial void OnAnnotationsEnabledChanged(bool value)
     {

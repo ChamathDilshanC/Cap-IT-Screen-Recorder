@@ -61,6 +61,9 @@ public sealed class AppSettings
     public bool SpotlightEnabled { get; set; } = false;
     public double SpotlightRadius { get; set; } = 180;
     public bool ClickRipplesEnabled { get; set; } = false;
+    public bool ClickSoundsEnabled { get; set; } = false;
+    public string ClickSoundKey { get; set; } = "fast-double-click";
+    public double ClickSoundVolume { get; set; } = 0.75;
 
     // Live screen annotations (Phase 6). Driven directly by MainViewModel via AnnotationOverlayService
     // (using SelectedMonitor at record start), not through RecordingManager/RecordingSettings, so unlike

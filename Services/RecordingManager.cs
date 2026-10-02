@@ -17,6 +17,7 @@ public sealed class RecordingManager : IDisposable
     private readonly VideoCaptureService _video = new();
     private readonly AudioCaptureService _audio = new();
     private readonly FFmpegEncoderService _ffmpeg = new();
+    private readonly ClickSoundService _clickSound = new();
     private readonly object _videoLock = new();
 
     private byte[] _blackFrame = [];
@@ -62,6 +63,11 @@ public sealed class RecordingManager : IDisposable
     private bool _previewSpotlightEnabled;
     private double _previewSpotlightRadius;
     private bool _previewClickRipplesEnabled;
+
+    public RecordingManager()
+    {
+        _video.ClickDetected += _clickSound.Play;
+    }
 
     /// <summary>Fires if a specific-window recording/preview's target window is closed out from under it (window mode only) — pass-through of <see cref="VideoCaptureService.CaptureTargetLost"/>.</summary>
     public event Action? CaptureTargetLost
@@ -269,6 +275,13 @@ public sealed class RecordingManager : IDisposable
     {
         _audio.SetSystemAudioEnabled(captureSystemAudio);
         _audio.SetMicrophone(captureMicrophone, microphoneDeviceId);
+    }
+
+    public void UpdateClickSound(bool enabled, string fileName, double volume)
+    {
+        _clickSound.Enabled = enabled;
+        _clickSound.SetSound(fileName);
+        _clickSound.Volume = volume;
     }
 
     /// <summary>Stops preview-only capture. No-op while actually recording.</summary>
@@ -635,6 +648,8 @@ public sealed class RecordingManager : IDisposable
         _timerResolution?.Dispose();
         _timerResolution = null;
         _audio.Dispose();
+        _video.ClickDetected -= _clickSound.Play;
+        _clickSound.Dispose();
         lock (_videoLock) { _video.Dispose(); }
         _ffmpeg.Dispose();
     }

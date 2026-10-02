@@ -26,7 +26,7 @@
     <!-- Single source of truth for the app version. UpdateService reads this back at runtime
          (Assembly version) and compares it against the latest GitHub release tag; the Inno Setup
          script's MyAppVersion must be kept in lockstep with it for each release. -->
-    <Version>3.6.0</Version>
+    <Version>3.7.0</Version>
   </PropertyGroup>
 
   <ItemGroup>
@@ -65,6 +65,18 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Include="assets\AppIcon.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="assets\sounds\mixkit-fast-double-click-on-mouse-275.wav">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="assets\sounds\mixkit-mouse-click-close-1113.wav">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="assets\sounds\ui-soft-button-press-brukowskij-soft-button-gentle-ui-press-5-3-0m00s.mp3">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="assets\sounds\computer-mouse-click-joshua-chivers-1-00-00.mp3">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>

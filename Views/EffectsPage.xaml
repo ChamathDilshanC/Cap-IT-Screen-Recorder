@@ -39,6 +39,29 @@
                 <ToggleSwitch OnContent="On" OffContent="Off"
                               IsOn="{x:Bind ViewModel.ClickRipplesEnabled, Mode=TwoWay}" />
             </ctcontrols:SettingsCard>
+
+            <ctcontrols:SettingsCard Header="Click sound"
+                                     Description="Play a fast double-click sound when recording. It is captured when system audio is enabled.">
+                <ctcontrols:SettingsCard.HeaderIcon>
+                    <FontIcon Glyph="&#xE767;" />
+                </ctcontrols:SettingsCard.HeaderIcon>
+                <ToggleSwitch OnContent="On" OffContent="Off"
+                              IsOn="{x:Bind ViewModel.ClickSoundsEnabled, Mode=TwoWay}" />
+            </ctcontrols:SettingsCard>
+
+            <ctcontrols:SettingsCard Header="Click sound style"
+                                     Description="Choose which click effect is used">
+                <ComboBox MinWidth="220"
+                          ItemsSource="{x:Bind ViewModel.ClickSoundOptions}"
+                          SelectedItem="{x:Bind ViewModel.SelectedClickSound, Mode=TwoWay}" />
+            </ctcontrols:SettingsCard>
+
+            <ctcontrols:SettingsCard Header="Click sound volume"
+                                     Description="{x:Bind ViewModel.ClickSoundVolumeLabel, Mode=OneWay}">
+                <Slider MinWidth="220"
+                        Minimum="0" Maximum="100" StepFrequency="5"
+                        Value="{x:Bind ViewModel.ClickSoundVolume, Mode=TwoWay}" />
+            </ctcontrols:SettingsCard>
         </StackPanel>
     </ScrollViewer>
 </Page>
