@@ -1,9 +1,9 @@
 using Microsoft.UI.Xaml;
+using ScreenRecorderApp.Services;
 using ScreenRecorderApp.Services.Export;
 using ScreenRecorderApp.Models;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.Storage;
-using Windows.Storage.Pickers;
 using Windows.System;
 using WinRT.Interop;
 
@@ -51,11 +51,8 @@ public sealed partial class TrimExportWindow
         _exporting = true; SetExporting(true);
         try
         {
-            var picker = new FileSavePicker { SuggestedFileName = ViewModel.Title + "_edited", SuggestedStartLocation = PickerLocationId.VideosLibrary };
-            picker.FileTypeChoices.Add(gif ? "Animated GIF" : "MP4 video", new List<string> { gif ? ".gif" : ".mp4" });
-            InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this));
-            var file = await picker.PickSaveFileAsync();
-            if (file is null || _closed) return;
+            var outputPath = MediaOutputPaths.BuildEditedPath(ViewModel.FilePath, gif);
+            if (_closed) return;
             _exportCts = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
             await ViewModel.SaveAsync(); _player?.Pause();
             var zooms = ViewModel.ZoomRegions.Select(r => new ZoomRegion { StartSeconds = r.StartSeconds, EndSeconds = r.EndSeconds, CenterX = r.CenterX, CenterY = r.CenterY, Scale = r.Scale, Enabled = r.Enabled }).ToList();
@@ -63,10 +60,10 @@ public sealed partial class TrimExportWindow
             var progress = new Progress<GifExportProgress>(p => DispatcherQueue.TryEnqueue(() =>
             { if (_closed) return; ExportStageText.Text = p.Stage; ExportProgress.Value = p.PercentComplete; }));
             await CompositionExportService.ExportAsync(ViewModel.FilePath, TimeSpan.FromSeconds(ViewModel.TrimStart),
-                TimeSpan.FromSeconds(ViewModel.TrimEnd - ViewModel.TrimStart), file.Path, gif, ViewModel.Presentation.Clone(), zooms,
+                TimeSpan.FromSeconds(ViewModel.TrimEnd - ViewModel.TrimStart), outputPath, gif, ViewModel.Presentation.Clone(), zooms,
                 options, progress, _exportCts.Token, ViewModel.Metadata);
-            _lastOutput = file.Path;
-            if (!_closed) { ViewModel.Status = $"Exported · {Path.GetFileName(file.Path)}"; OpenOutputButton.Visibility = Visibility.Visible; CopyErrorButton.Visibility = Visibility.Collapsed; }
+            _lastOutput = outputPath;
+            if (!_closed) { ViewModel.Status = $"Exported · {Path.GetFileName(outputPath)}"; OpenOutputButton.Visibility = Visibility.Visible; CopyErrorButton.Visibility = Visibility.Collapsed; }
         }
         catch (OperationCanceledException) { if (!_closed) ViewModel.Status = "Export cancelled. Your original recording and edits are safe."; }
         catch (Exception ex)
@@ -88,7 +85,7 @@ public sealed partial class TrimExportWindow
     {
         SetControlsEnabled(Inspector, !busy); SetControlsEnabled(TimelinePanel, !busy); SetControlsEnabled(EditCommands, !busy);
         ExportProgressPanel.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
-        ExportProgress.Value = 0; ExportStageText.Text = "Choose an export destination…";
+        ExportProgress.Value = 0; ExportStageText.Text = "Preparing edited video…";
     }
     private static void SetControlsEnabled(DependencyObject parent, bool enabled)
     {

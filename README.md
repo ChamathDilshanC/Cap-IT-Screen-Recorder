@@ -205,6 +205,21 @@ relaunches Cap-IT.
 5. Stop recording to open **Review & Export**.
 6. Trim, compose, add text or frames, then keep the MP4 or export a GIF.
 
+### Organized media folders
+
+Cap-IT keeps source recordings and edited exports separate under the configured output directory:
+
+```text
+Cap-IT Recordings/
+├── Recordings/
+│   └── 2026-10-03/Recording_2026-10-03_00-01-03-123.mp4
+└── Edited/
+    └── 2026-10-03/Recording_2026-10-03_00-01-03-123_edited_2026-10-03_00-05-44-456.mp4
+```
+
+Both the date folder and timestamped filename are created automatically. Edited MP4 and GIF exports
+use the same `Edited/<date>` folder.
+
 ---
 
 ## Keyboard shortcuts

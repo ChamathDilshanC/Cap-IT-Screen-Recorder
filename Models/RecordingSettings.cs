@@ -296,9 +296,7 @@ public sealed class RecordingSettings
 
     public string BuildOutputFilePath()
     {
-        Directory.CreateDirectory(OutputDirectory);
         var ext = Container == OutputContainer.Mp4 ? "mp4" : "mkv";
-        var name = $"Recording_{DateTime.Now:yyyy-MM-dd_HH-mm-ss}.{ext}";
-        return Path.Combine(OutputDirectory, name);
+        return Services.MediaOutputPaths.BuildRecordingPath(OutputDirectory, ext);
     }
 }
