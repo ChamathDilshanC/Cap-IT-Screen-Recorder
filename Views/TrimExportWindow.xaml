@@ -42,7 +42,7 @@
         <Grid Grid.Row="1" x:Name="Workspace" Padding="18,16,18,14" ColumnSpacing="18" SizeChanged="OnWorkspaceSizeChanged">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
-                <ColumnDefinition x:Name="InspectorColumn" Width="360"/>
+                <ColumnDefinition x:Name="InspectorColumn" Width="400"/>
             </Grid.ColumnDefinitions>
             <Grid RowSpacing="8">
                 <Grid.RowDefinitions>
@@ -160,24 +160,39 @@
                             </ItemsPanelTemplate>
                         </GridView.ItemsPanel>
                         <GridViewItem Tag="Canvas" AutomationProperties.Name="Canvas">
-                            <TextBlock Text="Canvas" Width="80" FontSize="12" TextAlignment="Center" Margin="0,2"/>
+                            <StackPanel Width="80" Spacing="4" Margin="0,2">
+                                <FontIcon Glyph="&#xE7C3;" FontSize="16"/>
+                                <TextBlock Text="Canvas" FontSize="12" TextAlignment="Center"/>
+                            </StackPanel>
                         </GridViewItem>
                         <GridViewItem Tag="Video" AutomationProperties.Name="Video">
-                            <TextBlock Text="Video" Width="80" FontSize="12" TextAlignment="Center" Margin="0,2"/>
+                            <StackPanel Width="80" Spacing="4" Margin="0,2">
+                                <FontIcon Glyph="&#xE714;" FontSize="16"/>
+                                <TextBlock Text="Video" FontSize="12" TextAlignment="Center"/>
+                            </StackPanel>
                         </GridViewItem>
                         <GridViewItem Tag="Style" AutomationProperties.Name="Style">
-                            <TextBlock Text="Style" Width="80" FontSize="12" TextAlignment="Center" Margin="0,2"/>
+                            <StackPanel Width="80" Spacing="4" Margin="0,2">
+                                <FontIcon Glyph="&#xE790;" FontSize="16"/>
+                                <TextBlock Text="Style" FontSize="12" TextAlignment="Center"/>
+                            </StackPanel>
                         </GridViewItem>
                         <GridViewItem Tag="Text" AutomationProperties.Name="Text">
-                            <TextBlock Text="Text" Width="80" FontSize="12" TextAlignment="Center" Margin="0,2"/>
+                            <StackPanel Width="80" Spacing="4" Margin="0,2">
+                                <FontIcon Glyph="&#xE8D2;" FontSize="16"/>
+                                <TextBlock Text="Text" FontSize="12" TextAlignment="Center"/>
+                            </StackPanel>
                         </GridViewItem>
                         <GridViewItem Tag="Export" AutomationProperties.Name="Export">
-                            <TextBlock Text="Export" Width="80" FontSize="12" TextAlignment="Center" Margin="0,2"/>
+                            <StackPanel Width="80" Spacing="4" Margin="0,2">
+                                <FontIcon Glyph="&#xE78C;" FontSize="16"/>
+                                <TextBlock Text="Export" FontSize="12" TextAlignment="Center"/>
+                            </StackPanel>
                         </GridViewItem>
                     </GridView>
                     </Grid>
                     <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Hidden">
-                        <Grid x:Name="InspectorSections" Padding="2,0,6,12">
+                        <StackPanel x:Name="InspectorSections" Padding="2,0,6,12" Spacing="24">
                             <StackPanel x:Name="CanvasSection" Spacing="12" Visibility="Visible">
                                 <TextBlock Text="Composition" Style="{StaticResource SectionHeaderText}"/>
                                 <TextBlock Text="Give your recording room to breathe." Style="{StaticResource SectionDescriptionText}" FontSize="12"/>
@@ -595,7 +610,7 @@
                                 <Button Content="Open output folder" HorizontalAlignment="Stretch" Click="OnOpenFolderClick"/>
                                 <Button Content="Discard original…" HorizontalAlignment="Stretch" Click="OnDiscardClick"/>
                             </StackPanel>
-                        </Grid>
+                        </StackPanel>
                     </ScrollViewer>
                 </Grid>
             </Border>
