@@ -236,13 +236,18 @@ public sealed partial class TrimExportWindow : Window
     private void OnRemoveZoomClick(object sender, RoutedEventArgs e)
     { if (sender is Button { Tag: ZoomRegion region }) ViewModel.ZoomRegions.Remove(region); }
     private void OnToggleInspectorClick(object sender, RoutedEventArgs e) => SetInspector(!_inspectorVisible);
+    private void OnResetPaddingClick(object sender, RoutedEventArgs e) => ViewModel.UpdatePresentation(p => p.Padding = 24);
     private void SetInspector(bool visible)
     {
         _inspectorVisible = visible; Inspector.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
-        InspectorColumn.Width = new(visible ? 340 : 0);
+        InspectorColumn.Width = new(visible ? (Workspace.ActualWidth < 1120 ? 320 : 360) : 0);
     }
     private void OnWorkspaceSizeChanged(object sender, SizeChangedEventArgs e)
-    { if (e.NewSize.Width < 900 && _inspectorVisible) SetInspector(false); }
+    {
+        if (e.NewSize.Width < 900 && _inspectorVisible) SetInspector(false);
+        else if (e.NewSize.Width >= 900 && !_inspectorVisible && !_fullScreen) SetInspector(true);
+        else if (_inspectorVisible) InspectorColumn.Width = new(e.NewSize.Width < 1120 ? 320 : 360);
+    }
     private void OnFullscreenClick(object sender, RoutedEventArgs e)
     {
         _fullScreen = !_fullScreen;

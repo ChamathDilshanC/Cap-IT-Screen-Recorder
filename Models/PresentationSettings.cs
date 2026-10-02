@@ -89,7 +89,7 @@ public sealed partial class PresentationSettings : ObservableObject
         GradientAngle = Safe(GradientAngle, 45, 0, 360);
         BackgroundImageFit = Option(BackgroundImageFit, "Fill", "Fit", "Fill", "Stretch");
         BackgroundBlur = Safe(BackgroundBlur, 0, 0, 64); BackgroundDim = Safe(BackgroundDim, 0, 0, 1);
-        Padding = Math.Clamp(Padding, 0, 200); VideoScale = Safe(VideoScale, .92, .4, 1.2);
+        Padding = Math.Clamp(Padding, 0, 240); VideoScale = Safe(VideoScale, .92, .4, 1.2);
         RotationX = Safe(RotationX, 0, -35, 35); RotationY = Safe(RotationY, 0, -35, 35); RotationZ = Safe(RotationZ, 0, -15, 15);
         PerspectiveDepth = Safe(PerspectiveDepth, 1200, 400, 3000);
         FitMode = Option(FitMode, "Fit", "Fit", "Fill", "Original", "Custom");

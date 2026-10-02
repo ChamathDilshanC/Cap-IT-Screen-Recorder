@@ -84,6 +84,14 @@ public sealed partial class ReviewViewModel : ObservableObject
         Presentation.PerspectiveDepth = 1200;
         Commit();
     }
+    public void UpdatePresentation(Action<PresentationSettings> update)
+    {
+        Commit();
+        update(Presentation);
+        Presentation.Normalize();
+        NotifyComposition();
+        Commit();
+    }
     private readonly DispatcherQueueTimer _commitTimer;
     private readonly SemaphoreSlim _saveLock = new(1, 1);
     private readonly List<string> _history = [];

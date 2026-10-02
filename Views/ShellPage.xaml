@@ -5,10 +5,13 @@
     Background="{ThemeResource WorkspaceBrush}">
 
     <NavigationView x:Name="RootNavigationView"
-                     PaneDisplayMode="Left"
+                     PaneDisplayMode="Auto"
                      IsBackButtonVisible="Collapsed"
                      IsSettingsVisible="False"
-                     OpenPaneLength="208"
+                     OpenPaneLength="224"
+                     CompactPaneLength="56"
+                     CompactModeThresholdWidth="900"
+                     ExpandedModeThresholdWidth="1180"
                      PaneTitle=""
                      SelectionChanged="OnSelectionChanged"
                      Loaded="OnNavigationViewLoaded">
@@ -57,9 +60,14 @@
         </NavigationView.MenuItems>
 
         <NavigationView.PaneHeader>
-            <StackPanel Orientation="Horizontal" Spacing="8" Margin="4,4,0,4">
-                <Image Source="ms-appx:///assets/Logo-Mark.png" Width="24" Height="24" />
-                <TextBlock Text="Cap-IT" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
+            <StackPanel Orientation="Horizontal" Spacing="10" Margin="8,8,0,8">
+                <Border Width="28" Height="28" CornerRadius="8" Background="{ThemeResource AccentBrush}">
+                    <Image Source="ms-appx:///assets/Logo-Mark.png" Width="20" Height="20" />
+                </Border>
+                <StackPanel VerticalAlignment="Center" Spacing="1">
+                    <TextBlock Text="Cap-IT" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                    <TextBlock Text="Screen recorder" FontSize="10" Opacity=".6"/>
+                </StackPanel>
             </StackPanel>
         </NavigationView.PaneHeader>
 

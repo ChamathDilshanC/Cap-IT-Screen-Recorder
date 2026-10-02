@@ -5,7 +5,7 @@
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-        <Grid x:Name="CommandBar" Padding="12,4,148,4" ColumnSpacing="10">
+        <Grid x:Name="CommandBar" Padding="16,6,148,6" ColumnSpacing="12" Background="{ThemeResource SurfaceBrush}">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
@@ -34,10 +34,10 @@
                 <Button x:Name="ExportButton" Content="Export Video" Style="{StaticResource AccentButtonStyle}" Margin="8,0,0,0" Click="OnExportClick"/>
             </StackPanel>
         </Grid>
-        <Grid Grid.Row="1" x:Name="Workspace" Padding="12,0,12,8" ColumnSpacing="12" SizeChanged="OnWorkspaceSizeChanged">
+        <Grid Grid.Row="1" x:Name="Workspace" Padding="16,12,16,12" ColumnSpacing="16" SizeChanged="OnWorkspaceSizeChanged">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
-                <ColumnDefinition x:Name="InspectorColumn" Width="340"/>
+                <ColumnDefinition x:Name="InspectorColumn" Width="360"/>
             </Grid.ColumnDefinitions>
             <Grid RowSpacing="8">
                 <Grid.RowDefinitions>
@@ -256,11 +256,17 @@
                                     <NumberBox Header="Width · px" Minimum="0" Maximum="7680" Value="{Binding Presentation.CanvasWidth, Mode=TwoWay}" SpinButtonPlacementMode="Compact"/>
                                     <NumberBox Header="Height · px" Minimum="0" Maximum="7680" Value="{Binding Presentation.CanvasHeight, Mode=TwoWay}" SpinButtonPlacementMode="Compact"/>
                                 </StackPanel>
-                                <Grid>
-                                    <TextBlock Text="Padding · px"/>
-                                    <TextBlock Text="{Binding Presentation.Padding, Converter={StaticResource CompactNumber}}" HorizontalAlignment="Right" Opacity=".65"/>
+                                <Grid ColumnSpacing="8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="88"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Canvas padding" VerticalAlignment="Center"/>
+                                    <NumberBox Grid.Column="1" Value="{Binding Presentation.Padding, Mode=TwoWay}" Minimum="0" Maximum="240" SpinButtonPlacementMode="Compact" SmallChange="1" LargeChange="8" Header="px" AutomationProperties.Name="Canvas padding"/>
+                                    <Button Grid.Column="2" Content="Reset" Padding="10,0" MinHeight="32" Click="OnResetPaddingClick" ToolTipService.ToolTip="Reset padding to 24 px"/>
                                 </Grid>
-                                <Slider Minimum="0" Maximum="200" StepFrequency="1" Value="{Binding Presentation.Padding, Mode=TwoWay}" AutomationProperties.Name="Padding · px"/>
+                                <Slider Minimum="0" Maximum="240" StepFrequency="1" Value="{Binding Presentation.Padding, Mode=TwoWay}" AutomationProperties.Name="Canvas padding slider"/>
                                 <TextBlock Text="Style presets" Style="{StaticResource SectionHeaderText}"/>
                                 <ComboBox ItemsSource="{Binding Presets}" SelectedItem="{Binding SelectedPreset, Mode=TwoWay}" AutomationProperties.Name="Style preset"/>
                                 <Button Content="Apply style" Command="{Binding ApplyPresetCommand}" HorizontalAlignment="Stretch"/>
