@@ -240,13 +240,13 @@ public sealed partial class TrimExportWindow : Window
     private void SetInspector(bool visible)
     {
         _inspectorVisible = visible; Inspector.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
-        InspectorColumn.Width = new(visible ? (Workspace.ActualWidth < 1120 ? 400 : 440) : 0);
+        InspectorColumn.Width = new(visible ? (Workspace.ActualWidth < 1120 ? 360 : 400) : 0);
     }
     private void OnWorkspaceSizeChanged(object sender, SizeChangedEventArgs e)
     {
         if (e.NewSize.Width < 900 && _inspectorVisible) SetInspector(false);
         else if (e.NewSize.Width >= 900 && !_inspectorVisible && !_fullScreen) SetInspector(true);
-        else if (_inspectorVisible) InspectorColumn.Width = new(e.NewSize.Width < 1120 ? 400 : 440);
+        else if (_inspectorVisible) InspectorColumn.Width = new(e.NewSize.Width < 1120 ? 360 : 400);
     }
     private void OnFullscreenClick(object sender, RoutedEventArgs e)
     {

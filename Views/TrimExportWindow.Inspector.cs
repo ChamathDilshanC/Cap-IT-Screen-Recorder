@@ -85,9 +85,14 @@ public sealed partial class TrimExportWindow
         if (InspectorSections is null || InspectorTabs.SelectedItem is not GridViewItem item) return;
         var visibleSections = (item.Tag as string) switch
         {
-            "Canvas" => new[] { "CanvasSection", "BackgroundSection" },
+            "Canvas" => new[] { "CanvasSection" },
+            "Background" => new[] { "BackgroundSection" },
             "Video" => new[] { "VideoSection" },
-            "Style" => new[] { "CornersSection", "ShadowSection", "BorderSection", "FrameSection", "WatermarkSection" },
+            "Corners" => new[] { "CornersSection" },
+            "Shadow" => new[] { "ShadowSection" },
+            "Border" => new[] { "BorderSection" },
+            "Frame" => new[] { "FrameSection" },
+            "Watermark" => new[] { "WatermarkSection" },
             "Text" => new[] { "TextSection" },
             "Export" => new[] { "ExportSection" },
             _ => Array.Empty<string>()
