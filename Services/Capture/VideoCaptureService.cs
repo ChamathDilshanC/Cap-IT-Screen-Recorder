@@ -2104,6 +2104,18 @@ public sealed class VideoCaptureService : IDisposable
     /// Snapshots the ripple list under <see cref="_rippleLock"/> and renders without holding it, so
     /// OnMouseClickAt (a different thread) never blocks on this.
     /// </summary>
+    private void TransformPointToZoomedSpace(ref double x, ref double y, int width, int height)
+    {
+        if (_zoomCurrentFactor <= 1.001) return;
+        double cropW = width / _zoomCurrentFactor;
+        double cropH = height / _zoomCurrentFactor;
+        double cropX = Math.Clamp(_zoomCenterX - cropW / 2, 0, width - cropW);
+        double cropY = Math.Clamp(_zoomCenterY - cropH / 2, 0, height - cropH);
+        
+        x = (x - cropX) * (width / cropW);
+        y = (y - cropY) * (height / cropH);
+    }
+
     private unsafe void ApplyRipples(byte[] canvas, int width, int height)
     {
         double now = _zoomClock.Elapsed.TotalSeconds;
@@ -2122,9 +2134,13 @@ public sealed class VideoCaptureService : IDisposable
                 double t = (now - ripple.StartSeconds) / RippleDurationSeconds;
                 if (t is < 0 or > 1) continue;
 
+                double rx = ripple.X;
+                double ry = ripple.Y;
+                TransformPointToZoomedSpace(ref rx, ref ry, width, height);
+
                 double radius = RippleMaxRadiusPx * t;
                 double opacity = 1.0 - t;
-                DrawRippleRing(basePtr, width, height, ripple.X, ripple.Y, radius, opacity);
+                DrawRippleRing(basePtr, width, height, rx, ry, radius, opacity);
             }
         }
     }
@@ -2388,8 +2404,18 @@ public sealed class VideoCaptureService : IDisposable
             height = _frameHeight;
         }
 
+        int cursorX = _cursorX;
+        int cursorY = _cursorY;
+        if (_zoomCurrentFactor > 1.001)
+        {
+            double cx = cursorX, cy = cursorY;
+            TransformPointToZoomedSpace(ref cx, ref cy, width, height);
+            cursorX = (int)Math.Round(cx);
+            cursorY = (int)Math.Round(cy);
+        }
+
         if (_clickRipplesEnabled) ApplyRipples(destination, width, height);
-        if (_spotlightEnabled) ApplySpotlight(destination, width, height, _cursorX, _cursorY, _spotlightRadius);
+        if (_spotlightEnabled) ApplySpotlight(destination, width, height, cursorX, cursorY, _spotlightRadius);
         ApplyWebcamOverlay(destination, width, height);
         ApplyKeystrokeOverlay(destination, width, height);
         return true;

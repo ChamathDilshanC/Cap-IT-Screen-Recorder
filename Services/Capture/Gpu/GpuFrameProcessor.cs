@@ -1,4 +1,4 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 using Vortice.D3DCompiler;
 using Vortice.Direct3D;
 using Vortice.Direct3D11;
@@ -667,10 +667,16 @@ internal sealed class GpuFrameProcessor : IDisposable
         Span<float> data = stackalloc float[12 + MaxRipples * 4];
         data.Clear();
 
+        bool isZoomed = p.CropWidth < _width - 0.001 || p.CropHeight < _height - 0.001;
+        float scaleX = isZoomed ? (float)(_width / p.CropWidth) : 1f;
+        float scaleY = isZoomed ? (float)(_height / p.CropHeight) : 1f;
+        float cropX = isZoomed ? (float)p.CropX : 0f;
+        float cropY = isZoomed ? (float)p.CropY : 0f;
+
         data[0] = _width;
         data[1] = _height;
-        data[2] = p.CursorX;
-        data[3] = p.CursorY;
+        data[2] = (p.CursorX - cropX) * scaleX;
+        data[3] = (p.CursorY - cropY) * scaleY;
         data[4] = p.SpotlightEnabled ? p.SpotlightRadius : 0f;
         data[5] = p.SpotlightFeather;
         data[6] = p.SpotlightDimAlpha;
@@ -681,8 +687,8 @@ internal sealed class GpuFrameProcessor : IDisposable
         for (int i = 0; i < ripples.Length; i++)
         {
             int b = 12 + i * 4;
-            data[b + 0] = ripples[i].X;
-            data[b + 1] = ripples[i].Y;
+            data[b + 0] = (ripples[i].X - cropX) * scaleX;
+            data[b + 1] = (ripples[i].Y - cropY) * scaleY;
             data[b + 2] = ripples[i].Radius;
             data[b + 3] = ripples[i].Opacity;
         }
