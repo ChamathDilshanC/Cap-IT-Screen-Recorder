@@ -1,0 +1,32 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="using:ScreenRecorderApp.Controls"
+             xmlns:vm="using:ScreenRecorderApp.ViewModels"
+             xmlns:c="using:ScreenRecorderApp.Views.Components"
+             x:Class="ScreenRecorderApp.Views.Components.LivePreviewCard"
+             x:DataType="vm:MainViewModel">
+  <StackPanel Spacing="12">
+    <Grid ColumnDefinitions="*,Auto">
+      <TextBlock Classes="section" Text="Live preview" VerticalAlignment="Center" />
+      <ui:StatusBadge Grid.Column="1" Classes="accent" Text="LIVE" IsVisible="{Binding HasPreview}" />
+    </Grid>
+    <ui:AspectRatioBox Ratio="1.7778">
+      <Border Classes="stage">
+        <Panel>
+          <ui:FrameView Source="{Binding PreviewSource}" Version="{Binding PreviewVersion}" Stretch="Uniform" IsVisible="{Binding HasPreview}" />
+          <StackPanel Spacing="8" HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding ShowPlaceholder}">
+            <ui:Icon Data="{StaticResource Icon.Monitor}" Size="22" Foreground="{DynamicResource Brush.TextMuted}" HorizontalAlignment="Center" />
+            <TextBlock Classes="caption" Text="Select a source to see it here" HorizontalAlignment="Center" />
+          </StackPanel>
+        </Panel>
+      </Border>
+    </ui:AspectRatioBox>
+    <StackPanel Orientation="Horizontal" Spacing="8">
+      <ui:Icon Data="{StaticResource Icon.Monitor}" Size="14" Foreground="{DynamicResource Brush.TextMuted}" IsVisible="{Binding IsMonitorCaptureMode}" VerticalAlignment="Center" />
+      <ui:Icon Data="{StaticResource Icon.AppWindow}" Size="14" Foreground="{DynamicResource Brush.TextMuted}" IsVisible="{Binding IsWindowCaptureMode}" VerticalAlignment="Center" />
+      <TextBlock Classes="caption" Text="{Binding CurrentTargetSummary}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+    </StackPanel>
+    <TextBlock Classes="caption" TextWrapping="Wrap" Text="{Binding $parent[c:LivePreviewCard].Hint}"
+               IsVisible="{Binding $parent[c:LivePreviewCard].Hint, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+  </StackPanel>
+</UserControl>

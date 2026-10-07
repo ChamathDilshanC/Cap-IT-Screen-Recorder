@@ -1,0 +1,55 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="using:ScreenRecorderApp.Controls"
+        xmlns:vm="using:ScreenRecorderApp.ViewModels"
+        x:Class="ScreenRecorderApp.Views.RecordingControllerWindow"
+        x:DataType="vm:MainViewModel"
+        Title="Cap-IT recording controls"
+        SystemDecorations="None" Topmost="True" ShowInTaskbar="False" CanResize="False"
+        SizeToContent="WidthAndHeight" Background="Transparent"
+        TransparencyLevelHint="Transparent">
+  <Border Margin="10" Padding="6" CornerRadius="16"
+          Background="{DynamicResource Brush.SurfaceRaised}" BorderBrush="{DynamicResource Brush.BorderNormal}" BorderThickness="1"
+          BoxShadow="0 8 24 0 #59000000">
+    <StackPanel Orientation="Horizontal" Spacing="4">
+      <!-- Grip + status: drag the controller anywhere -->
+      <Border x:Name="Grip" Background="Transparent" Padding="10,0,12,0" Cursor="SizeAll" PointerPressed="OnGripPressed"
+              ToolTip.Tip="Drag to move">
+        <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+          <Panel Width="10" Height="10" VerticalAlignment="Center">
+            <Ellipse Fill="{DynamicResource Brush.Recording}" IsVisible="{Binding IsRecording}" />
+            <Ellipse Fill="{DynamicResource Brush.Warning}" IsVisible="{Binding IsPaused}" />
+          </Panel>
+          <TextBlock Classes="timer" FontSize="14" VerticalAlignment="Center" Text="{Binding ElapsedText}" MinWidth="58" />
+        </StackPanel>
+      </Border>
+
+      <Border Classes="vdivider" Margin="2,6" />
+
+      <Button Classes="icon" ui:Ui.Icon="{StaticResource Icon.Fill.Pause}" ui:Ui.IconFilled="True"
+              Command="{Binding PauseResumeCommand}" IsVisible="{Binding IsRecording}" ToolTip.Tip="Pause recording" />
+      <Button Classes="icon" ui:Ui.Icon="{StaticResource Icon.Fill.Play}" ui:Ui.IconFilled="True"
+              Command="{Binding PauseResumeCommand}" IsVisible="{Binding IsPaused}" ToolTip.Tip="Resume recording" />
+      <Button Classes="icon" Foreground="{DynamicResource Brush.Recording}" ui:Ui.Icon="{StaticResource Icon.Fill.Stop}" ui:Ui.IconFilled="True"
+              Command="{Binding StopRecordingCommand}" ToolTip.Tip="Stop and review" />
+      <ToggleButton Classes="icon" ui:Ui.Icon="{StaticResource Icon.Snowflake}" IsChecked="{Binding IsScreenFrozen, Mode=OneWay}"
+                    Command="{Binding ToggleScreenPauseCommand}" ToolTip.Tip="Freeze the screen image — audio and timer keep recording" />
+
+      <Border Classes="vdivider" Margin="2,6" />
+
+      <ToggleButton Classes="icon" ui:Ui.Icon="{StaticResource Icon.Mic}" IsChecked="{Binding CaptureMicrophone, Mode=OneWay}"
+                    Command="{Binding ToggleMicrophoneCommand}" IsEnabled="{Binding CanChangeAudioLive}" ToolTip.Tip="Microphone" />
+      <ToggleButton Classes="icon" ui:Ui.Icon="{StaticResource Icon.Video}" IsChecked="{Binding WebcamEnabled, Mode=OneWay}"
+                    Command="{Binding ToggleWebcamCommand}" ToolTip.Tip="Webcam overlay" />
+      <Button Classes="icon" ui:Ui.Icon="{StaticResource Icon.Pen}"
+              Command="{Binding ToggleDrawingModeCommand}" IsEnabled="{Binding AnnotationsEnabled}"
+              ToolTip.Tip="Toggle drawing mode · Ctrl+Shift+D" />
+      <ToggleButton Classes="icon" ui:Ui.Icon="{StaticResource Icon.ZoomIn}" IsChecked="{Binding MouseTrackingZoomEnabled, Mode=OneWay}"
+                    Command="{Binding ToggleSmartZoomCommand}" ToolTip.Tip="Smart zoom" />
+
+      <Border Classes="vdivider" Margin="2,6" />
+
+      <Button Classes="icon" ui:Ui.Icon="{StaticResource Icon.Maximize}" Click="OnShowAppClick" ToolTip.Tip="Show Cap-IT" />
+    </StackPanel>
+  </Border>
+</Window>

@@ -1,0 +1,322 @@
+<!--
+  Selection controls built on ListBox / RadioButton:
+    Segmented  — equal-width segmented control (modes, small enums)
+    Chips      — wrapping selectable chips (aspect ratios, presets)
+    Tiles      — selectable cards (sources, templates, swatches); item visuals come from the DataTemplate
+    NavItem    — sidebar navigation entry (RadioButton)
+    PlainList  — chrome-less list with hover/selected rows
+-->
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:ui="using:ScreenRecorderApp.Controls">
+
+  <!-- ===== Segmented ===== -->
+  <ControlTheme x:Key="SegmentedItem" TargetType="ListBoxItem">
+    <Setter Property="Foreground" Value="{DynamicResource Brush.TextSecondary}" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Padding" Value="12,0" />
+    <Setter Property="MinHeight" Value="28" />
+    <Setter Property="FontSize" Value="{StaticResource FontSize.Secondary}" />
+    <Setter Property="FontWeight" Value="Medium" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="FocusAdorner" Value="{x:Null}" />
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition Property="Background" Duration="{StaticResource Duration.Fast}" />
+        <BrushTransition Property="Foreground" Duration="{StaticResource Duration.Fast}" />
+      </Transitions>
+    </Setter>
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border x:Name="Pill" Background="{TemplateBinding Background}" CornerRadius="6" Padding="{TemplateBinding Padding}"
+                MinHeight="{TemplateBinding MinHeight}">
+          <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                      VerticalAlignment="{TemplateBinding VerticalContentAlignment}">
+            <ui:Icon Size="14" VerticalAlignment="Center"
+                     Data="{Binding (ui:Ui.Icon), RelativeSource={RelativeSource TemplatedParent}}"
+                     IsVisible="{Binding (ui:Ui.Icon), RelativeSource={RelativeSource TemplatedParent}, Converter={x:Static ObjectConverters.IsNotNull}}" />
+            <ContentPresenter x:Name="PART_ContentPresenter" VerticalAlignment="Center"
+                              Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}" />
+          </StackPanel>
+        </Border>
+      </ControlTemplate>
+    </Setter>
+    <Style Selector="^:pointerover">
+      <Setter Property="Foreground" Value="{DynamicResource Brush.TextPrimary}" />
+    </Style>
+    <Style Selector="^:selected">
+      <Setter Property="Background" Value="{DynamicResource Brush.SegmentSelected}" />
+      <Setter Property="Foreground" Value="{DynamicResource Brush.TextPrimary}" />
+    </Style>
+    <Style Selector="^:selected /template/ Border#Pill">
+      <Setter Property="BoxShadow" Value="0 1 2 0 #33000000" />
+    </Style>
+    <Style Selector="^:focus-visible /template/ Border#Pill">
+      <Setter Property="BorderBrush" Value="{DynamicResource Brush.FocusRing}" />
+      <Setter Property="BorderThickness" Value="1" />
+    </Style>
+    <Style Selector="^:disabled">
+      <Setter Property="Opacity" Value="0.45" />
+    </Style>
+  </ControlTheme>
+
+  <ControlTheme x:Key="Segmented" TargetType="ListBox">
+    <Setter Property="AutoScrollToSelectedItem" Value="False" />
+    <Setter Property="ItemContainerTheme" Value="{StaticResource SegmentedItem}" />
+    <Setter Property="Background" Value="{DynamicResource Brush.SegmentTrack}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Brush.BorderSubtle}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="{StaticResource Radius.Medium}" />
+    <Setter Property="Padding" Value="3" />
+    <Setter Property="HorizontalAlignment" Value="Left" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="ItemsPanel">
+      <ItemsPanelTemplate>
+        <UniformGrid Rows="1" />
+      </ItemsPanelTemplate>
+    </Setter>
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="{TemplateBinding CornerRadius}"
+                Padding="{TemplateBinding Padding}">
+          <ItemsPresenter x:Name="PART_ItemsPresenter" ItemsPanel="{TemplateBinding ItemsPanel}" />
+        </Border>
+      </ControlTemplate>
+    </Setter>
+    <Style Selector="^:disabled">
+      <Setter Property="Opacity" Value="0.55" />
+    </Style>
+  </ControlTheme>
+
+  <!-- ===== Chips ===== -->
+  <ControlTheme x:Key="ChipItem" TargetType="ListBoxItem">
+    <Setter Property="Foreground" Value="{DynamicResource Brush.TextSecondary}" />
+    <Setter Property="Background" Value="{DynamicResource Brush.SurfaceSunken}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Brush.BorderNormal}" />
+    <Setter Property="Padding" Value="10,6" />
+    <Setter Property="Margin" Value="0,0,6,6" />
+    <Setter Property="CornerRadius" Value="{StaticResource Radius.Medium}" />
+    <Setter Property="FontSize" Value="{StaticResource FontSize.Secondary}" />
+    <Setter Property="FontWeight" Value="Medium" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="FocusAdorner" Value="{x:Null}" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border x:Name="Chip" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                BorderThickness="1" CornerRadius="{TemplateBinding CornerRadius}" Padding="{TemplateBinding Padding}">
+          <ContentPresenter x:Name="PART_ContentPresenter" HorizontalAlignment="Center" VerticalAlignment="Center"
+                            Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}" />
+        </Border>
+      </ControlTemplate>
+    </Setter>
+    <Style Selector="^:pointerover">
+      <Setter Property="BorderBrush" Value="{DynamicResource Brush.BorderStrong}" />
+      <Setter Property="Foreground" Value="{DynamicResource Brush.TextPrimary}" />
+    </Style>
+    <Style Selector="^:selected">
+      <Setter Property="Background" Value="{DynamicResource Brush.AccentSubtle}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Brush.Accent}" />
+      <Setter Property="Foreground" Value="{DynamicResource Brush.AccentText}" />
+    </Style>
+    <Style Selector="^:focus-visible /template/ Border#Chip">
+      <Setter Property="BoxShadow" Value="0 0 0 2 #5522CBDD" />
+    </Style>
+  </ControlTheme>
+
+  <ControlTheme x:Key="Chips" TargetType="ListBox">
+    <Setter Property="AutoScrollToSelectedItem" Value="False" />
+    <Setter Property="ItemContainerTheme" Value="{StaticResource ChipItem}" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="ItemsPanel">
+      <ItemsPanelTemplate>
+        <WrapPanel Orientation="Horizontal" />
+      </ItemsPanelTemplate>
+    </Setter>
+    <Setter Property="Template">
+      <ControlTemplate>
+        <ItemsPresenter x:Name="PART_ItemsPresenter" ItemsPanel="{TemplateBinding ItemsPanel}" />
+      </ControlTemplate>
+    </Setter>
+  </ControlTheme>
+
+  <!-- ===== Tiles ===== -->
+  <ControlTheme x:Key="TileItem" TargetType="ListBoxItem">
+    <Setter Property="Background" Value="{DynamicResource Brush.Surface}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Brush.BorderSubtle}" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="Margin" Value="0,0,12,12" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="FocusAdorner" Value="{x:Null}" />
+    <Setter Property="ClipToBounds" Value="False" />
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition Property="BorderBrush" Duration="{StaticResource Duration.Fast}" />
+        <BrushTransition Property="Background" Duration="{StaticResource Duration.Fast}" />
+      </Transitions>
+    </Setter>
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Panel>
+          <Border x:Name="Ring" Margin="-3" CornerRadius="15" BorderThickness="2" BorderBrush="{DynamicResource Brush.Accent}"
+                  IsVisible="False" />
+          <Border x:Name="Tile" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                  BorderThickness="1" CornerRadius="{StaticResource Radius.Large}" Padding="{TemplateBinding Padding}"
+                  ClipToBounds="True">
+            <ContentPresenter x:Name="PART_ContentPresenter" Content="{TemplateBinding Content}"
+                              ContentTemplate="{TemplateBinding ContentTemplate}"
+                              HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
+          </Border>
+        </Panel>
+      </ControlTemplate>
+    </Setter>
+    <Style Selector="^:pointerover">
+      <Setter Property="BorderBrush" Value="{DynamicResource Brush.BorderStrong}" />
+      <Setter Property="Background" Value="{DynamicResource Brush.SurfaceRaised}" />
+    </Style>
+    <Style Selector="^:selected">
+      <Setter Property="BorderBrush" Value="{DynamicResource Brush.Accent}" />
+    </Style>
+    <Style Selector="^:selected /template/ Border#Ring">
+      <Setter Property="IsVisible" Value="True" />
+      <Setter Property="Opacity" Value="0.35" />
+    </Style>
+    <Style Selector="^:focus-visible /template/ Border#Ring">
+      <Setter Property="IsVisible" Value="True" />
+    </Style>
+  </ControlTheme>
+
+  <ControlTheme x:Key="Tiles" TargetType="ListBox">
+    <Setter Property="AutoScrollToSelectedItem" Value="False" />
+    <Setter Property="ItemContainerTheme" Value="{StaticResource TileItem}" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Padding" Value="3" />
+    <Setter Property="ItemsPanel">
+      <ItemsPanelTemplate>
+        <WrapPanel Orientation="Horizontal" />
+      </ItemsPanelTemplate>
+    </Setter>
+    <Setter Property="Template">
+      <ControlTemplate>
+        <ItemsPresenter x:Name="PART_ItemsPresenter" Margin="{TemplateBinding Padding}" ItemsPanel="{TemplateBinding ItemsPanel}" />
+      </ControlTemplate>
+    </Setter>
+  </ControlTheme>
+
+  <!-- ===== Plain list (rows) ===== -->
+  <ControlTheme x:Key="PlainListItem" TargetType="ListBoxItem">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Padding" Value="12,8" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="FocusAdorner" Value="{x:Null}" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border x:Name="Row" Background="{TemplateBinding Background}" CornerRadius="{StaticResource Radius.Medium}"
+                Padding="{TemplateBinding Padding}">
+          <ContentPresenter x:Name="PART_ContentPresenter" Content="{TemplateBinding Content}"
+                            ContentTemplate="{TemplateBinding ContentTemplate}"
+                            HorizontalContentAlignment="Stretch" />
+        </Border>
+      </ControlTemplate>
+    </Setter>
+    <Style Selector="^:pointerover">
+      <Setter Property="Background" Value="{DynamicResource Brush.Hover}" />
+    </Style>
+    <Style Selector="^:selected">
+      <Setter Property="Background" Value="{DynamicResource Brush.AccentSubtle}" />
+    </Style>
+    <Style Selector="^:focus-visible /template/ Border#Row">
+      <Setter Property="BorderBrush" Value="{DynamicResource Brush.FocusRing}" />
+      <Setter Property="BorderThickness" Value="1" />
+    </Style>
+  </ControlTheme>
+
+  <ControlTheme x:Key="PlainList" TargetType="ListBox">
+    <Setter Property="ItemContainerTheme" Value="{StaticResource PlainListItem}" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <ScrollViewer x:Name="PART_ScrollViewer" Background="{TemplateBinding Background}"
+                      HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+          <ItemsPresenter x:Name="PART_ItemsPresenter" Margin="{TemplateBinding Padding}" ItemsPanel="{TemplateBinding ItemsPanel}" />
+        </ScrollViewer>
+      </ControlTemplate>
+    </Setter>
+  </ControlTheme>
+
+  <!-- ===== Sidebar navigation ===== -->
+  <ControlTheme x:Key="NavItem" TargetType="RadioButton">
+    <Setter Property="Height" Value="{StaticResource Height.NavItem}" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="HorizontalContentAlignment" Value="Left" />
+    <Setter Property="Padding" Value="12,0" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.TextSecondary}" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="CornerRadius" Value="{StaticResource Radius.Medium}" />
+    <Setter Property="FontSize" Value="{StaticResource FontSize.Body}" />
+    <Setter Property="FontWeight" Value="Medium" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="FocusAdorner" Value="{x:Null}" />
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition Property="Background" Duration="{StaticResource Duration.Fast}" />
+        <BrushTransition Property="Foreground" Duration="{StaticResource Duration.Fast}" />
+      </Transitions>
+    </Setter>
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Panel>
+          <Border x:Name="Bg" Background="{TemplateBinding Background}" CornerRadius="{TemplateBinding CornerRadius}" />
+          <Border x:Name="Indicator" Width="3" Height="16" CornerRadius="2" HorizontalAlignment="Left" Margin="0"
+                  Background="{DynamicResource Brush.Accent}" Opacity="0">
+            <Border.Transitions>
+              <Transitions>
+                <DoubleTransition Property="Opacity" Duration="{StaticResource Duration.Normal}" />
+              </Transitions>
+            </Border.Transitions>
+          </Border>
+          <Grid x:Name="Layout" ColumnDefinitions="Auto,*" Margin="{TemplateBinding Padding}">
+            <ui:Icon x:Name="NavIcon" Size="18" StrokeThickness="1.7" VerticalAlignment="Center"
+                     Data="{Binding (ui:Ui.Icon), RelativeSource={RelativeSource TemplatedParent}}" />
+            <ContentPresenter x:Name="PART_ContentPresenter" Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center"
+                              Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}" />
+          </Grid>
+        </Panel>
+      </ControlTemplate>
+    </Setter>
+    <Style Selector="^:pointerover">
+      <Setter Property="Background" Value="{DynamicResource Brush.Hover}" />
+      <Setter Property="Foreground" Value="{DynamicResource Brush.TextPrimary}" />
+    </Style>
+    <Style Selector="^:checked">
+      <Setter Property="Background" Value="{DynamicResource Brush.SurfaceHover}" />
+      <Setter Property="Foreground" Value="{DynamicResource Brush.TextPrimary}" />
+    </Style>
+    <Style Selector="^:checked /template/ Border#Indicator">
+      <Setter Property="Opacity" Value="1" />
+    </Style>
+    <Style Selector="^:checked /template/ ui|Icon#NavIcon">
+      <Setter Property="Foreground" Value="{DynamicResource Brush.AccentText}" />
+    </Style>
+    <Style Selector="^:focus-visible /template/ Border#Bg">
+      <Setter Property="BorderBrush" Value="{DynamicResource Brush.FocusRing}" />
+      <Setter Property="BorderThickness" Value="1" />
+    </Style>
+    <!-- Collapsed sidebar: icon only, centered -->
+    <Style Selector="^.compact">
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="^.compact /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
+    <Style Selector="^.compact /template/ Grid#Layout">
+      <Setter Property="HorizontalAlignment" Value="Center" />
+    </Style>
+  </ControlTheme>
+</ResourceDictionary>

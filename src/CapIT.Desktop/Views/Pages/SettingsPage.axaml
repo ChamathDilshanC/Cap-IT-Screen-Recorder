@@ -1,0 +1,245 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="using:ScreenRecorderApp.Controls"
+             xmlns:vm="using:ScreenRecorderApp.ViewModels"
+             x:Class="ScreenRecorderApp.Views.Pages.SettingsPage"
+             x:DataType="vm:ShellViewModel">
+  <UserControl.Styles>
+    <Style Selector="Grid.shortcut">
+      <Setter Property="Height" Value="44" />
+    </Style>
+    <Style Selector="ListBox#SectionNav ListBoxItem">
+      <Setter Property="Margin" Value="0,0,0,2" />
+    </Style>
+  </UserControl.Styles>
+
+  <ScrollViewer Classes="page">
+    <Border Padding="{StaticResource Pad.Page}" MaxWidth="1160">
+      <StackPanel>
+        <ui:PageHeader Title="Settings" Description="Preferences for Cap-IT. Recording options live on their own pages." />
+
+        <Grid ColumnDefinitions="196,32,*">
+          <!-- Secondary navigation -->
+          <ListBox x:Name="SectionNav" Theme="{StaticResource PlainList}" SelectedIndex="{Binding SettingsSectionIndex}" VerticalAlignment="Top">
+            <ListBoxItem>
+              <StackPanel Orientation="Horizontal" Spacing="10"><ui:Icon Data="{StaticResource Icon.Sliders}" /><TextBlock Text="General" /></StackPanel>
+            </ListBoxItem>
+            <ListBoxItem>
+              <StackPanel Orientation="Horizontal" Spacing="10"><ui:Icon Data="{StaticResource Icon.RecordCircle}" /><TextBlock Text="Recording" /></StackPanel>
+            </ListBoxItem>
+            <ListBoxItem>
+              <StackPanel Orientation="Horizontal" Spacing="10"><ui:Icon Data="{StaticResource Icon.HardDrive}" /><TextBlock Text="Storage" /></StackPanel>
+            </ListBoxItem>
+            <ListBoxItem>
+              <StackPanel Orientation="Horizontal" Spacing="10"><ui:Icon Data="{StaticResource Icon.Keyboard}" /><TextBlock Text="Shortcuts" /></StackPanel>
+            </ListBoxItem>
+            <ListBoxItem>
+              <StackPanel Orientation="Horizontal" Spacing="10"><ui:Icon Data="{StaticResource Icon.Download}" /><TextBlock Text="Updates" /></StackPanel>
+            </ListBoxItem>
+            <ListBoxItem>
+              <StackPanel Orientation="Horizontal" Spacing="10"><ui:Icon Data="{StaticResource Icon.Info}" /><TextBlock Text="About" /></StackPanel>
+            </ListBoxItem>
+          </ListBox>
+
+          <Panel Grid.Column="2">
+            <!-- General -->
+            <StackPanel Spacing="32" IsVisible="{Binding SettingsSectionIndex, Converter={x:Static ui:Converters.IndexIs}, ConverterParameter=0}">
+              <ui:SettingsSection Header="Appearance">
+                <StackPanel>
+                  <ui:SettingsRow Title="Theme" Description="System follows your Windows app mode." Icon="{StaticResource Icon.Palette}">
+                    <ListBox Theme="{StaticResource Segmented}" ItemsSource="{Binding Main.AppThemeOptions}" SelectedItem="{Binding Main.SelectedAppTheme}">
+                      <ListBox.ItemTemplate>
+                        <DataTemplate>
+                          <TextBlock Text="{Binding Label}" />
+                        </DataTemplate>
+                      </ListBox.ItemTemplate>
+                    </ListBox>
+                  </ui:SettingsRow>
+                  <ui:SettingsRow Title="Compact sidebar" Description="Icons only, more room for content. Ctrl+B toggles it anywhere." Icon="{StaticResource Icon.PanelLeft}">
+                    <ToggleSwitch IsChecked="{Binding IsSidebarCollapsed}" />
+                  </ui:SettingsRow>
+                </StackPanel>
+              </ui:SettingsSection>
+            </StackPanel>
+
+            <!-- Recording -->
+            <StackPanel Spacing="32" IsVisible="{Binding SettingsSectionIndex, Converter={x:Static ui:Converters.IndexIs}, ConverterParameter=1}">
+              <ui:SettingsSection Header="While recording">
+                <StackPanel>
+                  <ui:SettingsRow Title="Floating controller" Description="A compact timer with pause, stop and quick toggles. It never appears in your recording."
+                                  Icon="{StaticResource Icon.Timer}">
+                    <ToggleSwitch IsChecked="{Binding ShowRecordingController}" />
+                  </ui:SettingsRow>
+                  <ui:SettingsRow Title="Minimise Cap-IT while recording" Description="Keeps the app out of the way; it comes back when you stop."
+                                  Icon="{StaticResource Icon.Minus}">
+                    <ToggleSwitch IsChecked="{Binding HideWhileRecording}" />
+                  </ui:SettingsRow>
+                </StackPanel>
+              </ui:SettingsSection>
+              <ui:SettingsSection Header="Recording options" Description="Capture, audio and effects each have their own page.">
+                <StackPanel>
+                  <ui:SettingsRow Title="Source &amp; quality" Description="Display or window, resolution, frame rate, encoder." Icon="{StaticResource Icon.Monitor}">
+                    <Button Classes="small" Content="Open Capture" ui:Ui.Icon="{StaticResource Icon.ChevronRight}" Command="{Binding GoCaptureCommand}" />
+                  </ui:SettingsRow>
+                  <ui:SettingsRow Title="Audio" Description="System audio, microphone and noise suppression." Icon="{StaticResource Icon.Volume}">
+                    <Button Classes="small" Content="Open Audio" ui:Ui.Icon="{StaticResource Icon.ChevronRight}" Command="{Binding GoAudioCommand}" />
+                  </ui:SettingsRow>
+                </StackPanel>
+              </ui:SettingsSection>
+            </StackPanel>
+
+            <!-- Storage -->
+            <StackPanel Spacing="32" IsVisible="{Binding SettingsSectionIndex, Converter={x:Static ui:Converters.IndexIs}, ConverterParameter=2}">
+              <ui:SettingsSection Header="Output folder" Description="Where recordings and edited exports are saved.">
+                <StackPanel>
+                  <ui:SettingsRow Title="Save recordings to" Icon="{StaticResource Icon.Folder}" Description="{Binding Main.OutputDirectory}">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <Button Content="Change…" Command="{Binding ChooseOutputFolderCommand}" IsEnabled="{Binding Main.IsIdle}" />
+                      <Button Classes="icon outlined" ui:Ui.Icon="{StaticResource Icon.FolderOpen}" Command="{Binding OpenOutputFolderCommand}" ToolTip.Tip="Open in Explorer" />
+                    </StackPanel>
+                  </ui:SettingsRow>
+                </StackPanel>
+              </ui:SettingsSection>
+              <ui:SettingsSection Header="Folder structure" Description="Created automatically — originals and edits never mix.">
+                <Border Padding="20,16">
+                  <StackPanel Spacing="6">
+                    <TextBlock Classes="mono secondary" FontSize="12" Text="Recordings/2026-10-03/Recording_2026-10-03_00-01-03-123.mp4" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Classes="mono secondary" FontSize="12" Text="Edited/2026-10-03/Recording_…_edited_2026-10-03_00-05-44-456.mp4" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Classes="caption" Margin="0,8,0,0" TextWrapping="Wrap"
+                               Text="Edit settings are kept beside each video in a “Cap-IT Metadata” folder, so the original file is never modified." />
+                  </StackPanel>
+                </Border>
+              </ui:SettingsSection>
+            </StackPanel>
+
+            <!-- Shortcuts -->
+            <StackPanel Spacing="32" IsVisible="{Binding SettingsSectionIndex, Converter={x:Static ui:Converters.IndexIs}, ConverterParameter=3}">
+              <ui:SettingsSection Header="In Cap-IT">
+                <StackPanel Margin="20,4">
+                  <Grid Classes="shortcut" ColumnDefinitions="*,Auto">
+                    <TextBlock Classes="body" Text="Open settings" VerticalAlignment="Center" />
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                      <Border Classes="kbd"><TextBlock Text="Ctrl" /></Border><Border Classes="kbd"><TextBlock Text="," /></Border>
+                    </StackPanel>
+                  </Grid>
+                  <Border Classes="divider" />
+                  <Grid Classes="shortcut" ColumnDefinitions="*,Auto">
+                    <TextBlock Classes="body" Text="Open a recording in the editor" VerticalAlignment="Center" />
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                      <Border Classes="kbd"><TextBlock Text="Ctrl" /></Border><Border Classes="kbd"><TextBlock Text="O" /></Border>
+                    </StackPanel>
+                  </Grid>
+                  <Border Classes="divider" />
+                  <Grid Classes="shortcut" ColumnDefinitions="*,Auto">
+                    <TextBlock Classes="body" Text="Toggle sidebar" VerticalAlignment="Center" />
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                      <Border Classes="kbd"><TextBlock Text="Ctrl" /></Border><Border Classes="kbd"><TextBlock Text="B" /></Border>
+                    </StackPanel>
+                  </Grid>
+                  <Border Classes="divider" />
+                  <Grid Classes="shortcut" ColumnDefinitions="*,Auto">
+                    <TextBlock Classes="body" Text="Editor: play / pause" VerticalAlignment="Center" />
+                    <Border Grid.Column="1" Classes="kbd" VerticalAlignment="Center"><TextBlock Text="Space" /></Border>
+                  </Grid>
+                  <Border Classes="divider" />
+                  <Grid Classes="shortcut" ColumnDefinitions="*,Auto">
+                    <TextBlock Classes="body" Text="Editor: export video" VerticalAlignment="Center" />
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                      <Border Classes="kbd"><TextBlock Text="Ctrl" /></Border><Border Classes="kbd"><TextBlock Text="E" /></Border>
+                    </StackPanel>
+                  </Grid>
+                  <Border Classes="divider" />
+                  <Grid Classes="shortcut" ColumnDefinitions="*,Auto">
+                    <TextBlock Classes="body" Text="Editor: undo / redo" VerticalAlignment="Center" />
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                      <Border Classes="kbd"><TextBlock Text="Ctrl" /></Border><Border Classes="kbd"><TextBlock Text="Z" /></Border>
+                      <TextBlock Classes="caption" Text="/" Margin="4,0" VerticalAlignment="Center" />
+                      <Border Classes="kbd"><TextBlock Text="Ctrl" /></Border><Border Classes="kbd"><TextBlock Text="Y" /></Border>
+                    </StackPanel>
+                  </Grid>
+                  <Border Classes="divider" />
+                  <Grid Classes="shortcut" ColumnDefinitions="*,Auto">
+                    <TextBlock Classes="body" Text="Editor: full-screen preview" VerticalAlignment="Center" />
+                    <Border Grid.Column="1" Classes="kbd" VerticalAlignment="Center"><TextBlock Text="F11" /></Border>
+                  </Grid>
+                </StackPanel>
+              </ui:SettingsSection>
+              <ui:SettingsSection Header="Anywhere in Windows" Description="Active while Annotations is enabled — Cap-IT doesn't need focus.">
+                <StackPanel Margin="20,4">
+                  <Grid Classes="shortcut" ColumnDefinitions="*,Auto">
+                    <TextBlock Classes="body" Text="Toggle drawing mode" VerticalAlignment="Center" />
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                      <Border Classes="kbd"><TextBlock Text="Ctrl" /></Border><Border Classes="kbd"><TextBlock Text="Shift" /></Border><Border Classes="kbd"><TextBlock Text="D" /></Border>
+                    </StackPanel>
+                  </Grid>
+                  <Border Classes="divider" />
+                  <Grid Classes="shortcut" ColumnDefinitions="*,Auto">
+                    <TextBlock Classes="body" Text="Undo the last stroke" VerticalAlignment="Center" />
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                      <Border Classes="kbd"><TextBlock Text="Ctrl" /></Border><Border Classes="kbd"><TextBlock Text="Shift" /></Border><Border Classes="kbd"><TextBlock Text="Z" /></Border>
+                    </StackPanel>
+                  </Grid>
+                  <Border Classes="divider" />
+                  <Grid Classes="shortcut" ColumnDefinitions="*,Auto">
+                    <TextBlock Classes="body" Text="Duplicate the selected annotation" VerticalAlignment="Center" />
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                      <Border Classes="kbd"><TextBlock Text="Ctrl" /></Border><Border Classes="kbd"><TextBlock Text="D" /></Border>
+                    </StackPanel>
+                  </Grid>
+                  <Border Classes="divider" />
+                  <Grid Classes="shortcut" ColumnDefinitions="*,Auto">
+                    <TextBlock Classes="body" Text="Clear all drawings" VerticalAlignment="Center" />
+                    <Border Grid.Column="1" Classes="kbd" VerticalAlignment="Center"><TextBlock Text="Esc" /></Border>
+                  </Grid>
+                </StackPanel>
+              </ui:SettingsSection>
+            </StackPanel>
+
+            <!-- Updates -->
+            <StackPanel Spacing="32" IsVisible="{Binding SettingsSectionIndex, Converter={x:Static ui:Converters.IndexIs}, ConverterParameter=4}">
+              <ui:SettingsSection Header="Updates" Description="Cap-IT checks GitHub Releases at startup and every few minutes while open.">
+                <StackPanel>
+                  <ui:SettingsRow Title="{Binding Main.AppVersionText}" Description="{Binding Main.UpdateCheckStatus}" Icon="{StaticResource Icon.Download}">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <Button Content="Release notes" Command="{Binding Main.ViewReleaseNotesCommand}" />
+                      <Button Classes="primary" Content="Update now" Command="{Binding Main.UpdateNowCommand}" IsVisible="{Binding Main.UpdateAvailable}" />
+                      <Button Content="Check now" ui:Ui.Icon="{StaticResource Icon.Refresh}" Command="{Binding Main.CheckForUpdatesNowCommand}"
+                              IsVisible="{Binding !Main.UpdateAvailable}" />
+                    </StackPanel>
+                  </ui:SettingsRow>
+                </StackPanel>
+              </ui:SettingsSection>
+            </StackPanel>
+
+            <!-- About -->
+            <StackPanel Spacing="32" IsVisible="{Binding SettingsSectionIndex, Converter={x:Static ui:Converters.IndexIs}, ConverterParameter=5}">
+              <Border Classes="card" Padding="24">
+                <Grid ColumnDefinitions="Auto,*">
+                  <Border Width="64" Height="64" CornerRadius="16" Background="{DynamicResource Brush.Hover}" Margin="0,0,20,0">
+                    <Image Source="/Assets/Logo-Mark.png" Width="40" Height="40" />
+                  </Border>
+                  <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
+                    <TextBlock Classes="title" Text="Cap-IT Screen Recorder" />
+                    <TextBlock Classes="secondary" Text="{Binding Main.AppVersionText}" />
+                    <TextBlock Classes="secondary" Text="Designed and developed by ChamathDilshanC" />
+                  </StackPanel>
+                </Grid>
+              </Border>
+              <ui:SettingsSection Header="Built with">
+                <StackPanel>
+                  <ui:SettingsRow Title="Avalonia UI · .NET 8" Description="Interface and runtime. Windows 10 (2004) and Windows 11, x64." Icon="{StaticResource Icon.Layers}" />
+                  <ui:SettingsRow Title="DXGI Desktop Duplication · Windows Graphics Capture" Description="Display and window capture with GPU-assisted effects." Icon="{StaticResource Icon.Monitor}" />
+                  <ui:SettingsRow Title="FFmpeg" Description="Encoding with NVIDIA NVENC, AMD AMF, Intel Quick Sync or x264, plus MP4 and GIF export." Icon="{StaticResource Icon.Film}" />
+                </StackPanel>
+              </ui:SettingsSection>
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button ui:Ui.Icon="{StaticResource Icon.ExternalLink}" Content="Project on GitHub" Command="{Binding OpenProjectPageCommand}" />
+                <Button ui:Ui.Icon="{StaticResource Icon.AlertCircle}" Content="Report an issue" Command="{Binding ReportIssueCommand}" />
+              </StackPanel>
+            </StackPanel>
+          </Panel>
+        </Grid>
+      </StackPanel>
+    </Border>
+  </ScrollViewer>
+</UserControl>

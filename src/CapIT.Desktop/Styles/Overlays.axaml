@@ -1,0 +1,104 @@
+<!-- Dialog host template, toast cards, and overlay entrance motion. -->
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:ui="using:ScreenRecorderApp.Controls"
+                    xmlns:services="using:ScreenRecorderApp.Services">
+
+  <ControlTheme x:Key="{x:Type ui:DialogHost}" TargetType="ui:DialogHost">
+    <Setter Property="Focusable" Value="False" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Panel>
+          <ContentPresenter Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}" />
+          <Panel x:Name="Scrim" IsVisible="{TemplateBinding IsOpen}" Background="{DynamicResource Brush.Overlay}">
+            <Border x:Name="Card" Classes="raised" Width="460" Margin="24" Padding="24" CornerRadius="{StaticResource Radius.XLarge}"
+                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                    KeyboardNavigation.TabNavigation="Cycle"
+                    DataContext="{TemplateBinding CurrentRequest}">
+              <StackPanel Spacing="20" x:DataType="services:DialogRequest">
+                <StackPanel Spacing="16">
+                  <Border x:Name="IconTile" Classes="icon-tile" Width="40" Height="40" CornerRadius="10" HorizontalAlignment="Left"
+                          Classes.danger="{Binding IsError}" Classes.warn="{Binding IsWarning}"
+                          IsVisible="{Binding Icon, Converter={x:Static ObjectConverters.IsNotNull}}">
+                    <ui:Icon Data="{Binding Icon}" Size="20" />
+                  </Border>
+                  <StackPanel Spacing="8">
+                    <TextBlock Classes="title" FontSize="17" Text="{Binding Title}" TextWrapping="Wrap" />
+                    <TextBlock Classes="secondary" FontSize="13" LineHeight="20" Text="{Binding Message}" TextWrapping="Wrap"
+                               IsVisible="{Binding HasMessage}" />
+                  </StackPanel>
+                  <StackPanel Spacing="8" IsVisible="{Binding HasDetails}">
+                    <Button Classes="link small" Content="Technical details" HorizontalAlignment="Left"
+                            ui:Ui.Icon="{StaticResource Icon.ChevronDown}" Command="{Binding ToggleDetailsCommand}" />
+                    <Border Classes="inset" Padding="12" MaxHeight="180" IsVisible="{Binding ShowDetails}">
+                      <ScrollViewer>
+                        <SelectableTextBlock Classes="mono" FontSize="11" TextWrapping="Wrap" Text="{Binding Details}"
+                                             Foreground="{DynamicResource Brush.TextSecondary}" />
+                      </ScrollViewer>
+                    </Border>
+                  </StackPanel>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                  <Button Content="{Binding SecondaryText}" Command="{Binding SecondaryCommand}" IsVisible="{Binding HasSecondary}" />
+                  <Button x:Name="PART_Primary" Content="{Binding PrimaryText}" Command="{Binding PrimaryCommand}"
+                          Classes.primary="{Binding IsNotDanger}" Classes.danger="{Binding IsDanger}" IsDefault="True" />
+                </StackPanel>
+              </StackPanel>
+            </Border>
+          </Panel>
+        </Panel>
+      </ControlTemplate>
+    </Setter>
+    <Style Selector="^ /template/ Border#IconTile.danger">
+      <Setter Property="Background" Value="{DynamicResource Brush.ErrorSubtle}" />
+      <Setter Property="(TextElement.Foreground)" Value="{DynamicResource Brush.Error}" />
+    </Style>
+    <Style Selector="^ /template/ Border#IconTile.warn">
+      <Setter Property="Background" Value="{DynamicResource Brush.WarningSubtle}" />
+      <Setter Property="(TextElement.Foreground)" Value="{DynamicResource Brush.Warning}" />
+    </Style>
+    <Style Selector="^[IsOpen=True] /template/ Panel#Scrim">
+      <Style.Animations>
+        <Animation Duration="0:0:0.16" Easing="CubicEaseOut">
+          <KeyFrame Cue="0%"><Setter Property="Opacity" Value="0" /></KeyFrame>
+          <KeyFrame Cue="100%"><Setter Property="Opacity" Value="1" /></KeyFrame>
+        </Animation>
+      </Style.Animations>
+    </Style>
+    <Style Selector="^[IsOpen=True] /template/ Border#Card">
+      <Style.Animations>
+        <Animation Duration="0:0:0.2" Easing="CubicEaseOut">
+          <KeyFrame Cue="0%"><Setter Property="TranslateTransform.Y" Value="8" /></KeyFrame>
+          <KeyFrame Cue="100%"><Setter Property="TranslateTransform.Y" Value="0" /></KeyFrame>
+        </Animation>
+      </Style.Animations>
+    </Style>
+  </ControlTheme>
+
+  <!-- Toast card -->
+  <DataTemplate x:Key="ToastTemplate" x:DataType="services:ToastItem">
+    <Border Classes="raised toast" Width="360" Padding="14,12" CornerRadius="{StaticResource Radius.Large}">
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <Panel Width="20" Height="20" Margin="0,1,12,0" VerticalAlignment="Top">
+          <ui:Icon Data="{StaticResource Icon.CheckCircle}" Size="18" Foreground="{DynamicResource Brush.Success}" IsVisible="{Binding IsSuccess}" />
+          <ui:Icon Data="{StaticResource Icon.Info}" Size="18" Foreground="{DynamicResource Brush.Info}" IsVisible="{Binding IsInfo}" />
+          <ui:Icon Data="{StaticResource Icon.AlertTriangle}" Size="18" Foreground="{DynamicResource Brush.Warning}" IsVisible="{Binding IsWarning}" />
+          <ui:Icon Data="{StaticResource Icon.AlertCircle}" Size="18" Foreground="{DynamicResource Brush.Error}" IsVisible="{Binding IsError}" />
+        </Panel>
+        <StackPanel Grid.Column="1" Spacing="3" VerticalAlignment="Center">
+          <TextBlock Classes="row-title" Text="{Binding Title}" />
+          <TextBlock Classes="row-description" Text="{Binding Message}" IsVisible="{Binding HasMessage}" MaxLines="3"
+                     TextTrimming="CharacterEllipsis" />
+          <Button Classes="link small" Margin="0,4,0,0" HorizontalAlignment="Left" Content="{Binding ActionText}"
+                  IsVisible="{Binding HasAction}"
+                  Command="{Binding $parent[ItemsControl].((services:ToastService)DataContext).InvokeCommand}"
+                  CommandParameter="{Binding}" />
+        </StackPanel>
+        <Button Grid.Column="2" Classes="icon small" Width="24" Height="24" Margin="8,-4,-6,0" VerticalAlignment="Top"
+                ui:Ui.Icon="{StaticResource Icon.Close}" ToolTip.Tip="Dismiss"
+                Command="{Binding $parent[ItemsControl].((services:ToastService)DataContext).DismissCommand}"
+                CommandParameter="{Binding}" />
+      </Grid>
+    </Border>
+  </DataTemplate>
+</ResourceDictionary>

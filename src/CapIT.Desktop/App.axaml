@@ -1,0 +1,47 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="ScreenRecorderApp.App"
+             Name="Cap-IT Screen Recorder"
+             RequestedThemeVariant="Default">
+
+  <Application.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceInclude Source="/Styles/Tokens.axaml" />
+        <ResourceInclude Source="/Styles/Colors.axaml" />
+        <ResourceInclude Source="/Styles/Icons.axaml" />
+        <ResourceInclude Source="/Styles/Buttons.axaml" />
+        <ResourceInclude Source="/Styles/Lists.axaml" />
+        <ResourceInclude Source="/Styles/Controls.axaml" />
+        <ResourceInclude Source="/Styles/Overlays.axaml" />
+        <ResourceInclude Source="/Styles/Templates.axaml" />
+      </ResourceDictionary.MergedDictionaries>
+    </ResourceDictionary>
+  </Application.Resources>
+
+  <Application.Styles>
+    <FluentTheme>
+      <!-- Neutral palettes so Fluent controls we don't restyle (colour picker, calendars, menus) match. -->
+      <FluentTheme.Palettes>
+        <ColorPaletteResources x:Key="Dark" Accent="#22CBDD" RegionColor="#0B0D11"
+                               AltHigh="#0B0D11" AltLow="#0B0D11" AltMedium="#0B0D11" AltMediumHigh="#0B0D11" AltMediumLow="#0B0D11"
+                               BaseHigh="#E7EAEF" BaseLow="#272D36" BaseMedium="#8B94A2" BaseMediumHigh="#B3BBC7" BaseMediumLow="#5A6371"
+                               ChromeAltLow="#B3BBC7" ChromeBlackHigh="#000000" ChromeBlackLow="#B3BBC7" ChromeBlackMedium="#000000"
+                               ChromeBlackMediumLow="#000000" ChromeDisabledHigh="#272D36" ChromeDisabledLow="#8B94A2" ChromeGray="#6C7583"
+                               ChromeHigh="#6C7583" ChromeLow="#13161C" ChromeMedium="#191D24" ChromeMediumLow="#1E232B" ChromeWhite="#FFFFFF"
+                               ListLow="#191D24" ListMedium="#272D36" ErrorText="#F26D6D" />
+        <ColorPaletteResources x:Key="Light" Accent="#0A8FA0" RegionColor="#F4F5F7"
+                               AltHigh="#FFFFFF" AltLow="#FFFFFF" AltMedium="#FFFFFF" AltMediumHigh="#FFFFFF" AltMediumLow="#FFFFFF"
+                               BaseHigh="#12161C" BaseLow="#E4E7EC" BaseMedium="#78818F" BaseMediumHigh="#4D5664" BaseMediumLow="#A9B0BB"
+                               ChromeAltLow="#4D5664" ChromeBlackHigh="#000000" ChromeBlackLow="#D5DAE1" ChromeBlackMedium="#4D5664"
+                               ChromeBlackMediumLow="#A9B0BB" ChromeDisabledHigh="#D5DAE1" ChromeDisabledLow="#78818F" ChromeGray="#A9B0BB"
+                               ChromeHigh="#D5DAE1" ChromeLow="#F4F5F7" ChromeMedium="#F1F3F6" ChromeMediumLow="#FFFFFF" ChromeWhite="#FFFFFF"
+                               ListLow="#F1F3F6" ListMedium="#E4E7EC" ErrorText="#D23B3B" />
+      </FluentTheme.Palettes>
+    </FluentTheme>
+    <StyleInclude Source="avares://Avalonia.Controls.ColorPicker/Themes/Fluent/Fluent.xaml" />
+    <StyleInclude Source="/Styles/Typography.axaml" />
+    <StyleInclude Source="/Styles/Surfaces.axaml" />
+    <StyleInclude Source="/Styles/Motion.axaml" />
+  </Application.Styles>
+</Application>

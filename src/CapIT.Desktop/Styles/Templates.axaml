@@ -1,0 +1,76 @@
+<!-- Shared data templates. Commands resolve through the hosting page's ShellViewModel. -->
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:ui="using:ScreenRecorderApp.Controls"
+                    xmlns:vm="using:ScreenRecorderApp.ViewModels">
+
+  <!-- Recording card (grid view, Home "recent") -->
+  <DataTemplate x:Key="RecordingCardTemplate" x:DataType="vm:RecordingItem">
+    <Button Classes="card" Width="264" Margin="0,0,16,16"
+            Command="{Binding $parent[UserControl].((vm:ShellViewModel)DataContext).Recordings.OpenCommand}"
+            CommandParameter="{Binding}" ToolTip.Tip="{Binding FileName}">
+      <StackPanel>
+        <Border Height="148" Background="{DynamicResource Brush.Stage}">
+          <Panel>
+            <Image Source="{Binding Thumbnail}" Stretch="UniformToFill" IsVisible="{Binding HasThumbnail}" />
+            <ui:Icon Data="{StaticResource Icon.Film}" Size="26" Foreground="{DynamicResource Brush.TextMuted}"
+                     HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding !HasThumbnail}" />
+            <ui:StatusBadge Classes="accent" Text="{Binding KindLabel}" ShowDot="False" Margin="10"
+                            HorizontalAlignment="Left" VerticalAlignment="Top" IsVisible="{Binding IsEdited}" />
+            <ui:StatusBadge Classes="info" Text="{Binding KindLabel}" ShowDot="False" Margin="10"
+                            HorizontalAlignment="Left" VerticalAlignment="Top" IsVisible="{Binding IsGif}" />
+            <Border Background="#B3000000" CornerRadius="5" Padding="6,2" Margin="10"
+                    HorizontalAlignment="Right" VerticalAlignment="Bottom" IsVisible="{Binding HasDuration}">
+              <TextBlock Text="{Binding DurationText}" FontSize="11" FontWeight="SemiBold" Foreground="White" />
+            </Border>
+          </Panel>
+        </Border>
+        <Grid ColumnDefinitions="*,Auto" Margin="14,10,8,12">
+          <StackPanel Spacing="2" VerticalAlignment="Center">
+            <TextBlock Classes="row-title" Text="{Binding Title}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+            <TextBlock Classes="caption" Text="{Binding DateText}" TextTrimming="CharacterEllipsis" />
+          </StackPanel>
+          <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+            <Button Classes="icon small" ui:Ui.Icon="{StaticResource Icon.Folder}" ToolTip.Tip="Show in folder"
+                    Command="{Binding $parent[UserControl].((vm:ShellViewModel)DataContext).Recordings.RevealCommand}" CommandParameter="{Binding}" />
+            <Button Classes="icon small" ui:Ui.Icon="{StaticResource Icon.Trash}" ToolTip.Tip="Delete…"
+                    Command="{Binding $parent[UserControl].((vm:ShellViewModel)DataContext).Recordings.DeleteCommand}" CommandParameter="{Binding}" />
+          </StackPanel>
+        </Grid>
+      </StackPanel>
+    </Button>
+  </DataTemplate>
+
+  <!-- Recording row (list view) -->
+  <DataTemplate x:Key="RecordingRowTemplate" x:DataType="vm:RecordingItem">
+    <Grid ColumnDefinitions="Auto,*,96,120,88,Auto" Height="56">
+      <Border Width="88" Height="50" CornerRadius="6" ClipToBounds="True" Background="{DynamicResource Brush.Stage}" VerticalAlignment="Center">
+        <Panel>
+          <Image Source="{Binding Thumbnail}" Stretch="UniformToFill" IsVisible="{Binding HasThumbnail}" />
+          <ui:Icon Data="{StaticResource Icon.Film}" Size="16" Foreground="{DynamicResource Brush.TextMuted}" IsVisible="{Binding !HasThumbnail}" />
+        </Panel>
+      </Border>
+      <StackPanel Grid.Column="1" Margin="16,0" Spacing="2" VerticalAlignment="Center">
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <TextBlock Classes="row-title" Text="{Binding Title}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+          <ui:StatusBadge Classes="accent" Text="{Binding KindLabel}" ShowDot="False" IsVisible="{Binding IsEdited}" />
+          <ui:StatusBadge Classes="info" Text="{Binding KindLabel}" ShowDot="False" IsVisible="{Binding IsGif}" />
+        </StackPanel>
+        <TextBlock Classes="caption" Text="{Binding DateText}" />
+      </StackPanel>
+      <TextBlock Grid.Column="2" Classes="secondary" Text="{Binding DurationText}" VerticalAlignment="Center" />
+      <TextBlock Grid.Column="3" Classes="secondary" Text="{Binding ResolutionText}" VerticalAlignment="Center" />
+      <TextBlock Grid.Column="4" Classes="secondary" Text="{Binding SizeText}" VerticalAlignment="Center" />
+      <StackPanel Grid.Column="5" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+        <Button Classes="icon small" ui:Ui.Icon="{StaticResource Icon.Fill.Play}" ui:Ui.IconFilled="True" ToolTip.Tip="Play"
+                Command="{Binding $parent[UserControl].((vm:ShellViewModel)DataContext).Recordings.PlayCommand}" CommandParameter="{Binding}" />
+        <Button Classes="icon small" ui:Ui.Icon="{StaticResource Icon.Folder}" ToolTip.Tip="Show in folder"
+                Command="{Binding $parent[UserControl].((vm:ShellViewModel)DataContext).Recordings.RevealCommand}" CommandParameter="{Binding}" />
+        <Button Classes="icon small" ui:Ui.Icon="{StaticResource Icon.Trash}" ToolTip.Tip="Delete…"
+                Command="{Binding $parent[UserControl].((vm:ShellViewModel)DataContext).Recordings.DeleteCommand}" CommandParameter="{Binding}" />
+        <Button Classes="small" Margin="8,0,0,0" Content="Edit" IsVisible="{Binding CanEdit}"
+                Command="{Binding $parent[UserControl].((vm:ShellViewModel)DataContext).Recordings.OpenCommand}" CommandParameter="{Binding}" />
+      </StackPanel>
+    </Grid>
+  </DataTemplate>
+</ResourceDictionary>

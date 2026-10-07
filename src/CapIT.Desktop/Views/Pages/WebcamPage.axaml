@@ -1,0 +1,117 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="using:ScreenRecorderApp.Controls"
+             xmlns:vm="using:ScreenRecorderApp.ViewModels"
+             xmlns:m="using:ScreenRecorderApp.Models"
+             x:Class="ScreenRecorderApp.Views.Pages.WebcamPage"
+             x:DataType="vm:ShellViewModel">
+  <ScrollViewer Classes="page">
+    <Border Padding="{StaticResource Pad.Page}" MaxWidth="{StaticResource Width.Page}">
+      <StackPanel DataContext="{Binding Main}" x:DataType="vm:MainViewModel">
+        <ui:PageHeader Title="Webcam" Description="A picture-in-picture camera overlay, composited onto the recording live.">
+          <ui:PageHeader.Actions>
+            <ToggleSwitch IsChecked="{Binding WebcamEnabled}" Content="Enabled" FontWeight="Medium" />
+          </ui:PageHeader.Actions>
+        </ui:PageHeader>
+
+        <ui:AdaptiveColumns Breakpoint="960" SideWidth="400" SideFirstWhenStacked="False">
+          <StackPanel Spacing="32">
+            <ui:SettingsSection Header="Camera">
+              <StackPanel>
+                <ui:SettingsRow Title="Device" Description="The camera shown in the overlay." Icon="{StaticResource Icon.Video}">
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <ComboBox Classes="control-column" ItemsSource="{Binding Webcams}" SelectedItem="{Binding SelectedWebcam}"
+                              PlaceholderText="No camera found">
+                      <ComboBox.ItemTemplate>
+                        <DataTemplate>
+                          <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                        </DataTemplate>
+                      </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <Button Classes="icon outlined" ui:Ui.Icon="{StaticResource Icon.Refresh}" Command="{Binding RefreshWebcamsCommand}"
+                            ToolTip.Tip="Refresh cameras" />
+                  </StackPanel>
+                </ui:SettingsRow>
+              </StackPanel>
+            </ui:SettingsSection>
+
+            <ui:SettingsSection Header="Frame" Description="How the camera is shaped on the recording.">
+              <Border Padding="17,20,8,8">
+                <ListBox Theme="{StaticResource Tiles}" ItemsSource="{Binding WebcamTemplateOptions}" SelectedItem="{Binding SelectedWebcamTemplate}">
+                  <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="m:WebcamTemplateOption">
+                      <StackPanel Width="96" Spacing="10" Margin="0,16,0,12">
+                        <Panel Height="52" HorizontalAlignment="Center" VerticalAlignment="Center">
+                          <Border Width="{Binding Key, Converter={x:Static ui:Converters.WebcamTemplateWidth}}"
+                                  Height="{Binding Key, Converter={x:Static ui:Converters.WebcamTemplateHeight}}"
+                                  CornerRadius="{Binding Key, Converter={x:Static ui:Converters.WebcamTemplateRadius}}"
+                                  VerticalAlignment="Center" BorderThickness="2"
+                                  BorderBrush="{DynamicResource Brush.BorderStrong}">
+                            <Border.Background>
+                              <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%">
+                                <GradientStop Color="#3A4250" Offset="0" />
+                                <GradientStop Color="#1D2229" Offset="1" />
+                              </LinearGradientBrush>
+                            </Border.Background>
+                            <ui:Icon Data="{StaticResource Icon.Video}" Size="16" Foreground="#9AA3B0" />
+                          </Border>
+                          <Border Width="46" Height="46" CornerRadius="23" BorderThickness="2" BorderBrush="{DynamicResource Brush.Accent}"
+                                  IsVisible="{Binding Key, Converter={x:Static ui:Converters.IsNeonTemplate}}"
+                                  BoxShadow="0 0 10 1 #6622CBDD" />
+                        </Panel>
+                        <TextBlock Classes="row-title" Text="{Binding Label}" HorizontalAlignment="Center" />
+                      </StackPanel>
+                    </DataTemplate>
+                  </ListBox.ItemTemplate>
+                </ListBox>
+              </Border>
+            </ui:SettingsSection>
+
+            <ui:SettingsSection Header="Picture" Description="Tuned live on the preview and the recording overlay.">
+              <ui:SettingsSection.HeaderActions>
+                <Button Classes="ghost small" ui:Ui.Icon="{StaticResource Icon.Reset}" Content="Reset" Command="{Binding ResetWebcamAdjustmentsCommand}" />
+              </ui:SettingsSection.HeaderActions>
+              <StackPanel>
+                <ui:SettingsRow Title="Brightness" Icon="{StaticResource Icon.Sun}">
+                  <ui:SliderField Value="{Binding WebcamBrightness}" Minimum="-1" Maximum="1" Step="0.01" Format="{}{0:+0;-0;0}" ValueScale="100" />
+                </ui:SettingsRow>
+                <ui:SettingsRow Title="Contrast" Icon="{StaticResource Icon.Layers}">
+                  <ui:SliderField Value="{Binding WebcamContrast}" Minimum="0.5" Maximum="1.5" Step="0.01" Format="{}{0:0}%" ValueScale="100" />
+                </ui:SettingsRow>
+                <ui:SettingsRow Title="Saturation" Icon="{StaticResource Icon.Palette}">
+                  <ui:SliderField Value="{Binding WebcamSaturation}" Minimum="0" Maximum="2" Step="0.01" Format="{}{0:0}%" ValueScale="100" />
+                </ui:SettingsRow>
+                <ui:SettingsRow Title="Warmth" Icon="{StaticResource Icon.Tool.Blur}">
+                  <ui:SliderField Value="{Binding WebcamWarmth}" Minimum="-1" Maximum="1" Step="0.01" Format="{}{0:+0;-0;0}" ValueScale="100" />
+                </ui:SettingsRow>
+                <ui:SettingsRow Title="Smoothing" Description="Softens skin texture." Icon="{StaticResource Icon.Sparkles}">
+                  <ui:SliderField Value="{Binding WebcamSmoothing}" Minimum="0" Maximum="1" Step="0.01" Format="{}{0:0}%" ValueScale="100" />
+                </ui:SettingsRow>
+              </StackPanel>
+            </ui:SettingsSection>
+          </StackPanel>
+
+          <!-- Camera preview -->
+          <StackPanel Spacing="12">
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Classes="section" Text="Camera preview" VerticalAlignment="Center" />
+              <ui:StatusBadge Grid.Column="1" Classes="success" Text="{Binding WebcamStatusText}" IsVisible="{Binding HasWebcamPreview}" />
+            </Grid>
+            <ui:AspectRatioBox Ratio="1.3333">
+              <Border Classes="stage">
+                <Panel>
+                  <ui:FrameView Source="{Binding WebcamPreviewSource}" Version="{Binding WebcamPreviewVersion}" Stretch="Uniform"
+                                IsVisible="{Binding HasWebcamPreview}" />
+                  <ui:EmptyState IsVisible="{Binding !HasWebcamPreview}" Icon="{StaticResource Icon.Video}"
+                                 Title="{Binding WebcamStatusText}" Description="{Binding WebcamPreviewStatus}" />
+                </Panel>
+              </Border>
+            </ui:AspectRatioBox>
+            <TextBlock Classes="caption" TextWrapping="Wrap"
+                       Text="This is the same processed camera image that is placed on your recording." />
+          </StackPanel>
+        </ui:AdaptiveColumns>
+      </StackPanel>
+    </Border>
+  </ScrollViewer>
+</UserControl>

@@ -1,0 +1,44 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="using:ScreenRecorderApp.Controls"
+             x:Class="ScreenRecorderApp.Views.Chrome.CaptionButtons">
+  <UserControl.Styles>
+    <!-- Flat, full title-bar height; close turns red like Windows. -->
+    <Style Selector="Button.caption">
+      <Setter Property="Width" Value="46" />
+      <Setter Property="Height" Value="{StaticResource Height.TitleBar}" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="CornerRadius" Value="0" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Foreground" Value="{DynamicResource Brush.TextSecondary}" />
+      <Setter Property="IsTabStop" Value="False" />
+      <Setter Property="Cursor" Value="Arrow" />
+    </Style>
+    <Style Selector="Button.caption:pointerover">
+      <Setter Property="Background" Value="{DynamicResource Brush.Hover}" />
+      <Setter Property="Foreground" Value="{DynamicResource Brush.TextPrimary}" />
+    </Style>
+    <Style Selector="Button.caption:pressed">
+      <Setter Property="RenderTransform" Value="none" />
+      <Setter Property="Background" Value="{DynamicResource Brush.Pressed}" />
+    </Style>
+    <Style Selector="Button.caption.close:pointerover">
+      <Setter Property="Background" Value="#E81123" />
+      <Setter Property="Foreground" Value="White" />
+    </Style>
+  </UserControl.Styles>
+  <StackPanel Orientation="Horizontal">
+    <Button Classes="caption" Click="OnMinimizeClick" ToolTip.Tip="Minimize">
+      <ui:Icon Data="{StaticResource Icon.CaptionMinimize}" GridSize="11" Size="11" StrokeThickness="1" />
+    </Button>
+    <Button Classes="caption" Click="OnMaximizeClick" x:Name="MaximizeButton" ToolTip.Tip="Maximize">
+      <ui:Icon x:Name="MaximizeIcon" Data="{StaticResource Icon.CaptionMaximize}" GridSize="11" Size="11" StrokeThickness="1" />
+    </Button>
+    <Button Classes="caption close" Click="OnCloseClick" ToolTip.Tip="Close">
+      <ui:Icon Data="{StaticResource Icon.CaptionClose}" GridSize="11" Size="11" StrokeThickness="1" />
+    </Button>
+  </StackPanel>
+</UserControl>

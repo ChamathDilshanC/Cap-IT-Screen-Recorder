@@ -17,5 +17,8 @@ publish/
 # Installer output — the compiled .exe is published as a GitHub Release asset instead of committed
 Installer/Output/
 
+# Uncropped UI snapshot harness output; curated v3.13.0 screenshots live beside it
+docs/screenshots/v3.13.0/raw/
+
 # Bundled third-party binary (~97MB) — too large to track directly; see ffmpeg/README.md
 ffmpeg/ffmpeg.exe

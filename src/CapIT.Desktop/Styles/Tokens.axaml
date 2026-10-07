@@ -1,0 +1,99 @@
+<!--
+  Theme-independent design tokens. Every margin, gap, radius, control height, type size and motion
+  duration in the app comes from here — views never use ad-hoc values for these.
+  Spacing scale: 4 · 8 · 12 · 16 · 20 · 24 · 32 · 40 · 48 · 64
+-->
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=System.Runtime">
+
+  <!-- Spacing (gaps) -->
+  <x:Double x:Key="Space.1">4</x:Double>
+  <x:Double x:Key="Space.2">8</x:Double>
+  <x:Double x:Key="Space.3">12</x:Double>
+  <x:Double x:Key="Space.4">16</x:Double>
+  <x:Double x:Key="Space.5">20</x:Double>
+  <x:Double x:Key="Space.6">24</x:Double>
+  <x:Double x:Key="Space.8">32</x:Double>
+  <x:Double x:Key="Space.10">40</x:Double>
+  <x:Double x:Key="Space.12">48</x:Double>
+
+  <!-- Layout paddings -->
+  <Thickness x:Key="Pad.Page">32,28,32,40</Thickness>
+  <Thickness x:Key="Pad.Card">20</Thickness>
+  <Thickness x:Key="Pad.CardCompact">16</Thickness>
+  <Thickness x:Key="Pad.Row">20,14</Thickness>
+  <Thickness x:Key="Pad.Dialog">24</Thickness>
+  <Thickness x:Key="Pad.Panel">16</Thickness>
+
+  <!-- Content widths -->
+  <x:Double x:Key="Width.Page">1440</x:Double>
+  <x:Double x:Key="Width.Form">880</x:Double>
+  <x:Double x:Key="Width.Sidebar">232</x:Double>
+  <x:Double x:Key="Width.SidebarCompact">68</x:Double>
+  <x:Double x:Key="Width.Inspector">340</x:Double>
+  <x:Double x:Key="Width.ControlColumn">240</x:Double>
+
+  <!-- Corner radii -->
+  <CornerRadius x:Key="Radius.XSmall">4</CornerRadius>
+  <CornerRadius x:Key="Radius.Small">6</CornerRadius>
+  <CornerRadius x:Key="Radius.Medium">8</CornerRadius>
+  <CornerRadius x:Key="Radius.Large">12</CornerRadius>
+  <CornerRadius x:Key="Radius.XLarge">14</CornerRadius>
+  <CornerRadius x:Key="Radius.Pill">999</CornerRadius>
+  <!-- Fluent hooks so built-in templates share the same radii -->
+  <CornerRadius x:Key="ControlCornerRadius">8</CornerRadius>
+  <CornerRadius x:Key="OverlayCornerRadius">10</CornerRadius>
+
+  <!-- Control heights -->
+  <x:Double x:Key="Height.Small">30</x:Double>
+  <x:Double x:Key="Height.Default">36</x:Double>
+  <x:Double x:Key="Height.Large">44</x:Double>
+  <x:Double x:Key="Height.TitleBar">44</x:Double>
+  <x:Double x:Key="Height.NavItem">36</x:Double>
+
+  <!-- Typography -->
+  <FontFamily x:Key="Font.Ui">fonts:Inter#Inter, Segoe UI Variable Text, Segoe UI</FontFamily>
+  <FontFamily x:Key="Font.Mono">Cascadia Mono, Consolas, Courier New</FontFamily>
+  <x:Double x:Key="FontSize.Display">28</x:Double>
+  <x:Double x:Key="FontSize.Title">20</x:Double>
+  <x:Double x:Key="FontSize.Section">16</x:Double>
+  <x:Double x:Key="FontSize.CardTitle">14</x:Double>
+  <x:Double x:Key="FontSize.Body">13</x:Double>
+  <x:Double x:Key="FontSize.Secondary">12.5</x:Double>
+  <x:Double x:Key="FontSize.Caption">11.5</x:Double>
+  <x:Double x:Key="FontSize.Overline">10.5</x:Double>
+  <!-- Fluent hooks -->
+  <x:Double x:Key="ControlContentThemeFontSize">13</x:Double>
+  <x:Double x:Key="ToolTipContentThemeFontSize">12</x:Double>
+
+  <!-- Icons -->
+  <x:Double x:Key="IconSize.Small">14</x:Double>
+  <x:Double x:Key="IconSize.Default">16</x:Double>
+  <x:Double x:Key="IconSize.Medium">18</x:Double>
+  <x:Double x:Key="IconSize.Large">20</x:Double>
+  <x:Double x:Key="IconSize.XLarge">24</x:Double>
+
+  <!-- Motion -->
+  <sys:TimeSpan x:Key="Duration.Fast">0:0:0.12</sys:TimeSpan>
+  <sys:TimeSpan x:Key="Duration.Normal">0:0:0.18</sys:TimeSpan>
+  <sys:TimeSpan x:Key="Duration.Slow">0:0:0.22</sys:TimeSpan>
+
+  <!-- Fluent input metrics aligned to the 36px control height -->
+  <x:Double x:Key="TextControlThemeMinHeight">36</x:Double>
+  <Thickness x:Key="TextControlThemePadding">12,8,12,8</Thickness>
+  <Thickness x:Key="TextControlBorderThemeThickness">1</Thickness>
+  <Thickness x:Key="TextControlBorderThemeThicknessFocused">1</Thickness>
+  <x:Double x:Key="ComboBoxMinHeight">36</x:Double>
+  <Thickness x:Key="ComboBoxPadding">12,7,8,7</Thickness>
+  <Thickness x:Key="ComboBoxItemThemePadding">10,7,10,7</Thickness>
+  <Thickness x:Key="ComboBoxDropdownContentMargin">4</Thickness>
+  <x:Double x:Key="SliderHorizontalThumbWidth">16</x:Double>
+  <x:Double x:Key="SliderHorizontalThumbHeight">16</x:Double>
+  <x:Double x:Key="SliderTrackThemeHeight">4</x:Double>
+  <x:Double x:Key="ScrollBarSize">12</x:Double>
+  <Thickness x:Key="ToolTipBorderThemePadding">10,6,10,7</Thickness>
+  <Thickness x:Key="FlyoutContentThemePadding">12</Thickness>
+  <Thickness x:Key="MenuFlyoutPresenterThemePadding">4</Thickness>
+  <x:Double x:Key="CheckBoxMinHeight">28</x:Double>
+</ResourceDictionary>

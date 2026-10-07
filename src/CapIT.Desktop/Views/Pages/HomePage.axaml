@@ -1,0 +1,203 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="using:ScreenRecorderApp.Controls"
+             xmlns:vm="using:ScreenRecorderApp.ViewModels"
+             x:Class="ScreenRecorderApp.Views.Pages.HomePage"
+             x:DataType="vm:ShellViewModel">
+  <ScrollViewer Classes="page">
+    <Border Padding="{StaticResource Pad.Page}" MaxWidth="{StaticResource Width.Page}">
+      <StackPanel Spacing="32">
+
+        <!-- Hero -->
+        <Grid ColumnDefinitions="*,Auto">
+          <StackPanel Spacing="6" VerticalAlignment="Bottom">
+            <TextBlock Classes="secondary" Text="{Binding Main.Greeting}" />
+            <TextBlock Classes="display" Text="Ready to create your next recording?" TextWrapping="Wrap" />
+            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,0">
+              <ui:Icon Data="{StaticResource Icon.Monitor}" Size="14" Foreground="{DynamicResource Brush.TextMuted}" IsVisible="{Binding Main.IsMonitorCaptureMode}" />
+              <ui:Icon Data="{StaticResource Icon.AppWindow}" Size="14" Foreground="{DynamicResource Brush.TextMuted}" IsVisible="{Binding Main.IsWindowCaptureMode}" />
+              <TextBlock Classes="secondary" Text="{Binding Main.CurrentTargetSummary}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+            </StackPanel>
+          </StackPanel>
+          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Bottom" Margin="24,0,0,0">
+            <Button Classes="large" ui:Ui.Icon="{StaticResource Icon.Monitor}" Content="Choose source"
+                    Command="{Binding OpenSourcePickerCommand}" IsEnabled="{Binding Main.IsIdle}" />
+            <Button Classes="primary large" ui:Ui.Icon="{StaticResource Icon.Fill.Dot}" ui:Ui.IconFilled="True" Content="Start recording"
+                    Command="{Binding Main.StartRecordingCommand}" IsVisible="{Binding Main.IsIdle}" />
+            <Button Classes="danger large" ui:Ui.Icon="{StaticResource Icon.Fill.Stop}" ui:Ui.IconFilled="True" Content="Stop"
+                    Command="{Binding Main.StopRecordingCommand}" IsVisible="{Binding Main.IsBusy}" />
+          </StackPanel>
+        </Grid>
+
+        <ui:AdaptiveColumns Breakpoint="900" SideWidth="340" Spacing="24">
+          <!-- Live preview -->
+          <StackPanel Spacing="12">
+            <ui:AspectRatioBox Ratio="1.7778" MaxContentHeight="560">
+              <Border Classes="stage">
+                <Panel>
+                  <ui:FrameView x:Name="Preview" Source="{Binding Main.PreviewSource}" Version="{Binding Main.PreviewVersion}"
+                                Stretch="Uniform" IsVisible="{Binding Main.HasPreview}" />
+                  <ui:EmptyState IsVisible="{Binding Main.ShowPlaceholder}" Icon="{StaticResource Icon.Monitor}"
+                                 Title="No live preview yet" Description="Choose a display or a window to see exactly what will be recorded.">
+                    <Button Classes="primary" Content="Choose source" Command="{Binding OpenSourcePickerCommand}" IsEnabled="{Binding Main.IsIdle}" />
+                  </ui:EmptyState>
+
+                  <!-- Preview chips -->
+                  <StackPanel Orientation="Horizontal" Spacing="8" Margin="14" HorizontalAlignment="Left" VerticalAlignment="Top"
+                              IsVisible="{Binding Main.HasPreview}">
+                    <ui:StatusBadge Classes="recording on-media" Text="{Binding Main.ElapsedText}" IsVisible="{Binding Main.IsBusy}" />
+                    <ui:StatusBadge Classes="accent on-media" Text="LIVE PREVIEW" IsVisible="{Binding Main.IsIdle}" />
+                  </StackPanel>
+                  <Border Background="{DynamicResource Brush.WarningSubtle}" BorderBrush="{DynamicResource Brush.Warning}" BorderThickness="1"
+                          CornerRadius="8" Padding="12,7" Margin="14" HorizontalAlignment="Center" VerticalAlignment="Top"
+                          IsVisible="{Binding Main.IsScreenFrozen}">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <ui:Icon Data="{StaticResource Icon.Snowflake}" Size="14" Foreground="{DynamicResource Brush.Warning}" />
+                      <TextBlock Text="Screen frozen — audio and timer still recording" FontSize="12.5" VerticalAlignment="Center" />
+                    </StackPanel>
+                  </Border>
+                </Panel>
+              </Border>
+            </ui:AspectRatioBox>
+
+            <!-- Status + meters / live controls -->
+            <Border Classes="card" Padding="16,12">
+              <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                  <Panel Width="8" Height="8" VerticalAlignment="Center">
+                    <Ellipse Fill="{DynamicResource Brush.Success}" IsVisible="{Binding Main.IsIdle}" />
+                    <Ellipse Fill="{DynamicResource Brush.Recording}" IsVisible="{Binding Main.IsRecording}" />
+                    <Ellipse Fill="{DynamicResource Brush.Warning}" IsVisible="{Binding Main.IsPaused}" />
+                  </Panel>
+                  <TextBlock Classes="secondary" Text="{Binding Main.StatusMessage}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" MaxWidth="460" />
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="20" VerticalAlignment="Center" Margin="16,0,0,0">
+                  <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding Main.ShowMicMeter}" ToolTip.Tip="{Binding Main.MicStatusText}">
+                    <ui:Icon Data="{StaticResource Icon.Mic}" Size="14" Foreground="{DynamicResource Brush.TextSecondary}" VerticalAlignment="Center" />
+                    <ui:AudioMeter Width="96" Segments="16" Level="{Binding Main.MicLevel}" IsAvailable="{Binding Main.IsMicMonitorAvailable}" />
+                  </StackPanel>
+                  <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding Main.ShowSpeakerMeter}" ToolTip.Tip="{Binding Main.SpeakerStatusText}">
+                    <ui:Icon Data="{StaticResource Icon.Volume}" Size="14" Foreground="{DynamicResource Brush.TextSecondary}" VerticalAlignment="Center" />
+                    <ui:AudioMeter Width="96" Segments="16" Level="{Binding Main.SpeakerLevel}" IsAvailable="{Binding Main.IsSpeakerMonitorAvailable}" />
+                  </StackPanel>
+                  <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding Main.IsBusy}">
+                    <Button Classes="small" Content="{Binding Main.PauseResumeButtonText}" Command="{Binding Main.PauseResumeCommand}" />
+                    <Button Classes="small" ui:Ui.Icon="{StaticResource Icon.Snowflake}" Content="{Binding Main.ScreenPauseButtonText}"
+                            Command="{Binding Main.ToggleScreenPauseCommand}" ToolTip.Tip="Freeze the recorded image; audio and timer keep recording" />
+                  </StackPanel>
+                </StackPanel>
+              </Grid>
+            </Border>
+          </StackPanel>
+
+          <!-- Context panel -->
+          <StackPanel Spacing="24">
+            <StackPanel Spacing="12">
+              <TextBlock Classes="section" Text="Quick capture" />
+              <Grid ColumnDefinitions="*,12,*">
+                <Button Classes="card" Padding="16" Command="{Binding Main.UseWholeDisplayCommand}" IsEnabled="{Binding Main.IsIdle}"
+                        Classes.selected="{Binding Main.IsMonitorCaptureMode}">
+                  <StackPanel Spacing="10">
+                    <Border Classes="icon-tile" Classes.accent="{Binding Main.IsMonitorCaptureMode}">
+                      <ui:Icon Data="{StaticResource Icon.Monitor}" />
+                    </Border>
+                    <StackPanel Spacing="2">
+                      <TextBlock Classes="row-title" Text="Display" />
+                      <TextBlock Classes="caption" Text="Everything on screen" />
+                    </StackPanel>
+                  </StackPanel>
+                </Button>
+                <Button Grid.Column="2" Classes="card" Padding="16" Command="{Binding Main.UseSingleWindowCommand}" IsEnabled="{Binding Main.IsIdle}"
+                        Classes.selected="{Binding Main.IsWindowCaptureMode}">
+                  <StackPanel Spacing="10">
+                    <Border Classes="icon-tile" Classes.accent="{Binding Main.IsWindowCaptureMode}">
+                      <ui:Icon Data="{StaticResource Icon.AppWindow}" />
+                    </Border>
+                    <StackPanel Spacing="2">
+                      <TextBlock Classes="row-title" Text="Window" />
+                      <TextBlock Classes="caption" Text="One app, wherever it is" />
+                    </StackPanel>
+                  </StackPanel>
+                </Button>
+              </Grid>
+            </StackPanel>
+
+            <StackPanel Spacing="12">
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Classes="section" Text="Recording setup" VerticalAlignment="Center" />
+                <Button Grid.Column="1" Classes="link small" Content="Edit" Command="{Binding GoCaptureCommand}" />
+              </Grid>
+              <Border Classes="card" Padding="16,6">
+                <StackPanel>
+                  <Grid ColumnDefinitions="*,Auto" Height="36">
+                    <TextBlock Classes="secondary" Text="Resolution" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="1" Classes="body" Text="{Binding Main.SelectedResolution.Label}" VerticalAlignment="Center" />
+                  </Grid>
+                  <Border Classes="divider" />
+                  <Grid ColumnDefinitions="*,Auto" Height="36">
+                    <TextBlock Classes="secondary" Text="Frame rate" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="1" Classes="body" Text="{Binding Main.Fps, StringFormat='{}{0} FPS'}" VerticalAlignment="Center" />
+                  </Grid>
+                  <Border Classes="divider" />
+                  <Grid ColumnDefinitions="*,Auto" Height="36">
+                    <TextBlock Classes="secondary" Text="Encoder" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="1" Classes="body" Text="{Binding Main.SelectedEncoderOption.Short}" VerticalAlignment="Center" />
+                  </Grid>
+                  <Border Classes="divider" />
+                  <Grid ColumnDefinitions="*,Auto" Height="36">
+                    <TextBlock Classes="secondary" Text="Microphone" VerticalAlignment="Center" />
+                    <ToggleSwitch Grid.Column="1" IsChecked="{Binding Main.CaptureMicrophone}" IsEnabled="{Binding Main.CanChangeAudioLive}" />
+                  </Grid>
+                  <Border Classes="divider" />
+                  <Grid ColumnDefinitions="*,Auto" Height="36">
+                    <TextBlock Classes="secondary" Text="System audio" VerticalAlignment="Center" />
+                    <ToggleSwitch Grid.Column="1" IsChecked="{Binding Main.CaptureSystemAudio}" IsEnabled="{Binding Main.CanChangeAudioLive}" />
+                  </Grid>
+                </StackPanel>
+              </Border>
+            </StackPanel>
+
+            <StackPanel Spacing="12">
+              <TextBlock Classes="section" Text="Preset" />
+              <Border Classes="card" Padding="16">
+                <StackPanel Spacing="12">
+                  <ComboBox Classes="fill" PlaceholderText="Current settings" ItemsSource="{Binding Main.Presets}"
+                            SelectedItem="{Binding Main.SelectedPreset}" IsEnabled="{Binding Main.IsIdle}" />
+                  <Grid ColumnDefinitions="*,Auto,Auto">
+                    <TextBox Watermark="Save current as…" Text="{Binding Main.NewPresetName}" />
+                    <Button Grid.Column="1" Margin="8,0,0,0" Content="Save" Command="{Binding Main.SaveCustomPresetCommand}" IsEnabled="{Binding Main.IsIdle}" />
+                    <Button Grid.Column="2" Margin="4,0,0,0" Classes="icon" ui:Ui.Icon="{StaticResource Icon.Trash}"
+                            Command="{Binding Main.DeleteSelectedPresetCommand}" IsEnabled="{Binding Main.CanDeleteSelectedPreset}"
+                            ToolTip.Tip="Delete the selected custom preset" />
+                  </Grid>
+                </StackPanel>
+              </Border>
+            </StackPanel>
+          </StackPanel>
+        </ui:AdaptiveColumns>
+
+        <!-- Recent recordings -->
+        <StackPanel Spacing="14">
+          <Grid ColumnDefinitions="*,Auto,Auto">
+            <TextBlock Classes="section" Text="Recent recordings" VerticalAlignment="Center" />
+            <Button Grid.Column="1" Classes="ghost small" ui:Ui.Icon="{StaticResource Icon.FolderOpen}" Content="Open recording"
+                    Command="{Binding OpenRecordingCommand}" ToolTip.Tip="Open any MP4 or MKV in the editor · Ctrl+O" />
+            <Button Grid.Column="2" Classes="ghost small" Content="View all" Margin="4,0,0,0" Command="{Binding GoRecordingsCommand}" />
+          </Grid>
+          <ItemsControl ItemsSource="{Binding Recordings.Recent}" ItemTemplate="{StaticResource RecordingCardTemplate}"
+                        IsVisible="{Binding Recordings.HasRecent}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <WrapPanel />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+          </ItemsControl>
+          <Border Classes="card" Padding="24" IsVisible="{Binding !Recordings.HasRecent}">
+            <ui:EmptyState Icon="{StaticResource Icon.Film}" Title="No recordings yet"
+                           Description="Your recordings will appear here after your first capture." />
+          </Border>
+        </StackPanel>
+      </StackPanel>
+    </Border>
+  </ScrollViewer>
+</UserControl>

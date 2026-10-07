@@ -1,0 +1,117 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="using:ScreenRecorderApp.Controls"
+             xmlns:vm="using:ScreenRecorderApp.ViewModels"
+             xmlns:c="using:ScreenRecorderApp.Views.Components"
+             x:Class="ScreenRecorderApp.Views.Pages.CapturePage"
+             x:DataType="vm:ShellViewModel">
+  <ScrollViewer Classes="page">
+    <Border Padding="{StaticResource Pad.Page}" MaxWidth="{StaticResource Width.Page}">
+      <StackPanel>
+        <ui:PageHeader Title="Capture" Description="Choose what to record and how it's encoded.">
+          <ui:PageHeader.Actions>
+            <Button ui:Ui.Icon="{StaticResource Icon.Monitor}" Content="Browse sources" Command="{Binding OpenSourcePickerCommand}"
+                    IsEnabled="{Binding Main.IsIdle}" />
+          </ui:PageHeader.Actions>
+        </ui:PageHeader>
+
+        <Border Classes="callout warning" Margin="0,0,0,24" IsVisible="{Binding Main.IsBusy}">
+          <StackPanel Orientation="Horizontal" Spacing="10">
+            <ui:Icon Data="{StaticResource Icon.Info}" Foreground="{DynamicResource Brush.Warning}" VerticalAlignment="Top" Margin="0,1,0,0" />
+            <TextBlock Classes="secondary" TextWrapping="Wrap" MaxWidth="760"
+                       Text="Source, resolution, frame rate, encoder, bitrate and format are fixed while recording. Cursor, zoom, effects, webcam and audio can still change live." />
+          </StackPanel>
+        </Border>
+
+        <ui:AdaptiveColumns Breakpoint="960" SideWidth="360">
+          <StackPanel Spacing="32" DataContext="{Binding Main}" x:DataType="vm:MainViewModel">
+            <ui:SettingsSection Header="Source" Description="What ends up in the recording.">
+              <StackPanel>
+                <ui:SettingsRow Title="Capture mode" Description="Record a whole display, or a single app window wherever it is."
+                                Icon="{StaticResource Icon.Focus}">
+                  <ListBox Theme="{StaticResource Segmented}" ItemsSource="{Binding CaptureTargetKindOptions}"
+                           SelectedItem="{Binding SelectedCaptureTargetKind}" IsEnabled="{Binding IsIdle}">
+                    <ListBox.ItemTemplate>
+                      <DataTemplate>
+                        <TextBlock Text="{Binding Label}" />
+                      </DataTemplate>
+                    </ListBox.ItemTemplate>
+                  </ListBox>
+                </ui:SettingsRow>
+                <ui:SettingsRow Title="Display" Description="The monitor to record." Icon="{StaticResource Icon.Monitor}"
+                                IsVisible="{Binding IsMonitorCaptureMode}">
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <ComboBox Width="300" ItemsSource="{Binding Monitors}" SelectedItem="{Binding SelectedMonitor}"
+                              PlaceholderText="No display available" IsEnabled="{Binding IsIdle}" />
+                    <Button Classes="icon outlined" ui:Ui.Icon="{StaticResource Icon.Refresh}" Command="{Binding RefreshMonitorsCommand}"
+                            IsEnabled="{Binding IsIdle}" ToolTip.Tip="Refresh displays" />
+                  </StackPanel>
+                </ui:SettingsRow>
+                <ui:SettingsRow Title="Window" Description="Only this window is captured — overlapping windows are excluded."
+                                Icon="{StaticResource Icon.AppWindow}" IsVisible="{Binding IsWindowCaptureMode}">
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <ComboBox Width="300" ItemsSource="{Binding Windows}" SelectedItem="{Binding SelectedWindow}"
+                              PlaceholderText="No window available" IsEnabled="{Binding IsIdle}">
+                      <ComboBox.ItemTemplate>
+                        <DataTemplate>
+                          <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" MaxWidth="360" />
+                        </DataTemplate>
+                      </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <Button Classes="icon outlined" ui:Ui.Icon="{StaticResource Icon.Refresh}" Command="{Binding RefreshWindowsCommand}"
+                            IsEnabled="{Binding IsIdle}" ToolTip.Tip="Refresh windows" />
+                  </StackPanel>
+                </ui:SettingsRow>
+              </StackPanel>
+            </ui:SettingsSection>
+
+            <ui:SettingsSection Header="Quality" Description="Fixed for the length of a recording.">
+              <StackPanel>
+                <ui:SettingsRow Title="Resolution" Description="Output size, independent of the captured resolution." Icon="{StaticResource Icon.Ratio}">
+                  <ComboBox Classes="control-column" ItemsSource="{Binding ResolutionOptions}" SelectedItem="{Binding SelectedResolution}"
+                            IsEnabled="{Binding IsIdle}" />
+                </ui:SettingsRow>
+                <ui:SettingsRow Title="Frame rate" Description="60 FPS for smooth motion; 30 FPS for smaller files." Icon="{StaticResource Icon.Timer}">
+                  <ListBox Theme="{StaticResource Segmented}" ItemsSource="{Binding FpsOptions}" SelectedItem="{Binding Fps}" IsEnabled="{Binding IsIdle}">
+                    <ListBox.ItemTemplate>
+                      <DataTemplate>
+                        <TextBlock Text="{Binding StringFormat='{}{0} FPS'}" />
+                      </DataTemplate>
+                    </ListBox.ItemTemplate>
+                  </ListBox>
+                </ui:SettingsRow>
+                <ui:SettingsRow Title="Encoder" Description="Hardware encoders are used when available; Automatic picks the best one." Icon="{StaticResource Icon.Magic}">
+                  <ComboBox Classes="control-column" ItemsSource="{Binding EncoderOptions}" SelectedItem="{Binding SelectedEncoderOption}"
+                            IsEnabled="{Binding IsIdle}" />
+                </ui:SettingsRow>
+                <ui:SettingsRow Title="Video bitrate" Description="Higher keeps fine detail sharper but makes larger files." Icon="{StaticResource Icon.Wave}">
+                  <ui:SliderField Value="{Binding VideoBitrateKbps}" Minimum="2000" Maximum="40000" Step="500"
+                                  Format="{}{0:0.0} Mbps" ValueScale="0.001" IsEnabled="{Binding IsIdle}" />
+                </ui:SettingsRow>
+                <ui:SettingsRow Title="Format" Description="MP4 plays everywhere. MKV is safer if a recording can be interrupted." Icon="{StaticResource Icon.Film}">
+                  <ListBox Theme="{StaticResource Segmented}" ItemsSource="{Binding ContainerOptions}" SelectedItem="{Binding SelectedContainerOption}"
+                           IsEnabled="{Binding IsIdle}">
+                    <ListBox.ItemTemplate>
+                      <DataTemplate>
+                        <TextBlock Text="{Binding Label}" />
+                      </DataTemplate>
+                    </ListBox.ItemTemplate>
+                  </ListBox>
+                </ui:SettingsRow>
+                <ui:SettingsRow Title="Maximize text clarity"
+                                Description="Extra bitrate for fine detail and colour edges around text. Larger files. Automatic or Software encoder only."
+                                Icon="{StaticResource Icon.Tool.Text}">
+                  <ToggleSwitch IsChecked="{Binding MaximizeTextClarity}" IsEnabled="{Binding CanEditTextClarity}" />
+                </ui:SettingsRow>
+              </StackPanel>
+            </ui:SettingsSection>
+          </StackPanel>
+
+          <StackPanel Spacing="16">
+            <c:LivePreviewCard DataContext="{Binding Main}" Hint="The preview updates as soon as you change the source." />
+          </StackPanel>
+        </ui:AdaptiveColumns>
+      </StackPanel>
+    </Border>
+  </ScrollViewer>
+</UserControl>

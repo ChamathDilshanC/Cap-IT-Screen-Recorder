@@ -1,0 +1,268 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="using:ScreenRecorderApp.Controls"
+        xmlns:vm="using:ScreenRecorderApp.ViewModels"
+        xmlns:services="using:ScreenRecorderApp.Services"
+        xmlns:chrome="using:ScreenRecorderApp.Views.Chrome"
+        x:Class="ScreenRecorderApp.Views.MainWindow"
+        x:DataType="vm:ShellViewModel"
+        Title="Cap-IT Screen Recorder"
+        Icon="/Assets/AppIcon.ico"
+        Width="1360" Height="860" MinWidth="1024" MinHeight="640"
+        WindowStartupLocation="CenterScreen"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaChromeHints="NoChrome"
+        ExtendClientAreaTitleBarHeightHint="-1">
+
+  <Window.KeyBindings>
+    <KeyBinding Gesture="Ctrl+OemComma" Command="{Binding GoSettingsCommand}" />
+    <KeyBinding Gesture="Ctrl+O" Command="{Binding OpenRecordingCommand}" />
+    <KeyBinding Gesture="Ctrl+B" Command="{Binding ToggleSidebarCommand}" />
+  </Window.KeyBindings>
+
+  <Window.Resources>
+    <!-- Source picker tile: live 16:9 thumbnail + name -->
+    <DataTemplate x:Key="SourceTileTemplate" x:DataType="vm:CaptureSourceItem">
+      <StackPanel Width="248">
+        <Border Height="140" Background="{DynamicResource Brush.Stage}">
+          <Panel>
+            <ui:FrameView Source="{Binding Thumbnail}" Version="{Binding ThumbnailVersion}" Stretch="Uniform" IsVisible="{Binding HasThumbnail}" />
+            <StackPanel Spacing="8" HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding !HasThumbnail}">
+              <ui:Icon Data="{StaticResource Icon.Monitor}" Size="22" Foreground="{DynamicResource Brush.TextMuted}" IsVisible="{Binding IsDisplay}" />
+              <ui:Icon Data="{StaticResource Icon.AppWindow}" Size="22" Foreground="{DynamicResource Brush.TextMuted}" IsVisible="{Binding !IsDisplay}" />
+              <ProgressBar IsIndeterminate="True" Width="56" />
+            </StackPanel>
+          </Panel>
+        </Border>
+        <Border Classes="divider" />
+        <StackPanel Margin="14,10,14,12" Spacing="2">
+          <TextBlock Classes="row-title" Text="{Binding Title}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+          <TextBlock Classes="caption" Text="{Binding Subtitle}" TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+      </StackPanel>
+    </DataTemplate>
+  </Window.Resources>
+
+  <Window.Styles>
+    <Style Selector="Border#Sidebar">
+      <Setter Property="Width" Value="{StaticResource Width.Sidebar}" />
+    </Style>
+    <Style Selector="Border#Sidebar.collapsed">
+      <Setter Property="Width" Value="{StaticResource Width.SidebarCompact}" />
+    </Style>
+  </Window.Styles>
+
+  <Panel x:Name="Root" Background="{DynamicResource Brush.BackgroundPrimary}">
+    <ui:DialogHost x:Name="DialogHostControl">
+      <Grid RowDefinitions="Auto,*">
+
+        <!-- ===================== Title bar ===================== -->
+        <Grid x:Name="TitleBar" Grid.Row="0" Height="{StaticResource Height.TitleBar}" Background="{DynamicResource Brush.BackgroundSecondary}"
+              ColumnDefinitions="Auto,*,Auto,Auto">
+          <StackPanel Orientation="Horizontal" Margin="14,0,0,0" VerticalAlignment="Center">
+            <Button Classes="icon small" ui:Ui.Icon="{StaticResource Icon.PanelLeft}" Command="{Binding ToggleSidebarCommand}"
+                    ToolTip.Tip="Toggle sidebar · Ctrl+B" />
+            <Image Source="/Assets/Logo-Mark.png" Width="18" Height="18" Margin="12,0,0,0" VerticalAlignment="Center" />
+            <TextBlock Text="Cap-IT" FontWeight="SemiBold" Margin="8,0,0,0" VerticalAlignment="Center" />
+            <TextBlock Classes="muted" Text="/" Margin="10,0" VerticalAlignment="Center" />
+            <TextBlock Classes="secondary" Text="{Binding CurrentPage.Title}" VerticalAlignment="Center" />
+          </StackPanel>
+
+          <!-- Recording control: always reachable, whichever page is open -->
+          <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" Margin="0,0,12,0" VerticalAlignment="Center">
+            <ui:StatusBadge Classes="success" Text="{Binding Main.StateLabel}" IsVisible="{Binding Main.IsIdle}" />
+            <Button Classes="primary small" ui:Ui.Icon="{StaticResource Icon.Fill.Dot}" ui:Ui.IconFilled="True" Content="Record"
+                    Command="{Binding Main.StartRecordingCommand}" IsVisible="{Binding Main.IsIdle}"
+                    ToolTip.Tip="{Binding Main.CurrentTargetSummary}" />
+            <Border IsVisible="{Binding Main.IsBusy}" Background="{DynamicResource Brush.ErrorSubtle}" CornerRadius="{StaticResource Radius.Pill}"
+                    Padding="10,0,4,0" Height="30">
+              <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                <Ellipse Width="8" Height="8" Fill="{DynamicResource Brush.Recording}" VerticalAlignment="Center" />
+                <TextBlock Classes="timer" FontSize="12.5" Text="{Binding Main.ElapsedText}" VerticalAlignment="Center" />
+                <Button Classes="icon small" Width="24" Height="24" ui:Ui.Icon="{StaticResource Icon.Fill.Pause}" ui:Ui.IconFilled="True"
+                        Command="{Binding Main.PauseResumeCommand}" IsVisible="{Binding Main.IsRecording}" ToolTip.Tip="Pause" />
+                <Button Classes="icon small" Width="24" Height="24" ui:Ui.Icon="{StaticResource Icon.Fill.Play}" ui:Ui.IconFilled="True"
+                        Command="{Binding Main.PauseResumeCommand}" IsVisible="{Binding Main.IsPaused}" ToolTip.Tip="Resume" />
+                <Button Classes="icon small" Width="24" Height="24" Foreground="{DynamicResource Brush.Recording}"
+                        ui:Ui.Icon="{StaticResource Icon.Fill.Stop}" ui:Ui.IconFilled="True"
+                        Command="{Binding Main.StopRecordingCommand}" ToolTip.Tip="Stop and review" />
+              </StackPanel>
+            </Border>
+          </StackPanel>
+
+          <chrome:CaptionButtons Grid.Column="3" />
+        </Grid>
+
+        <!-- ===================== Body ===================== -->
+        <Grid Grid.Row="1" ColumnDefinitions="Auto,*">
+
+          <!-- Sidebar -->
+          <Border x:Name="Sidebar" Background="{DynamicResource Brush.BackgroundSecondary}"
+                  BorderBrush="{DynamicResource Brush.BorderSubtle}" BorderThickness="0,0,1,0"
+                  Classes.collapsed="{Binding IsSidebarCollapsed}">
+            <Border.Transitions>
+              <Transitions>
+                <DoubleTransition Property="Width" Duration="0:0:0.18" Easing="CubicEaseOut" />
+              </Transitions>
+            </Border.Transitions>
+            <Border.Resources>
+              <DataTemplate x:Key="NavItemTemplate" x:DataType="vm:NavigationItem">
+                <RadioButton Theme="{StaticResource NavItem}" GroupName="nav" Margin="0,1"
+                             Content="{Binding Title}" ui:Ui.Icon="{Binding Icon}" ToolTip.Tip="{Binding ToolTip}"
+                             IsChecked="{Binding IsSelected, Mode=OneWay}"
+                             Command="{Binding $parent[Window].((vm:ShellViewModel)DataContext).NavigateCommand}"
+                             CommandParameter="{Binding}"
+                             Classes.compact="{Binding $parent[Window].((vm:ShellViewModel)DataContext).IsSidebarCollapsed}" />
+              </DataTemplate>
+            </Border.Resources>
+            <DockPanel Margin="12,12,12,14">
+              <StackPanel DockPanel.Dock="Bottom" Spacing="0">
+                <ItemsControl ItemsSource="{Binding SystemItems}" ItemTemplate="{StaticResource NavItemTemplate}" />
+                <TextBlock Classes="caption" Margin="12,10,0,0" Text="{Binding Main.AppVersionText}" IsVisible="{Binding IsSidebarExpanded}" />
+              </StackPanel>
+              <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                <StackPanel>
+                  <TextBlock Classes="overline" Text="CAPTURE" Margin="12,4,0,8" IsVisible="{Binding IsSidebarExpanded}" />
+                  <ItemsControl ItemsSource="{Binding CaptureItems}" ItemTemplate="{StaticResource NavItemTemplate}" />
+                  <TextBlock Classes="overline" Text="MEDIA" Margin="12,20,0,8" IsVisible="{Binding IsSidebarExpanded}" />
+                  <Border Classes="divider" Margin="8,12" IsVisible="{Binding IsSidebarCollapsed}" />
+                  <ItemsControl ItemsSource="{Binding MediaItems}" ItemTemplate="{StaticResource NavItemTemplate}" />
+                </StackPanel>
+              </ScrollViewer>
+            </DockPanel>
+          </Border>
+
+          <!-- Content -->
+          <Grid Grid.Column="1" RowDefinitions="Auto,*">
+            <!-- App-wide update banner -->
+            <Border Grid.Row="0" Classes="callout accent" Margin="32,20,32,0" Padding="16,12"
+                    IsVisible="{Binding Main.UpdateAvailable}">
+              <Grid ColumnDefinitions="Auto,*,Auto">
+                <Border Classes="icon-tile accent" Margin="0,0,14,0" VerticalAlignment="Center">
+                  <ui:Icon Data="{StaticResource Icon.Download}" Foreground="{DynamicResource Brush.AccentText}" />
+                </Border>
+                <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                  <TextBlock Classes="row-title" Text="Update available" />
+                  <TextBlock Classes="row-description" Text="{Binding Main.UpdateBannerMessage}" />
+                  <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,6,0,0" IsVisible="{Binding Main.IsDownloadingUpdate}">
+                    <ProgressBar Width="220" Minimum="0" Maximum="100" Value="{Binding Main.UpdateDownloadProgress}" VerticalAlignment="Center" />
+                    <TextBlock Classes="caption" Text="{Binding Main.UpdateDownloadProgressText}" VerticalAlignment="Center" />
+                  </StackPanel>
+                </StackPanel>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" Margin="16,0,0,0" VerticalAlignment="Center">
+                  <Button Classes="small" Content="Release notes" Command="{Binding Main.ViewReleaseNotesCommand}" IsVisible="{Binding Main.IsNotDownloadingUpdate}" />
+                  <Button Classes="primary small" Content="Update now" Command="{Binding Main.UpdateNowCommand}" IsVisible="{Binding Main.IsNotDownloadingUpdate}" />
+                  <Button Classes="small" Content="Cancel" Command="{Binding Main.CancelUpdateDownloadCommand}" IsVisible="{Binding Main.IsDownloadingUpdate}" />
+                  <Button Classes="icon small" ui:Ui.Icon="{StaticResource Icon.Close}" Command="{Binding Main.DismissUpdateCommand}"
+                          IsVisible="{Binding Main.IsNotDownloadingUpdate}" ToolTip.Tip="Dismiss" />
+                </StackPanel>
+              </Grid>
+            </Border>
+
+            <TransitioningContentControl x:Name="PageHost" Grid.Row="1" Content="{Binding CurrentPage}">
+              <TransitioningContentControl.PageTransition>
+                <ui:FadeUpTransition />
+              </TransitioningContentControl.PageTransition>
+            </TransitioningContentControl>
+          </Grid>
+        </Grid>
+
+        <!-- ===================== Source picker overlay ===================== -->
+        <Panel Grid.Row="1" Classes="scrim" Background="{DynamicResource Brush.Overlay}" IsVisible="{Binding IsSourcePickerOpen}">
+          <ContentControl Content="{Binding SourcePicker}" Margin="32" MaxWidth="1180" MaxHeight="900"
+                          HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+            <ContentControl.ContentTemplate>
+              <DataTemplate x:DataType="vm:SourcePickerViewModel">
+                <Border Classes="raised overlay-card" Padding="0" CornerRadius="{StaticResource Radius.XLarge}">
+                  <Grid RowDefinitions="Auto,*,Auto">
+                    <!-- Header -->
+                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" Margin="24,20,16,16">
+                      <StackPanel Spacing="4" VerticalAlignment="Center">
+                        <TextBlock Classes="title" Text="Choose what to record" />
+                        <TextBlock Classes="secondary" Text="Live previews of every display and open window. Pick one to preview it on Home." />
+                      </StackPanel>
+                      <ListBox Grid.Column="1" Theme="{StaticResource Segmented}" SelectedIndex="{Binding FilterIndex}" Margin="16,0,8,0">
+                        <ListBoxItem ui:Ui.Icon="{StaticResource Icon.Monitor}" Content="Displays" />
+                        <ListBoxItem ui:Ui.Icon="{StaticResource Icon.AppWindow}" Content="Windows" />
+                      </ListBox>
+                      <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                        <Button Classes="icon" ui:Ui.Icon="{StaticResource Icon.Refresh}" Command="{Binding RescanCommand}" ToolTip.Tip="Rescan sources" />
+                        <Button Classes="icon" ui:Ui.Icon="{StaticResource Icon.Close}" Command="{Binding CancelCommand}" ToolTip.Tip="Close · Esc" />
+                      </StackPanel>
+                    </Grid>
+                    <Border Grid.Row="0" Classes="divider" VerticalAlignment="Bottom" />
+
+                    <!-- Tiles -->
+                    <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled" Padding="21,20,12,8">
+                      <Panel>
+                        <ListBox Theme="{StaticResource Tiles}" ItemsSource="{Binding Screens}" SelectedItem="{Binding SelectedScreen}"
+                                 IsVisible="{Binding ShowDisplays}" ItemTemplate="{StaticResource SourceTileTemplate}" />
+                        <StackPanel IsVisible="{Binding ShowWindows}">
+                          <ListBox Theme="{StaticResource Tiles}" ItemsSource="{Binding WindowSources}" SelectedItem="{Binding SelectedWindowSource}"
+                                   ItemTemplate="{StaticResource SourceTileTemplate}" />
+                          <ui:EmptyState IsVisible="{Binding HasNoWindows}" Margin="0,40" Icon="{StaticResource Icon.AppWindow}"
+                                         Title="No capturable windows" Description="Open the app you want to record, then rescan." />
+                        </StackPanel>
+                      </Panel>
+                    </ScrollViewer>
+
+                    <!-- Footer -->
+                    <Border Grid.Row="2" Classes="divider" VerticalAlignment="Top" />
+                    <Grid Grid.Row="2" ColumnDefinitions="*,Auto" Margin="24,14,24,16">
+                      <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                        <ui:Icon Data="{StaticResource Icon.Info}" Foreground="{DynamicResource Brush.TextMuted}" />
+                        <TextBlock Classes="secondary" Text="{Binding SelectionSummary}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                      </StackPanel>
+                      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" Margin="16,0,0,0">
+                        <Button Content="Cancel" Command="{Binding CancelCommand}" />
+                        <Button Content="Select" Command="{Binding SelectCommand}" />
+                        <Button Classes="primary" ui:Ui.Icon="{StaticResource Icon.Fill.Dot}" ui:Ui.IconFilled="True"
+                                Content="Select &amp; record" Command="{Binding SelectAndRecordCommand}" />
+                      </StackPanel>
+                    </Grid>
+                  </Grid>
+                </Border>
+              </DataTemplate>
+            </ContentControl.ContentTemplate>
+          </ContentControl>
+        </Panel>
+
+        <!-- ===================== FFmpeg setup ===================== -->
+        <Panel Grid.Row="0" Grid.RowSpan="2" Classes="scrim" Background="{DynamicResource Brush.Overlay}" IsVisible="{Binding Main.ShowFFmpegSetup}">
+          <Border Classes="raised overlay-card" Width="460" Padding="24" CornerRadius="{StaticResource Radius.XLarge}"
+                  HorizontalAlignment="Center" VerticalAlignment="Center">
+            <StackPanel Spacing="18">
+              <Border Classes="icon-tile accent" Width="40" Height="40" CornerRadius="10" HorizontalAlignment="Left">
+                <ui:Icon Data="{StaticResource Icon.Download}" Size="20" Foreground="{DynamicResource Brush.AccentText}" />
+              </Border>
+              <StackPanel Spacing="8">
+                <TextBlock Classes="title" FontSize="17" Text="One-time setup: FFmpeg" />
+                <TextBlock Classes="secondary" FontSize="13" LineHeight="20" TextWrapping="Wrap" Text="{Binding Main.FfmpegSetupMessage}" />
+              </StackPanel>
+              <StackPanel Spacing="8" IsVisible="{Binding Main.IsDownloadingFFmpeg}">
+                <ProgressBar Minimum="0" Maximum="100" Value="{Binding Main.FfmpegDownloadProgress}" />
+                <TextBlock Classes="caption" Text="{Binding Main.FFmpegDownloadProgressText}" />
+              </StackPanel>
+              <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                <Button Content="Not now" Command="{Binding Main.CancelFFmpegSetupCommand}" IsVisible="{Binding Main.FfmpegSetupRequired}" />
+                <Button Classes="primary" Content="Download FFmpeg" Command="{Binding Main.ConfirmDownloadFFmpegCommand}" IsVisible="{Binding Main.FfmpegSetupRequired}" />
+                <Button Content="Cancel download" Command="{Binding Main.CancelFFmpegDownloadCommand}" IsVisible="{Binding Main.IsDownloadingFFmpeg}" />
+              </StackPanel>
+            </StackPanel>
+          </Border>
+        </Panel>
+
+        <!-- ===================== Toasts ===================== -->
+        <ItemsControl Grid.Row="1" Margin="24" HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                      DataContext="{Binding Toasts}" x:DataType="services:ToastService"
+                      ItemsSource="{Binding Items}" ItemTemplate="{StaticResource ToastTemplate}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <StackPanel Spacing="8" />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+        </ItemsControl>
+      </Grid>
+    </ui:DialogHost>
+  </Panel>
+</Window>

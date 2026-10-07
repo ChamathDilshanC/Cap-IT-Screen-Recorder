@@ -1,0 +1,325 @@
+<!--
+  Button system. One template, variants by class:
+    (default) secondary · primary · ghost · danger · danger-ghost · link
+    icon (square, icon only) · toolbar (compact ghost)
+  Sizes: small (30) · default (36) · large (44).  Shape: pill.
+  Icons come from ui:Ui.Icon so markup never hand-builds icon/label stacks.
+-->
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:ui="using:ScreenRecorderApp.Controls">
+
+  <ControlTemplate x:Key="CapItButtonTemplate" TargetType="Button">
+    <Panel>
+      <Border x:Name="PART_FocusRing" Margin="-3" BorderThickness="2" IsVisible="False"
+              BorderBrush="{DynamicResource Brush.FocusRing}"
+              CornerRadius="{Binding CornerRadius, RelativeSource={RelativeSource TemplatedParent}, Converter={x:Static ui:Converters.CornerRadiusGrow}}" />
+      <Border x:Name="PART_Border"
+              Background="{TemplateBinding Background}"
+              BorderBrush="{TemplateBinding BorderBrush}"
+              BorderThickness="{TemplateBinding BorderThickness}"
+              CornerRadius="{TemplateBinding CornerRadius}"
+              Padding="{TemplateBinding Padding}">
+        <Grid ColumnDefinitions="Auto,*"
+              HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+              VerticalAlignment="{TemplateBinding VerticalContentAlignment}">
+          <ui:Icon x:Name="PART_Icon" VerticalAlignment="Center" Margin="0,0,8,0"
+                   Data="{Binding (ui:Ui.Icon), RelativeSource={RelativeSource TemplatedParent}}"
+                   IsFilled="{Binding (ui:Ui.IconFilled), RelativeSource={RelativeSource TemplatedParent}}"
+                   IsVisible="{Binding (ui:Ui.Icon), RelativeSource={RelativeSource TemplatedParent}, Converter={x:Static ObjectConverters.IsNotNull}}" />
+          <ContentPresenter x:Name="PART_ContentPresenter" Grid.Column="1"
+                            HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                            VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                            VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                            Content="{TemplateBinding Content}"
+                            ContentTemplate="{TemplateBinding ContentTemplate}"
+                            RecognizesAccessKey="True"
+                            IsVisible="{TemplateBinding Content, Converter={x:Static ObjectConverters.IsNotNull}}" />
+        </Grid>
+      </Border>
+    </Panel>
+  </ControlTemplate>
+
+  <ControlTheme x:Key="{x:Type Button}" TargetType="Button">
+    <Setter Property="Background" Value="{DynamicResource Brush.SurfaceRaised}" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.TextPrimary}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Brush.BorderNormal}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="{StaticResource Radius.Medium}" />
+    <Setter Property="Padding" Value="14,0" />
+    <Setter Property="MinHeight" Value="{StaticResource Height.Default}" />
+    <Setter Property="FontSize" Value="{StaticResource FontSize.Body}" />
+    <Setter Property="FontWeight" Value="Medium" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="FocusAdorner" Value="{x:Null}" />
+    <Setter Property="ClipToBounds" Value="False" />
+    <Setter Property="RenderTransform" Value="none" />
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition Property="Background" Duration="{StaticResource Duration.Fast}" />
+        <BrushTransition Property="BorderBrush" Duration="{StaticResource Duration.Fast}" />
+        <BrushTransition Property="Foreground" Duration="{StaticResource Duration.Fast}" />
+        <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.08" />
+      </Transitions>
+    </Setter>
+    <Setter Property="Template" Value="{StaticResource CapItButtonTemplate}" />
+
+    <Style Selector="^:pointerover">
+      <Setter Property="Background" Value="{DynamicResource Brush.SurfaceHover}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Brush.BorderStrong}" />
+    </Style>
+    <Style Selector="^:pressed">
+      <Setter Property="Background" Value="{DynamicResource Brush.SurfacePressed}" />
+      <Setter Property="RenderTransform" Value="scale(0.98)" />
+    </Style>
+    <Style Selector="^:disabled">
+      <Setter Property="Opacity" Value="0.45" />
+      <Setter Property="Cursor" Value="Arrow" />
+    </Style>
+    <Style Selector="^:focus-visible /template/ Border#PART_FocusRing">
+      <Setter Property="IsVisible" Value="True" />
+    </Style>
+
+    <!-- Sizes -->
+    <Style Selector="^.small">
+      <Setter Property="MinHeight" Value="{StaticResource Height.Small}" />
+      <Setter Property="Padding" Value="10,0" />
+      <Setter Property="FontSize" Value="{StaticResource FontSize.Secondary}" />
+      <Setter Property="CornerRadius" Value="{StaticResource Radius.Small}" />
+    </Style>
+    <Style Selector="^.large">
+      <Setter Property="MinHeight" Value="{StaticResource Height.Large}" />
+      <Setter Property="Padding" Value="20,0" />
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="CornerRadius" Value="10" />
+    </Style>
+    <Style Selector="^.small /template/ ui|Icon#PART_Icon">
+      <Setter Property="Size" Value="14" />
+    </Style>
+    <Style Selector="^.large /template/ ui|Icon#PART_Icon">
+      <Setter Property="Size" Value="18" />
+    </Style>
+    <Style Selector="^.pill">
+      <Setter Property="CornerRadius" Value="{StaticResource Radius.Pill}" />
+    </Style>
+    <Style Selector="^.stretch">
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+    </Style>
+
+    <!-- Primary -->
+    <Style Selector="^.primary">
+      <Setter Property="Background" Value="{DynamicResource Brush.Accent}" />
+      <Setter Property="Foreground" Value="{DynamicResource Brush.TextOnAccent}" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="^.primary:pointerover">
+      <Setter Property="Background" Value="{DynamicResource Brush.AccentHover}" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+    <Style Selector="^.primary:pressed">
+      <Setter Property="Background" Value="{DynamicResource Brush.AccentPressed}" />
+    </Style>
+
+    <!-- Ghost -->
+    <Style Selector="^.ghost">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="Foreground" Value="{DynamicResource Brush.TextSecondary}" />
+    </Style>
+    <Style Selector="^.ghost:pointerover">
+      <Setter Property="Background" Value="{DynamicResource Brush.Hover}" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="Foreground" Value="{DynamicResource Brush.TextPrimary}" />
+    </Style>
+    <Style Selector="^.ghost:pressed">
+      <Setter Property="Background" Value="{DynamicResource Brush.Pressed}" />
+    </Style>
+
+    <!-- Danger -->
+    <Style Selector="^.danger">
+      <Setter Property="Background" Value="{DynamicResource Brush.Danger}" />
+      <Setter Property="Foreground" Value="White" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="^.danger:pointerover">
+      <Setter Property="Background" Value="{DynamicResource Brush.DangerHover}" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+    <Style Selector="^.danger:pressed">
+      <Setter Property="Background" Value="{DynamicResource Brush.DangerPressed}" />
+    </Style>
+    <Style Selector="^.danger-ghost">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="Foreground" Value="{DynamicResource Brush.Error}" />
+    </Style>
+    <Style Selector="^.danger-ghost:pointerover">
+      <Setter Property="Background" Value="{DynamicResource Brush.ErrorSubtle}" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+
+    <!-- Link -->
+    <Style Selector="^.link">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="Foreground" Value="{DynamicResource Brush.AccentText}" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="MinHeight" Value="0" />
+    </Style>
+    <Style Selector="^.link:pointerover">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="Foreground" Value="{DynamicResource Brush.AccentHover}" />
+    </Style>
+    <Style Selector="^.link:pressed">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="RenderTransform" Value="none" />
+    </Style>
+
+    <!-- Icon-only (square). Combine with .small for 30px. -->
+    <Style Selector="^.icon">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="Foreground" Value="{DynamicResource Brush.TextSecondary}" />
+      <Setter Property="Width" Value="{StaticResource Height.Default}" />
+      <Setter Property="Height" Value="{StaticResource Height.Default}" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Padding" Value="0" />
+    </Style>
+    <Style Selector="^.icon /template/ ui|Icon#PART_Icon">
+      <Setter Property="Margin" Value="0" />
+    </Style>
+    <Style Selector="^.icon:pointerover">
+      <Setter Property="Background" Value="{DynamicResource Brush.Hover}" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="Foreground" Value="{DynamicResource Brush.TextPrimary}" />
+    </Style>
+    <Style Selector="^.icon:pressed">
+      <Setter Property="Background" Value="{DynamicResource Brush.Pressed}" />
+    </Style>
+    <Style Selector="^.icon.small">
+      <Setter Property="Width" Value="{StaticResource Height.Small}" />
+      <Setter Property="Height" Value="{StaticResource Height.Small}" />
+      <Setter Property="Padding" Value="0" />
+    </Style>
+    <Style Selector="^.icon.outlined">
+      <Setter Property="BorderBrush" Value="{DynamicResource Brush.BorderNormal}" />
+      <Setter Property="Background" Value="{DynamicResource Brush.SurfaceRaised}" />
+    </Style>
+
+    <!-- Card: a whole surface as a click target (recording cards, quick actions) -->
+    <Style Selector="^.card">
+      <Setter Property="Background" Value="{DynamicResource Brush.Surface}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Brush.BorderSubtle}" />
+      <Setter Property="CornerRadius" Value="{StaticResource Radius.Large}" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="VerticalContentAlignment" Value="Stretch" />
+      <Setter Property="FontWeight" Value="Normal" />
+      <Setter Property="ClipToBounds" Value="True" />
+    </Style>
+    <Style Selector="^.card:pointerover">
+      <Setter Property="Background" Value="{DynamicResource Brush.SurfaceRaised}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Brush.BorderStrong}" />
+    </Style>
+    <Style Selector="^.card.selected">
+      <Setter Property="BorderBrush" Value="{DynamicResource Brush.Accent}" />
+    </Style>
+    <Style Selector="^.card:pressed">
+      <Setter Property="RenderTransform" Value="scale(0.99)" />
+    </Style>
+
+    <!-- Toolbar: compact ghost used in editor/title bars -->
+    <Style Selector="^.toolbar">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="Foreground" Value="{DynamicResource Brush.TextSecondary}" />
+      <Setter Property="MinHeight" Value="{StaticResource Height.Small}" />
+      <Setter Property="Padding" Value="10,0" />
+      <Setter Property="CornerRadius" Value="{StaticResource Radius.Small}" />
+      <Setter Property="FontSize" Value="{StaticResource FontSize.Secondary}" />
+    </Style>
+    <Style Selector="^.toolbar:pointerover">
+      <Setter Property="Background" Value="{DynamicResource Brush.Hover}" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="Foreground" Value="{DynamicResource Brush.TextPrimary}" />
+    </Style>
+  </ControlTheme>
+
+  <!-- Toggle buttons share the template; checked = accent-tinted. -->
+  <ControlTheme x:Key="{x:Type ToggleButton}" TargetType="ToggleButton">
+    <Setter Property="Background" Value="{DynamicResource Brush.SurfaceRaised}" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.TextPrimary}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Brush.BorderNormal}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="{StaticResource Radius.Medium}" />
+    <Setter Property="Padding" Value="12,0" />
+    <Setter Property="MinHeight" Value="{StaticResource Height.Default}" />
+    <Setter Property="FontSize" Value="{StaticResource FontSize.Body}" />
+    <Setter Property="FontWeight" Value="Medium" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="FocusAdorner" Value="{x:Null}" />
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition Property="Background" Duration="{StaticResource Duration.Fast}" />
+        <BrushTransition Property="BorderBrush" Duration="{StaticResource Duration.Fast}" />
+        <BrushTransition Property="Foreground" Duration="{StaticResource Duration.Fast}" />
+      </Transitions>
+    </Setter>
+    <Setter Property="Template" Value="{StaticResource CapItButtonTemplate}" />
+    <Style Selector="^:pointerover">
+      <Setter Property="Background" Value="{DynamicResource Brush.SurfaceHover}" />
+    </Style>
+    <Style Selector="^:checked">
+      <Setter Property="Background" Value="{DynamicResource Brush.AccentSubtle}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Brush.Accent}" />
+      <Setter Property="Foreground" Value="{DynamicResource Brush.AccentText}" />
+    </Style>
+    <Style Selector="^:checked:pointerover">
+      <Setter Property="Background" Value="{DynamicResource Brush.AccentSubtleHover}" />
+    </Style>
+    <Style Selector="^:disabled">
+      <Setter Property="Opacity" Value="0.45" />
+    </Style>
+    <Style Selector="^:focus-visible /template/ Border#PART_FocusRing">
+      <Setter Property="IsVisible" Value="True" />
+    </Style>
+    <Style Selector="^.icon">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="Foreground" Value="{DynamicResource Brush.TextSecondary}" />
+      <Setter Property="Width" Value="{StaticResource Height.Default}" />
+      <Setter Property="Height" Value="{StaticResource Height.Default}" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Padding" Value="0" />
+    </Style>
+    <Style Selector="^.icon /template/ ui|Icon#PART_Icon">
+      <Setter Property="Margin" Value="0" />
+    </Style>
+    <Style Selector="^.icon:pointerover">
+      <Setter Property="Background" Value="{DynamicResource Brush.Hover}" />
+      <Setter Property="Foreground" Value="{DynamicResource Brush.TextPrimary}" />
+    </Style>
+    <Style Selector="^.icon:checked">
+      <Setter Property="Background" Value="{DynamicResource Brush.AccentSubtle}" />
+      <Setter Property="Foreground" Value="{DynamicResource Brush.AccentText}" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+    <Style Selector="^.icon.small">
+      <Setter Property="Width" Value="{StaticResource Height.Small}" />
+      <Setter Property="Height" Value="{StaticResource Height.Small}" />
+    </Style>
+    <Style Selector="^.small">
+      <Setter Property="MinHeight" Value="{StaticResource Height.Small}" />
+      <Setter Property="Padding" Value="10,0" />
+      <Setter Property="FontSize" Value="{StaticResource FontSize.Secondary}" />
+      <Setter Property="CornerRadius" Value="{StaticResource Radius.Small}" />
+    </Style>
+  </ControlTheme>
+</ResourceDictionary>

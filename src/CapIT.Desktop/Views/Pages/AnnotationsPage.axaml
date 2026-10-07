@@ -1,0 +1,158 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="using:ScreenRecorderApp.Controls"
+             xmlns:vm="using:ScreenRecorderApp.ViewModels"
+             xmlns:m="using:ScreenRecorderApp.Models"
+             x:Class="ScreenRecorderApp.Views.Pages.AnnotationsPage"
+             x:DataType="vm:ShellViewModel">
+  <UserControl.Resources>
+    <!-- Icon-only tool buttons with a tooltip -->
+    <ControlTheme x:Key="ToolItem" TargetType="ListBoxItem" BasedOn="{StaticResource ChipItem}">
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="Width" Value="40" />
+      <Setter Property="Height" Value="40" />
+      <Setter Property="Margin" Value="0,0,6,6" />
+    </ControlTheme>
+  </UserControl.Resources>
+
+  <ScrollViewer Classes="page">
+    <Border Padding="{StaticResource Pad.Page}" MaxWidth="{StaticResource Width.Page}">
+      <StackPanel DataContext="{Binding Main}" x:DataType="vm:MainViewModel">
+        <ui:PageHeader Title="Annotations" Description="Draw on screen while you record. Drawings are part of the desktop, so they're captured automatically.">
+          <ui:PageHeader.Actions>
+            <ToggleSwitch IsChecked="{Binding AnnotationsEnabled}" IsEnabled="{Binding CanToggleAnnotations}" Content="Enabled" FontWeight="Medium" />
+          </ui:PageHeader.Actions>
+        </ui:PageHeader>
+
+        <Border Classes="callout warning" Margin="0,0,0,24" IsVisible="{Binding IsWindowCaptureMode}">
+          <StackPanel Orientation="Horizontal" Spacing="10">
+            <ui:Icon Data="{StaticResource Icon.AlertTriangle}" Foreground="{DynamicResource Brush.Warning}" VerticalAlignment="Top" Margin="0,1,0,0" />
+            <TextBlock Classes="secondary" TextWrapping="Wrap" MaxWidth="760"
+                       Text="Annotations need display capture. Window capture only sees that window's own contents, not an overlay drawn on top of it." />
+          </StackPanel>
+        </Border>
+
+        <ui:AdaptiveColumns Breakpoint="960" SideWidth="340">
+          <StackPanel Spacing="32">
+            <ui:SettingsSection Header="Tools" Description="Pick a tool here or on the floating toolbar while drawing. Changes apply even mid-recording.">
+              <StackPanel IsEnabled="{Binding AnnotationsEnabled}">
+                <Border Padding="20,18,14,12">
+                  <StackPanel Spacing="14">
+                    <ListBox Theme="{StaticResource Chips}" ItemContainerTheme="{StaticResource ToolItem}"
+                             ItemsSource="{Binding QuickAnnotationTools}" SelectedItem="{Binding SelectedAnnotationTool}">
+                      <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="m:AnnotationToolOption">
+                          <ui:Icon Data="{Binding Value, Converter={x:Static ui:Converters.AnnotationToolIcon}}" Size="18" ToolTip.Tip="{Binding Label}" />
+                        </DataTemplate>
+                      </ListBox.ItemTemplate>
+                    </ListBox>
+                  </StackPanel>
+                </Border>
+                <ui:SettingsRow Title="All tools" Description="Shapes, diagrams, callouts, privacy blur and tutorial helpers." Icon="{StaticResource Icon.Layers}">
+                  <ComboBox Classes="control-column" ItemsSource="{Binding AnnotationToolOptions}" SelectedItem="{Binding SelectedAnnotationTool}">
+                    <ComboBox.ItemTemplate>
+                      <DataTemplate x:DataType="m:AnnotationToolOption">
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                          <ui:Icon Data="{Binding Value, Converter={x:Static ui:Converters.AnnotationToolIcon}}" Size="14" VerticalAlignment="Center" />
+                          <TextBlock Text="{Binding Label}" VerticalAlignment="Center" />
+                        </StackPanel>
+                      </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                  </ComboBox>
+                </ui:SettingsRow>
+              </StackPanel>
+            </ui:SettingsSection>
+
+            <ui:SettingsSection Header="Style">
+              <StackPanel IsEnabled="{Binding AnnotationsEnabled}">
+                <ui:SettingsRow Title="Color" Description="High-visibility colours that read on any background." Icon="{StaticResource Icon.Palette}">
+                  <ListBox Theme="{StaticResource Chips}" ItemsSource="{Binding AnnotationColorOptions}" SelectedItem="{Binding SelectedAnnotationColor}">
+                    <ListBox.ItemContainerTheme>
+                      <ControlTheme TargetType="ListBoxItem" BasedOn="{StaticResource ChipItem}">
+                        <Setter Property="Padding" Value="4" />
+                        <Setter Property="CornerRadius" Value="999" />
+                        <Setter Property="Margin" Value="0,0,6,0" />
+                      </ControlTheme>
+                    </ListBox.ItemContainerTheme>
+                    <ListBox.ItemTemplate>
+                      <DataTemplate x:DataType="m:AnnotationColorOption">
+                        <Ellipse Width="18" Height="18" Fill="{Binding Hex, Converter={x:Static ui:Converters.HexToBrush}}" ToolTip.Tip="{Binding Label}" />
+                      </DataTemplate>
+                    </ListBox.ItemTemplate>
+                  </ListBox>
+                </ui:SettingsRow>
+                <ui:SettingsRow Title="Stroke width" Icon="{StaticResource Icon.Pen}">
+                  <ui:SliderField Value="{Binding AnnotationStrokeThickness}" Minimum="2" Maximum="20" Step="1" Format="{}{0:0} px" />
+                </ui:SettingsRow>
+                <ui:SettingsRow Title="Lifetime" Description="Keep drawings, or fade them out automatically." Icon="{StaticResource Icon.Timer}">
+                  <ComboBox Classes="control-column" ItemsSource="{Binding AnnotationFadeOptions}" SelectedItem="{Binding SelectedAnnotationFade}" />
+                </ui:SettingsRow>
+              </StackPanel>
+            </ui:SettingsSection>
+          </StackPanel>
+
+          <!-- Shortcuts -->
+          <StackPanel Spacing="12">
+            <TextBlock Classes="section" Text="Shortcuts" />
+            <Border Classes="card" Padding="18,8">
+              <StackPanel>
+                <StackPanel.Styles>
+                  <Style Selector="Grid.shortcut">
+                    <Setter Property="Height" Value="40" />
+                  </Style>
+                </StackPanel.Styles>
+                <Grid Classes="shortcut" ColumnDefinitions="*,Auto">
+                  <TextBlock Classes="secondary" Text="Toggle drawing mode" VerticalAlignment="Center" />
+                  <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                    <Border Classes="kbd"><TextBlock Text="Ctrl" /></Border>
+                    <Border Classes="kbd"><TextBlock Text="Shift" /></Border>
+                    <Border Classes="kbd"><TextBlock Text="D" /></Border>
+                  </StackPanel>
+                </Grid>
+                <Border Classes="divider" />
+                <Grid Classes="shortcut" ColumnDefinitions="*,Auto">
+                  <TextBlock Classes="secondary" Text="Undo last stroke" VerticalAlignment="Center" />
+                  <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                    <Border Classes="kbd"><TextBlock Text="Ctrl" /></Border>
+                    <Border Classes="kbd"><TextBlock Text="Shift" /></Border>
+                    <Border Classes="kbd"><TextBlock Text="Z" /></Border>
+                  </StackPanel>
+                </Grid>
+                <Border Classes="divider" />
+                <Grid Classes="shortcut" ColumnDefinitions="*,Auto">
+                  <TextBlock Classes="secondary" Text="Duplicate selected" VerticalAlignment="Center" />
+                  <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                    <Border Classes="kbd"><TextBlock Text="Ctrl" /></Border>
+                    <Border Classes="kbd"><TextBlock Text="D" /></Border>
+                  </StackPanel>
+                </Grid>
+                <Border Classes="divider" />
+                <Grid Classes="shortcut" ColumnDefinitions="*,Auto">
+                  <TextBlock Classes="secondary" Text="Remove selected" VerticalAlignment="Center" />
+                  <Border Grid.Column="1" Classes="kbd" VerticalAlignment="Center"><TextBlock Text="Delete" /></Border>
+                </Grid>
+                <Border Classes="divider" />
+                <Grid Classes="shortcut" ColumnDefinitions="*,Auto">
+                  <TextBlock Classes="secondary" Text="Clear all drawings" VerticalAlignment="Center" />
+                  <Border Grid.Column="1" Classes="kbd" VerticalAlignment="Center"><TextBlock Text="Esc" /></Border>
+                </Grid>
+                <Border Classes="divider" />
+                <Grid Classes="shortcut" ColumnDefinitions="*,Auto">
+                  <TextBlock Classes="secondary" Text="Constrain shapes" VerticalAlignment="Center" />
+                  <Border Grid.Column="1" Classes="kbd" VerticalAlignment="Center"><TextBlock Text="Shift" /></Border>
+                </Grid>
+                <Border Classes="divider" />
+                <Grid Classes="shortcut" ColumnDefinitions="*,Auto">
+                  <TextBlock Classes="secondary" Text="Resize from center" VerticalAlignment="Center" />
+                  <Border Grid.Column="1" Classes="kbd" VerticalAlignment="Center"><TextBlock Text="Alt" /></Border>
+                </Grid>
+              </StackPanel>
+            </Border>
+            <TextBlock Classes="caption" TextWrapping="Wrap"
+                       Text="Shortcuts work anywhere once annotations are on — Cap-IT doesn't need focus, and you don't need to be recording. With Select, drag objects or their handles. With Text, click and type; Enter adds a line, Esc places it. The floating toolbar never appears in the recording." />
+          </StackPanel>
+        </ui:AdaptiveColumns>
+      </StackPanel>
+    </Border>
+  </ScrollViewer>
+</UserControl>

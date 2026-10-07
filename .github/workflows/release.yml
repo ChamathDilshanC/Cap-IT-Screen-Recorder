@@ -29,11 +29,16 @@ jobs:
       - name: Validate tag and project versions
         shell: pwsh
         run: |
-          [xml]$project = Get-Content ScreenRecorderApp.csproj
-          $projectVersion = ($project.Project.PropertyGroup.Version | Select-Object -First 1).ToString()
-          $tagVersion = "${{ inputs.tag || github.ref_name }}".TrimStart('v', 'V')
+          $releaseTag = $env:RELEASE_TAG
+          if ($releaseTag -notmatch '^v?\d+\.\d+\.\d+$') {
+            throw "Invalid release tag: $releaseTag. Expected vMAJOR.MINOR.PATCH."
+          }
+
+          [xml]$props = Get-Content Directory.Build.props
+          $projectVersion = ($props.Project.PropertyGroup.Version | Select-Object -First 1).ToString()
+          $tagVersion = $releaseTag.TrimStart('v', 'V')
           if ($projectVersion -ne $tagVersion) {
-            throw "Version mismatch: ScreenRecorderApp.csproj is $projectVersion but the release tag is ${{ inputs.tag || github.ref_name }}."
+            throw "Version mismatch: Directory.Build.props is $projectVersion but the release tag is $releaseTag."
           }
 
           $installer = Get-Content Installer\CapITScreenRecorder.iss |
@@ -41,18 +46,6 @@ jobs:
           $installerVersion = $installer.Matches[0].Groups[1].Value
           if ($installerVersion -ne $projectVersion) {
             throw "Version mismatch: Inno Setup script is $installerVersion but the project is $projectVersion."
-          }
-
-      - name: Create GitHub release if needed
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release view "$env:RELEASE_TAG" --repo "${{ github.repository }}" 2>$null
-          if ($LASTEXITCODE -ne 0) {
-            gh release create "$env:RELEASE_TAG" `
-              --repo "${{ github.repository }}" `
-              --title "Cap-IT Screen Recorder $env:RELEASE_TAG" `
-              --generate-notes
           }
 
       - name: Setup .NET
@@ -64,21 +57,64 @@ jobs:
         shell: pwsh
         run: choco install innosetup --no-progress --yes
 
+      - name: Download and verify FFmpeg
+        shell: pwsh
+        run: |
+          $releaseBase = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest"
+          $archiveName = "ffmpeg-n9.0-latest-win64-gpl-9.0.zip"
+          $archivePath = Join-Path $env:RUNNER_TEMP $archiveName
+          $checksumsPath = Join-Path $env:RUNNER_TEMP "ffmpeg-checksums.sha256"
+          $extractPath = Join-Path $env:RUNNER_TEMP "ffmpeg-extract"
+
+          Invoke-WebRequest -Uri "$releaseBase/$archiveName" -OutFile $archivePath
+          Invoke-WebRequest -Uri "$releaseBase/checksums.sha256" -OutFile $checksumsPath
+          $checksumLine = Get-Content $checksumsPath | Where-Object { $_.TrimEnd().EndsWith($archiveName) } | Select-Object -First 1
+          if (-not $checksumLine) { throw "No SHA-256 entry found for $archiveName." }
+          $expectedHash = ($checksumLine -split '\s+')[0].ToLowerInvariant()
+          $actualHash = (Get-FileHash $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actualHash -ne $expectedHash) { throw "FFmpeg archive checksum mismatch." }
+
+          Expand-Archive -LiteralPath $archivePath -DestinationPath $extractPath -Force
+          $ffmpeg = Get-ChildItem -LiteralPath $extractPath -Filter "ffmpeg.exe" -File -Recurse | Select-Object -First 1
+          if (-not $ffmpeg) { throw "ffmpeg.exe was not found in the downloaded archive." }
+          New-Item -ItemType Directory -Force -Path "ffmpeg" | Out-Null
+          Copy-Item -LiteralPath $ffmpeg.FullName -Destination "ffmpeg\ffmpeg.exe" -Force
+          & "ffmpeg\ffmpeg.exe" -version | Select-Object -First 1
+
       - name: Restore
-        run: dotnet restore ScreenRecorderApp.csproj -p:Platform=x64
+        run: dotnet restore src/CapIT.Desktop/CapIT.Desktop.csproj -r win-x64
 
       - name: Publish self-contained app
-        run: dotnet publish ScreenRecorderApp.csproj -c Release -p:Platform=x64 -r win-x64 --self-contained true -o publish
+        # Emits ScreenRecorderApp.exe — the name the installer, shortcuts, single-instance mutex and updater use.
+        run: dotnet publish src/CapIT.Desktop/CapIT.Desktop.csproj -c Release -r win-x64 --self-contained true -o publish
+
+      - name: Verify bundled media encoder
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "publish\ffmpeg\ffmpeg.exe")) {
+            throw "The self-contained publish is missing ffmpeg\ffmpeg.exe."
+          }
 
       - name: Build installer
         run: iscc Installer\CapITScreenRecorder.iss
 
-      - name: Upload installer to release
+      - name: Publish installer release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: pwsh
         run: |
           $version = "$env:RELEASE_TAG".TrimStart('v', 'V')
-          gh release upload "$env:RELEASE_TAG" `
-            "Installer\Output\CapIT-Screen-Recorder-Setup-$version.exe" `
-            --repo "${{ github.repository }}" --clobber
+          $installer = "Installer\Output\CapIT-Screen-Recorder-Setup-$version.exe"
+          if (-not (Test-Path $installer)) { throw "Installer was not produced: $installer" }
+
+          gh release view "$env:RELEASE_TAG" --repo "${{ github.repository }}" 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create "$env:RELEASE_TAG" $installer `
+              --repo "${{ github.repository }}" `
+              --title "Cap-IT Screen Recorder $env:RELEASE_TAG" `
+              --generate-notes --latest
+          } else {
+            gh release upload "$env:RELEASE_TAG" $installer `
+              --repo "${{ github.repository }}" --clobber
+          }
+          if ($LASTEXITCODE -ne 0) { throw "GitHub Release publication failed." }

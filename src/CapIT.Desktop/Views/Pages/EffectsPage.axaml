@@ -1,0 +1,57 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="using:ScreenRecorderApp.Controls"
+             xmlns:vm="using:ScreenRecorderApp.ViewModels"
+             xmlns:c="using:ScreenRecorderApp.Views.Components"
+             x:Class="ScreenRecorderApp.Views.Pages.EffectsPage"
+             x:DataType="vm:ShellViewModel">
+  <ScrollViewer Classes="page">
+    <Border Padding="{StaticResource Pad.Page}" MaxWidth="{StaticResource Width.Page}">
+      <StackPanel DataContext="{Binding Main}" x:DataType="vm:MainViewModel">
+        <ui:PageHeader Title="Effects" Description="Guide the viewer's eye. Every effect applies live — in the preview and mid-recording." />
+
+        <ui:AdaptiveColumns Breakpoint="960" SideWidth="360">
+          <StackPanel Spacing="32">
+            <ui:SettingsSection Header="Cursor">
+              <StackPanel>
+                <ui:SettingsRow Title="Show cursor" Description="Draw the mouse pointer in the recording." Icon="{StaticResource Icon.Cursor}">
+                  <ToggleSwitch IsChecked="{Binding CaptureCursor}" />
+                </ui:SettingsRow>
+                <ui:SettingsRow Title="Cursor style" Icon="{StaticResource Icon.Focus}"
+                                Description="Display capture only — window capture always shows the real system cursor."
+                                IsEnabled="{Binding CaptureCursor}">
+                  <ComboBox Classes="control-column" ItemsSource="{Binding CursorStyleOptions}" SelectedItem="{Binding SelectedCursorStyle}" />
+                </ui:SettingsRow>
+                <ui:SettingsRow Title="Spotlight" Description="Dims the screen around a sharp circle that follows the cursor." Icon="{StaticResource Icon.Sun}">
+                  <ToggleSwitch IsChecked="{Binding SpotlightEnabled}" />
+                </ui:SettingsRow>
+                <ui:SettingsRow Title="Spotlight radius" Icon="{StaticResource Icon.Tool.Ellipse}" IsEnabled="{Binding SpotlightEnabled}">
+                  <ui:SliderField Value="{Binding SpotlightRadius}" Minimum="80" Maximum="600" Step="10" Format="{}{0:0} px" />
+                </ui:SettingsRow>
+              </StackPanel>
+            </ui:SettingsSection>
+
+            <ui:SettingsSection Header="Click feedback">
+              <StackPanel>
+                <ui:SettingsRow Title="Click ripples" Description="A brief expanding ring wherever you click, left or right." Icon="{StaticResource Icon.CursorClick}">
+                  <ToggleSwitch IsChecked="{Binding ClickRipplesEnabled}" />
+                </ui:SettingsRow>
+                <ui:SettingsRow Title="Click sound" Description="Plays while recording. It's captured when system audio is on." Icon="{StaticResource Icon.Music}">
+                  <ToggleSwitch IsChecked="{Binding ClickSoundsEnabled}" />
+                </ui:SettingsRow>
+                <ui:SettingsRow Title="Sound" Icon="{StaticResource Icon.Wave}" IsEnabled="{Binding ClickSoundsEnabled}">
+                  <ComboBox Classes="control-column" ItemsSource="{Binding ClickSoundOptions}" SelectedItem="{Binding SelectedClickSound}" />
+                </ui:SettingsRow>
+                <ui:SettingsRow Title="Volume" Icon="{StaticResource Icon.Volume}" IsEnabled="{Binding ClickSoundsEnabled}">
+                  <ui:SliderField Value="{Binding ClickSoundVolume}" Minimum="0" Maximum="100" Step="5" Format="{}{0:0}%" />
+                </ui:SettingsRow>
+              </StackPanel>
+            </ui:SettingsSection>
+          </StackPanel>
+
+          <c:LivePreviewCard Hint="Cursor, spotlight and ripple changes appear here immediately." />
+        </ui:AdaptiveColumns>
+      </StackPanel>
+    </Border>
+  </ScrollViewer>
+</UserControl>

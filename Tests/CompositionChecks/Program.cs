@@ -140,6 +140,33 @@ using (var cancel = new CancellationTokenSource())
     try { await CompositionExportService.ExportAsync(source, TimeSpan.Zero, TimeSpan.FromSeconds(4), cancelOutput, false, pBase, [], new(), progress, cancel.Token); throw new Exception("Active cancellation ignored"); }
     catch (OperationCanceledException) { Check(await File.ReadAllTextAsync(cancelOutput) == "preserve", "Active FFmpeg cancellation preserves prior output"); }
 }
+// Text layers: every intro animation (plus a second static layer) must export, and the text must be
+// on screen once its animation has finished.
+foreach (var animation in new[] { "None", "Fade", "Pop", "SlideUp", "Bounce", "BounceLetters" })
+{
+    var texted = pBase.Clone();
+    texted.TextOverlays.Add(new PresentationTextOverlay { Text = "CAPIT", FontSize = 44, Color = "#FFFF00", Bold = true, X = .5, Y = .5, Animation = animation, AnimationDuration = .2 });
+    texted.TextOverlays.Add(new PresentationTextOverlay { Text = "Second", FontSize = 20, X = .5, Y = .15 });
+    var textOutput = Path.Combine(root, $"text-{animation}.mp4");
+    await CompositionExportService.ExportAsync(source, TimeSpan.Zero, TimeSpan.FromSeconds(.8), textOutput, false, texted, [], new() { IncludeAudio = false }, null, default);
+    Check(File.Exists(textOutput) && (await MediaProbe.ProbeAsync(textOutput)).Width > 0, "Text layer export · " + animation);
+    var textFrame = Path.Combine(root, $"text-{animation}.png");
+    await CompositionExportService.RunAsync(ffmpeg, ["-y", "-loglevel", "error", "-ss", "0.7", "-i", textOutput, "-frames:v", "1", textFrame], TimeSpan.FromSeconds(1), null, default);
+    using var textBitmap = new Bitmap(textFrame);
+    var yellow = 0;
+    for (var y = 0; y < textBitmap.Height; y += 2)
+    for (var x = 0; x < textBitmap.Width; x += 2)
+    {
+        var px = textBitmap.GetPixel(x, y);
+        if (px.R > 190 && px.G > 190 && px.B < 110) yellow++;
+    }
+    Check(yellow > 20, $"Text visible after the intro · {animation} ({yellow} samples)");
+}
+var bounceGif = pBase.Clone();
+bounceGif.TextOverlays.Add(new PresentationTextOverlay { Text = "GIF", FontSize = 40, Animation = "BounceLetters", AnimationDuration = .3 });
+var textGifPath = Path.Combine(root, "text-bounce.gif");
+await CompositionExportService.ExportAsync(source, TimeSpan.Zero, TimeSpan.FromSeconds(.6), textGifPath, true, bounceGif, [], new(), null, default);
+Check((await MediaProbe.ProbeAsync(textGifPath)).Width == 720, "Bouncing-letter text in GIF export");
 Check(!Directory.EnumerateFiles(root, ".capit-*").Any(), "No partial exports left behind");
 Console.WriteLine($"PASS: {assertions} assertions including real MP4/GIF exports. Artifacts: {root}");
 

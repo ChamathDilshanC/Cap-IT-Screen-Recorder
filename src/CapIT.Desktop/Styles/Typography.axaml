@@ -1,0 +1,96 @@
+<!--
+  Type scale (Inter). Classes are applied explicitly; TextBlock itself is never globally styled so
+  text inside buttons and other controls keeps inheriting their foreground.
+    display 28 · title 20 · section 16 · card-title 14 · body 13 · secondary 12.5 · caption 11.5 · overline 10.5
+-->
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <Style Selector="TextBlock.display">
+    <Setter Property="FontSize" Value="{StaticResource FontSize.Display}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="LetterSpacing" Value="-0.5" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.TextPrimary}" />
+  </Style>
+  <Style Selector="TextBlock.title">
+    <Setter Property="FontSize" Value="{StaticResource FontSize.Title}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="LetterSpacing" Value="-0.25" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.TextPrimary}" />
+  </Style>
+  <Style Selector="TextBlock.section">
+    <Setter Property="FontSize" Value="{StaticResource FontSize.Section}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.TextPrimary}" />
+  </Style>
+  <Style Selector="TextBlock.card-title">
+    <Setter Property="FontSize" Value="{StaticResource FontSize.CardTitle}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.TextPrimary}" />
+  </Style>
+  <Style Selector="TextBlock.row-title">
+    <Setter Property="FontSize" Value="{StaticResource FontSize.Body}" />
+    <Setter Property="FontWeight" Value="Medium" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.TextPrimary}" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+  </Style>
+  <Style Selector="TextBlock.row-description">
+    <Setter Property="FontSize" Value="{StaticResource FontSize.Secondary}" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.TextSecondary}" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+    <Setter Property="LineHeight" Value="18" />
+  </Style>
+  <Style Selector="TextBlock.body">
+    <Setter Property="FontSize" Value="{StaticResource FontSize.Body}" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.TextPrimary}" />
+  </Style>
+  <Style Selector="TextBlock.secondary">
+    <Setter Property="FontSize" Value="{StaticResource FontSize.Secondary}" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.TextSecondary}" />
+    <Setter Property="LineHeight" Value="18" />
+  </Style>
+  <Style Selector="TextBlock.muted">
+    <Setter Property="Foreground" Value="{DynamicResource Brush.TextMuted}" />
+  </Style>
+  <Style Selector="TextBlock.caption">
+    <Setter Property="FontSize" Value="{StaticResource FontSize.Caption}" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.TextMuted}" />
+  </Style>
+  <Style Selector="TextBlock.overline">
+    <Setter Property="FontSize" Value="{StaticResource FontSize.Overline}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="LetterSpacing" Value="0.8" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.TextMuted}" />
+  </Style>
+  <Style Selector="TextBlock.value">
+    <Setter Property="FontSize" Value="{StaticResource FontSize.Secondary}" />
+    <Setter Property="FontWeight" Value="Medium" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.TextSecondary}" />
+  </Style>
+  <Style Selector="TextBlock.mono">
+    <Setter Property="FontFamily" Value="{StaticResource Font.Mono}" />
+  </Style>
+  <Style Selector="TextBlock.timer">
+    <Setter Property="FontFamily" Value="{StaticResource Font.Mono}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.TextPrimary}" />
+  </Style>
+  <Style Selector="TextBlock.accent">
+    <Setter Property="Foreground" Value="{DynamicResource Brush.AccentText}" />
+  </Style>
+  <Style Selector="TextBlock.error">
+    <Setter Property="Foreground" Value="{DynamicResource Brush.Error}" />
+  </Style>
+  <Style Selector="TextBlock.warning">
+    <Setter Property="Foreground" Value="{DynamicResource Brush.Warning}" />
+  </Style>
+  <Style Selector="TextBlock.success">
+    <Setter Property="Foreground" Value="{DynamicResource Brush.Success}" />
+  </Style>
+  <Style Selector="TextBlock.field-label">
+    <Setter Property="FontSize" Value="{StaticResource FontSize.Secondary}" />
+    <Setter Property="FontWeight" Value="Medium" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.TextSecondary}" />
+    <Setter Property="Margin" Value="0,0,0,6" />
+  </Style>
+</Styles>

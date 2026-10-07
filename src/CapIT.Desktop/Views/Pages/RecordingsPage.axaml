@@ -1,0 +1,95 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="using:ScreenRecorderApp.Controls"
+             xmlns:vm="using:ScreenRecorderApp.ViewModels"
+             x:Class="ScreenRecorderApp.Views.Pages.RecordingsPage"
+             x:DataType="vm:ShellViewModel">
+  <ScrollViewer Classes="page">
+    <Border Padding="{StaticResource Pad.Page}" MaxWidth="{StaticResource Width.Page}">
+      <StackPanel>
+        <ui:PageHeader Title="Recordings" Description="{Binding Recordings.LibraryPath}">
+          <ui:PageHeader.Actions>
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <TextBox Width="240" Watermark="Search recordings…" Text="{Binding Recordings.SearchText}">
+                <TextBox.InnerLeftContent>
+                  <ui:Icon Data="{StaticResource Icon.Search}" Size="14" Margin="12,0,0,0" Foreground="{DynamicResource Brush.TextMuted}" />
+                </TextBox.InnerLeftContent>
+              </TextBox>
+              <ListBox Theme="{StaticResource Segmented}" SelectedIndex="{Binding Recordings.IsGridLayout, Converter={x:Static ui:Converters.BoolToIndex}}">
+                <ListBoxItem ui:Ui.Icon="{StaticResource Icon.Grid}" Padding="9,0" ToolTip.Tip="Grid" />
+                <ListBoxItem ui:Ui.Icon="{StaticResource Icon.List}" Padding="9,0" ToolTip.Tip="List" />
+              </ListBox>
+              <Button Classes="icon outlined" ui:Ui.Icon="{StaticResource Icon.Refresh}" Command="{Binding Recordings.RefreshCommand}" ToolTip.Tip="Refresh" />
+              <Button ui:Ui.Icon="{StaticResource Icon.FolderOpen}" Content="Open folder" Command="{Binding Recordings.OpenLibraryFolderCommand}" />
+            </StackPanel>
+          </ui:PageHeader.Actions>
+        </ui:PageHeader>
+
+        <!-- Loading -->
+        <StackPanel Spacing="12" IsVisible="{Binding Recordings.IsLoading}" Margin="0,8">
+          <ProgressBar IsIndeterminate="True" Width="200" HorizontalAlignment="Left" />
+          <TextBlock Classes="caption" Text="Reading your recordings…" />
+        </StackPanel>
+
+        <!-- Empty library -->
+        <Border Classes="card" Padding="40" IsVisible="{Binding Recordings.IsEmpty}">
+          <ui:EmptyState Icon="{StaticResource Icon.Film}" Title="No recordings yet"
+                         Description="Your recordings and edited exports will appear here after your first capture.">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <Button Content="Open recording…" Command="{Binding OpenRecordingCommand}" />
+              <Button Classes="primary" ui:Ui.Icon="{StaticResource Icon.Fill.Dot}" ui:Ui.IconFilled="True" Content="Start recording"
+                      Command="{Binding GoHomeCommand}" />
+            </StackPanel>
+          </ui:EmptyState>
+        </Border>
+
+        <!-- No search matches -->
+        <Border Classes="card" Padding="40" IsVisible="{Binding Recordings.HasNoMatches}">
+          <ui:EmptyState Icon="{StaticResource Icon.Search}" Title="No matching recordings" Description="Try a different name, or clear the search." />
+        </Border>
+
+        <!-- Library -->
+        <StackPanel Spacing="8" IsVisible="{Binding Recordings.HasItems}">
+          <TextBlock Classes="caption" Text="{Binding Recordings.SummaryText}" Margin="0,0,0,8" />
+          <ItemsControl ItemsSource="{Binding Recordings.Groups}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:RecordingGroup">
+                <StackPanel Spacing="12" Margin="0,0,0,24">
+                  <StackPanel Orientation="Horizontal" Spacing="10">
+                    <TextBlock Classes="card-title" Text="{Binding Header}" VerticalAlignment="Center" />
+                    <TextBlock Classes="caption" Text="{Binding CountText}" VerticalAlignment="Center" />
+                  </StackPanel>
+                  <!-- Grid -->
+                  <ItemsControl ItemsSource="{Binding Items}" ItemTemplate="{StaticResource RecordingCardTemplate}"
+                                IsVisible="{Binding $parent[UserControl].((vm:ShellViewModel)DataContext).Recordings.IsGridLayout}">
+                    <ItemsControl.ItemsPanel>
+                      <ItemsPanelTemplate>
+                        <WrapPanel />
+                      </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                  </ItemsControl>
+                  <!-- List -->
+                  <Border Classes="card-flush" Padding="12,4"
+                          IsVisible="{Binding $parent[UserControl].((vm:ShellViewModel)DataContext).Recordings.IsListLayout}">
+                    <ItemsControl ItemsSource="{Binding Items}">
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:RecordingItem">
+                          <StackPanel>
+                            <ContentControl Content="{Binding}" ContentTemplate="{StaticResource RecordingRowTemplate}" Margin="0,6" />
+                            <Border Classes="divider" />
+                          </StackPanel>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </Border>
+                </StackPanel>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+          <Button HorizontalAlignment="Center" Content="Show more" Command="{Binding Recordings.ShowMoreCommand}"
+                  IsVisible="{Binding Recordings.CanShowMore}" />
+        </StackPanel>
+      </StackPanel>
+    </Border>
+  </ScrollViewer>
+</UserControl>

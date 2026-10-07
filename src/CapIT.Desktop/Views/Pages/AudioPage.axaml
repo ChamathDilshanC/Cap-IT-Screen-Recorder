@@ -1,0 +1,90 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="using:ScreenRecorderApp.Controls"
+             xmlns:vm="using:ScreenRecorderApp.ViewModels"
+             x:Class="ScreenRecorderApp.Views.Pages.AudioPage"
+             x:DataType="vm:ShellViewModel">
+  <ScrollViewer Classes="page">
+    <Border Padding="{StaticResource Pad.Page}" MaxWidth="{StaticResource Width.Page}">
+      <StackPanel DataContext="{Binding Main}" x:DataType="vm:MainViewModel">
+        <ui:PageHeader Title="Audio" Description="Choose what's recorded and check your levels before you start." />
+
+        <Border Classes="callout warning" Margin="0,0,0,24" IsVisible="{Binding ShowAudioLockedHint}">
+          <StackPanel Orientation="Horizontal" Spacing="10">
+            <ui:Icon Data="{StaticResource Icon.Info}" Foreground="{DynamicResource Brush.Warning}" VerticalAlignment="Top" Margin="0,1,0,0" />
+            <TextBlock Classes="secondary" TextWrapping="Wrap" MaxWidth="760"
+                       Text="Audio sources are locked for this recording: it started with no audio, or with noise suppression on both sources, so FFmpeg's audio graph is fixed. Stop and start again to change them." />
+          </StackPanel>
+        </Border>
+
+        <ui:AdaptiveColumns Breakpoint="960" SideWidth="320">
+          <StackPanel Spacing="32">
+            <ui:SettingsSection Header="System audio" Description="Everything you hear: apps, browser, notifications.">
+              <StackPanel>
+                <ui:SettingsRow Title="Record system audio" Description="Applies immediately, even mid-recording." Icon="{StaticResource Icon.Volume}">
+                  <ToggleSwitch IsChecked="{Binding CaptureSystemAudio}" IsEnabled="{Binding CanChangeAudioLive}" />
+                </ui:SettingsRow>
+                <ui:SettingsRow Title="Output level" Description="{Binding SpeakerStatusText}" Icon="{StaticResource Icon.Wave}"
+                                IsVisible="{Binding ShowSpeakerMeter}">
+                  <ui:AudioMeter Width="260" Level="{Binding SpeakerLevel}" IsAvailable="{Binding IsSpeakerMonitorAvailable}" />
+                </ui:SettingsRow>
+              </StackPanel>
+            </ui:SettingsSection>
+
+            <ui:SettingsSection Header="Microphone" Description="Your voice, with optional studio cleanup.">
+              <StackPanel>
+                <ui:SettingsRow Title="Record microphone" Description="Applies immediately, even mid-recording." Icon="{StaticResource Icon.Mic}">
+                  <ToggleSwitch IsChecked="{Binding CaptureMicrophone}" IsEnabled="{Binding CanChangeAudioLive}" />
+                </ui:SettingsRow>
+                <ui:SettingsRow Title="Input device" Description="Can be swapped mid-recording too." Icon="{StaticResource Icon.Mic}"
+                                IsEnabled="{Binding CanChangeAudioLive}">
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <ComboBox Classes="control-column" ItemsSource="{Binding Microphones}" SelectedItem="{Binding SelectedMicrophone}"
+                              PlaceholderText="No microphone found">
+                      <ComboBox.ItemTemplate>
+                        <DataTemplate>
+                          <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                        </DataTemplate>
+                      </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <Button Classes="icon outlined" ui:Ui.Icon="{StaticResource Icon.Refresh}" Command="{Binding RefreshMicrophonesCommand}"
+                            ToolTip.Tip="Refresh microphones" />
+                  </StackPanel>
+                </ui:SettingsRow>
+                <ui:SettingsRow Title="Input level" Description="{Binding MicStatusText}" Icon="{StaticResource Icon.Wave}"
+                                IsVisible="{Binding ShowMicMeter}">
+                  <ui:AudioMeter Width="260" Level="{Binding MicLevel}" IsAvailable="{Binding IsMicMonitorAvailable}" />
+                </ui:SettingsRow>
+                <ui:SettingsRow Title="Studio Mic noise suppression" Icon="{StaticResource Icon.Sparkles}"
+                                Description="Removes hum, fan noise and keyboard clicks from the microphone only. System audio is untouched.">
+                  <ToggleSwitch IsChecked="{Binding EnableMicNoiseSuppression}" IsEnabled="{Binding CanEditMicNoiseSuppression}" />
+                </ui:SettingsRow>
+              </StackPanel>
+            </ui:SettingsSection>
+          </StackPanel>
+
+          <StackPanel Spacing="12">
+            <TextBlock Classes="section" Text="Reading the meters" />
+            <Border Classes="card">
+              <StackPanel Spacing="14">
+                <Grid ColumnDefinitions="Auto,*">
+                  <Border Width="10" Height="10" CornerRadius="3" Background="{DynamicResource Brush.Success}" Margin="0,4,12,0" VerticalAlignment="Top" />
+                  <TextBlock Grid.Column="1" Classes="secondary" TextWrapping="Wrap" Text="Green: a healthy signal. Speak normally and aim for the middle." />
+                </Grid>
+                <Grid ColumnDefinitions="Auto,*">
+                  <Border Width="10" Height="10" CornerRadius="3" Background="{DynamicResource Brush.Error}" Margin="0,4,12,0" VerticalAlignment="Top" />
+                  <TextBlock Grid.Column="1" Classes="secondary" TextWrapping="Wrap" Text="Red: too loud and close to clipping. Move back or lower the input gain in Windows." />
+                </Grid>
+                <Grid ColumnDefinitions="Auto,*">
+                  <Border Width="10" Height="10" CornerRadius="3" Background="{DynamicResource Brush.TextMuted}" Margin="0,4,12,0" VerticalAlignment="Top" />
+                  <TextBlock Grid.Column="1" Classes="secondary" TextWrapping="Wrap"
+                             Text="Empty and “unavailable”: the device couldn't be opened. Check that it's connected and that Windows allows desktop apps to use the microphone." />
+                </Grid>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </ui:AdaptiveColumns>
+      </StackPanel>
+    </Border>
+  </ScrollViewer>
+</UserControl>

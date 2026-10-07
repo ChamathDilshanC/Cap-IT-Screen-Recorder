@@ -1,8 +1,8 @@
 name: Build
 
-# WinUI 3 / Windows App SDK targets require the Windows SDK + MSBuild toolset, so this only runs on
-# windows-latest — it cannot build on ubuntu-latest or macos-latest. There's no test project yet, so
-# this just verifies the app still compiles for x64 on every push/PR.
+# The app targets net8.0-windows10.0.19041.0 (Windows Graphics Capture, Media Foundation, WASAPI), so
+# this runs on windows-latest. It verifies every project in the solution — the Avalonia desktop app,
+# the Windows recording engine, the core library and the regression checks — compiles on every push/PR.
 
 on:
   push:
@@ -23,7 +23,7 @@ jobs:
           dotnet-version: 8.0.x
 
       - name: Restore
-        run: dotnet restore CapIT.sln -p:Platform=x64
+        run: dotnet restore CapIT.sln
 
       - name: Build
-        run: dotnet build CapIT.sln -c Release -p:Platform=x64 --no-restore
+        run: dotnet build CapIT.sln -c Release --no-restore

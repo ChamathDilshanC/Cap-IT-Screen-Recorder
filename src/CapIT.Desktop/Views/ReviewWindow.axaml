@@ -1,0 +1,868 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="using:ScreenRecorderApp.Controls"
+        xmlns:vm="using:ScreenRecorderApp.ViewModels"
+        xmlns:m="using:ScreenRecorderApp.Models"
+        xmlns:services="using:ScreenRecorderApp.Services"
+        xmlns:chrome="using:ScreenRecorderApp.Views.Chrome"
+        xmlns:editor="using:ScreenRecorderApp.Views.Editor"
+        x:Class="ScreenRecorderApp.Views.ReviewWindow"
+        x:DataType="vm:EditorViewModel"
+        Title="{Binding Title, StringFormat='{}{0} — Review &amp; Export'}"
+        Icon="/Assets/AppIcon.ico"
+        Width="1440" Height="900" MinWidth="960" MinHeight="600"
+        WindowStartupLocation="CenterScreen"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaChromeHints="NoChrome"
+        ExtendClientAreaTitleBarHeightHint="-1">
+
+  <Window.Resources>
+    <ControlTheme x:Key="InspectorTabItem" TargetType="ListBoxItem" BasedOn="{StaticResource ChipItem}">
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="Width" Value="34" />
+      <Setter Property="Height" Value="34" />
+      <Setter Property="Margin" Value="0,0,2,0" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+    </ControlTheme>
+  </Window.Resources>
+
+  <Window.Styles>
+    <!-- Inspector rhythm: label above control, 16px between fields, 28px between groups -->
+    <Style Selector="StackPanel.inspector-section">
+      <Setter Property="Spacing" Value="16" />
+    </Style>
+    <Style Selector="StackPanel.field">
+      <Setter Property="Spacing" Value="6" />
+    </Style>
+    <Style Selector="TextBlock.group">
+      <Setter Property="FontSize" Value="{StaticResource FontSize.Overline}" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="LetterSpacing" Value="0.8" />
+      <Setter Property="Foreground" Value="{DynamicResource Brush.TextMuted}" />
+      <Setter Property="Margin" Value="0,12,0,0" />
+    </Style>
+    <Style Selector="Border.panel-header">
+      <Setter Property="Padding" Value="16,14,12,12" />
+    </Style>
+    <Style Selector="Border.swatch">
+      <Setter Property="Height" Value="40" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Brush.BorderSubtle}" />
+      <Setter Property="BorderThickness" Value="1" />
+    </Style>
+  </Window.Styles>
+
+  <Panel x:Name="Root" Background="{DynamicResource Brush.BackgroundPrimary}">
+    <ui:DialogHost x:Name="DialogHostControl">
+      <Grid RowDefinitions="Auto,*,Auto">
+
+        <!-- ===================== Title bar / toolbar ===================== -->
+        <Grid x:Name="TitleBar" Grid.Row="0" Height="{StaticResource Height.TitleBar}" Background="{DynamicResource Brush.BackgroundSecondary}"
+              ColumnDefinitions="Auto,*,Auto,Auto">
+          <StackPanel Orientation="Horizontal" Margin="10,0,0,0" Spacing="6" VerticalAlignment="Center">
+            <Button Classes="icon small" ui:Ui.Icon="{StaticResource Icon.ChevronLeft}" Command="{Binding KeepOriginalCommand}"
+                    ToolTip.Tip="Close editor · edits are saved automatically" />
+            <Button Classes="icon small" ui:Ui.Icon="{StaticResource Icon.PanelLeft}" Command="{Binding ToggleLayersCommand}" ToolTip.Tip="Show / hide layers" />
+            <Image Source="/Assets/Logo-Mark.png" Width="18" Height="18" Margin="6,0,0,0" VerticalAlignment="Center" />
+            <TextBlock Text="Review &amp; Export" FontWeight="SemiBold" Margin="4,0,0,0" VerticalAlignment="Center" />
+            <TextBlock Classes="muted" Text="/" Margin="6,0" VerticalAlignment="Center" />
+            <TextBlock Classes="secondary" Text="{Binding Title}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="320" />
+          </StackPanel>
+
+          <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" Margin="0,0,10,0" VerticalAlignment="Center">
+            <Button Classes="icon small" ui:Ui.Icon="{StaticResource Icon.Undo}" Command="{Binding Document.UndoCommand}" ToolTip.Tip="Undo · Ctrl+Z" />
+            <Button Classes="icon small" ui:Ui.Icon="{StaticResource Icon.Redo}" Command="{Binding Document.RedoCommand}" ToolTip.Tip="Redo · Ctrl+Y" />
+            <Button Classes="icon small" ui:Ui.Icon="{StaticResource Icon.Reset}" Command="{Binding Document.ResetStylingCommand}" ToolTip.Tip="Reset styling" />
+            <Button Classes="icon small" ui:Ui.Icon="{StaticResource Icon.PanelRight}" Command="{Binding ToggleInspectorCommand}" ToolTip.Tip="Show / hide inspector" />
+            <Border Classes="vdivider" Margin="6,8" />
+            <Button Classes="small" ui:Ui.Icon="{StaticResource Icon.Gif}" Content="GIF" Command="{Binding ExportGifCommand}"
+                    ToolTip.Tip="Export a 720px / 12 fps GIF of the trimmed range" />
+            <Button Classes="primary small" ui:Ui.Icon="{StaticResource Icon.Export}" Content="Export video" Command="{Binding ExportVideoCommand}"
+                    ToolTip.Tip="Export MP4 · Ctrl+E" />
+          </StackPanel>
+          <chrome:CaptionButtons Grid.Column="3" />
+        </Grid>
+
+        <!-- ===================== Workspace ===================== -->
+        <Grid x:Name="Workspace" Grid.Row="1" ColumnDefinitions="Auto,*,Auto">
+
+          <!-- Layers -->
+          <Border Grid.Column="0" Width="252" Background="{DynamicResource Brush.BackgroundSecondary}"
+                  BorderBrush="{DynamicResource Brush.BorderSubtle}" BorderThickness="0,0,1,0" IsVisible="{Binding IsLayersVisible}">
+            <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+              <StackPanel Margin="14,16" Spacing="18" IsEnabled="{Binding IsNotExporting}">
+                <StackPanel Spacing="4">
+                  <TextBlock Classes="overline" Text="RECORDING" />
+                  <TextBlock Classes="row-title" Text="{Binding Title}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" />
+                  <TextBlock Classes="caption" Text="{Binding Document.RecordingInfo}" TextWrapping="Wrap" />
+                </StackPanel>
+
+                <StackPanel Spacing="6">
+                  <TextBlock Classes="overline" Text="LAYERS" />
+                  <Button Classes="ghost" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" ui:Ui.Icon="{StaticResource Icon.Video}"
+                          Content="Video" Command="{Binding ShowVideoInspectorCommand}" />
+                </StackPanel>
+
+                <StackPanel Spacing="6">
+                  <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Classes="overline" Text="ZOOM REGIONS" VerticalAlignment="Center" />
+                    <Button Grid.Column="1" Classes="icon small" Width="26" Height="26" ui:Ui.Icon="{StaticResource Icon.Plus}"
+                            Command="{Binding AddZoomAtPlayheadCommand}" ToolTip.Tip="Add a zoom region at the playhead" />
+                  </Grid>
+                  <ItemsControl ItemsSource="{Binding Document.ZoomRegions}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="m:ZoomRegion">
+                        <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,2">
+                          <Button Classes="ghost" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" ui:Ui.Icon="{StaticResource Icon.ZoomIn}"
+                                  Command="{Binding $parent[Window].((vm:EditorViewModel)DataContext).SeekToZoomCommand}" CommandParameter="{Binding}">
+                            <TextBlock>
+                              <Run Text="{Binding Scale, StringFormat='{}{0:0.#}×'}" />
+                              <Run Text="  " />
+                              <Run Text="{Binding StartSeconds, StringFormat='{}{0:0.0}s'}" Foreground="{DynamicResource Brush.TextMuted}" />
+                              <Run Text="–" Foreground="{DynamicResource Brush.TextMuted}" />
+                              <Run Text="{Binding EndSeconds, StringFormat='{}{0:0.0}s'}" Foreground="{DynamicResource Brush.TextMuted}" />
+                            </TextBlock>
+                          </Button>
+                          <Button Grid.Column="1" Classes="icon small" Width="28" Height="28" ui:Ui.Icon="{StaticResource Icon.Trash}"
+                                  Command="{Binding $parent[Window].((vm:EditorViewModel)DataContext).RemoveZoomCommand}" CommandParameter="{Binding}"
+                                  ToolTip.Tip="Remove zoom region" />
+                        </Grid>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                  <TextBlock Classes="caption" TextWrapping="Wrap" Text="Add a zoom at the playhead to push in on a detail."
+                             IsVisible="{Binding !Document.ZoomRegions.Count}" />
+                </StackPanel>
+
+                <StackPanel Spacing="6">
+                  <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Classes="overline" Text="TEXT" VerticalAlignment="Center" />
+                    <Button Grid.Column="1" Classes="icon small" Width="26" Height="26" ui:Ui.Icon="{StaticResource Icon.Plus}"
+                            Command="{Binding Text.AddLayerCommand}" ToolTip.Tip="Add a text layer" />
+                  </Grid>
+                  <ListBox Theme="{StaticResource PlainList}" ItemsSource="{Binding Text.Layers}" SelectedIndex="{Binding Text.SelectedIndex}">
+                    <ListBox.ItemTemplate>
+                      <DataTemplate>
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                          <ui:Icon Data="{StaticResource Icon.Tool.Text}" Size="14" />
+                          <TextBlock Text="{Binding}" />
+                        </StackPanel>
+                      </DataTemplate>
+                    </ListBox.ItemTemplate>
+                  </ListBox>
+                </StackPanel>
+              </StackPanel>
+            </ScrollViewer>
+          </Border>
+
+          <!-- Stage + transport + timeline -->
+          <Grid Grid.Column="1" RowDefinitions="*,Auto,Auto" Margin="16,16,16,12">
+            <Border Classes="stage" Background="{DynamicResource Brush.Stage}">
+              <Panel>
+                <editor:CompositionPreview x:Name="Preview" Margin="28"
+                                           VideoSource="{Binding Playback.Frame}" VideoVersion="{Binding Playback.FrameVersion}" />
+
+                <!-- Loading -->
+                <StackPanel Spacing="12" HorizontalAlignment="Center" VerticalAlignment="Center"
+                            IsVisible="{Binding Playback.IsLoading}">
+                  <ProgressBar IsIndeterminate="True" Width="160" />
+                  <TextBlock Classes="secondary" Text="Preparing your recording…" HorizontalAlignment="Center" />
+                </StackPanel>
+
+                <!-- Playback error -->
+                <Border Classes="raised" MaxWidth="460" Padding="24" HorizontalAlignment="Center" VerticalAlignment="Center"
+                        IsVisible="{Binding Playback.HasError}">
+                  <StackPanel Spacing="14">
+                    <Border Classes="icon-tile" Width="40" Height="40" CornerRadius="10" Background="{DynamicResource Brush.WarningSubtle}" HorizontalAlignment="Left">
+                      <ui:Icon Data="{StaticResource Icon.AlertTriangle}" Size="20" Foreground="{DynamicResource Brush.Warning}" />
+                    </Border>
+                    <TextBlock Classes="title" FontSize="17" Text="Preview unavailable" />
+                    <TextBlock Classes="secondary" TextWrapping="Wrap" Text="{Binding PlaybackErrorText}" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <Button Content="Retry preview" Command="{Binding Playback.RetryCommand}" />
+                      <Button Content="Open in another player" Command="{Binding OpenOriginalCommand}" />
+                    </StackPanel>
+                  </StackPanel>
+                </Border>
+
+                <!-- Couldn't open at all -->
+                <Border Classes="raised" MaxWidth="460" Padding="24" HorizontalAlignment="Center" VerticalAlignment="Center"
+                        IsVisible="{Binding HasLoadError}">
+                  <StackPanel Spacing="14">
+                    <TextBlock Classes="title" FontSize="17" Text="This recording couldn't be opened" />
+                    <TextBlock Classes="secondary" TextWrapping="Wrap" Text="{Binding LoadError}" />
+                    <Button HorizontalAlignment="Left" Content="Open in another player" Command="{Binding OpenOriginalCommand}" />
+                  </StackPanel>
+                </Border>
+
+                <!-- Asset warning -->
+                <Border Classes="callout warning" Margin="16" Padding="12,8" HorizontalAlignment="Center" VerticalAlignment="Top"
+                        IsVisible="{Binding HasAssetWarning}">
+                  <StackPanel Orientation="Horizontal" Spacing="10">
+                    <ui:Icon Data="{StaticResource Icon.AlertTriangle}" Size="14" Foreground="{DynamicResource Brush.Warning}" VerticalAlignment="Center" />
+                    <TextBlock Classes="secondary" Text="{Binding AssetWarning}" TextWrapping="Wrap" MaxWidth="520" VerticalAlignment="Center" />
+                    <Button Classes="icon small" Width="22" Height="22" ui:Ui.Icon="{StaticResource Icon.Close}" Command="{Binding DismissAssetWarningCommand}" />
+                  </StackPanel>
+                </Border>
+
+                <ui:StatusBadge Classes="accent on-media" Text="PREVIEW" Margin="14" HorizontalAlignment="Left" VerticalAlignment="Top" />
+              </Panel>
+            </Border>
+
+            <!-- Transport -->
+            <Border Grid.Row="1" Classes="card" Padding="8,6" Margin="0,12,0,0">
+              <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto,Auto">
+                <Panel>
+                  <Button Classes="icon" ui:Ui.Icon="{StaticResource Icon.Fill.Play}" ui:Ui.IconFilled="True" Command="{Binding Playback.TogglePlayCommand}"
+                          IsVisible="{Binding !Playback.IsPlaying}" ToolTip.Tip="Play · Space" />
+                  <Button Classes="icon" ui:Ui.Icon="{StaticResource Icon.Fill.Pause}" ui:Ui.IconFilled="True" Command="{Binding Playback.TogglePlayCommand}"
+                          IsVisible="{Binding Playback.IsPlaying}" ToolTip.Tip="Pause · Space" />
+                </Panel>
+                <Button Grid.Column="1" Classes="icon" ui:Ui.Icon="{StaticResource Icon.StepForward}" Command="{Binding Playback.StepFrameCommand}" ToolTip.Tip="Next frame" />
+                <TextBlock Grid.Column="2" Classes="mono secondary" FontSize="12" Margin="8,0,12,0" VerticalAlignment="Center">
+                  <Run Text="{Binding Playback.PositionText}" Foreground="{DynamicResource Brush.TextPrimary}" />
+                  <Run Text=" / " />
+                  <Run Text="{Binding Document.Duration, Converter={x:Static ui:Converters.Duration}}" />
+                </TextBlock>
+                <Slider Grid.Column="3" VerticalAlignment="Center" Minimum="0" Maximum="{Binding Document.Duration}" Value="{Binding Playback.Position}" />
+                <Panel Grid.Column="4" Margin="12,0,0,0">
+                  <Button Classes="icon" ui:Ui.Icon="{StaticResource Icon.Volume}" Command="{Binding Playback.ToggleMuteCommand}" IsVisible="{Binding !Playback.IsMuted}" ToolTip.Tip="Mute" />
+                  <Button Classes="icon" ui:Ui.Icon="{StaticResource Icon.VolumeOff}" Command="{Binding Playback.ToggleMuteCommand}" IsVisible="{Binding Playback.IsMuted}" ToolTip.Tip="Unmute" />
+                </Panel>
+                <Slider Grid.Column="5" Width="84" VerticalAlignment="Center" Minimum="0" Maximum="1" Value="{Binding Playback.Volume}" />
+                <Button Grid.Column="6" Classes="icon" Margin="4,0,0,0" ui:Ui.Icon="{StaticResource Icon.Maximize}" Click="OnFullscreenClick" ToolTip.Tip="Full-screen preview · F11" />
+              </Grid>
+            </Border>
+
+            <!-- Timeline -->
+            <Border Grid.Row="2" Classes="card" Padding="8,12,8,10" Margin="0,12,0,0" IsVisible="{Binding !IsFullscreen}" IsEnabled="{Binding IsNotExporting}">
+              <StackPanel Spacing="10">
+                <Grid ColumnDefinitions="*,Auto" Margin="12,0">
+                  <StackPanel Orientation="Horizontal" Spacing="10">
+                    <TextBlock Classes="card-title" Text="Timeline" VerticalAlignment="Center" />
+                    <TextBlock Classes="caption" Text="{Binding Document.TrimLabel}" VerticalAlignment="Center" />
+                  </StackPanel>
+                  <TextBlock Grid.Column="1" Classes="caption" Text="Drag the handles to trim · I / O set in and out at the playhead" VerticalAlignment="Center" />
+                </Grid>
+                <ui:EditorTimeline Duration="{Binding Document.Duration}" TrimStart="{Binding Document.TrimStart}" TrimEnd="{Binding Document.TrimEnd}"
+                                   Position="{Binding Playback.Position}" Regions="{Binding Document.ZoomRegions}" Thumbnails="{Binding TimelineStrip}" />
+                <Grid ColumnDefinitions="*,Auto,Auto" Margin="12,0">
+                  <Button Classes="small" HorizontalAlignment="Left" ui:Ui.Icon="{StaticResource Icon.ZoomIn}" Content="Zoom region at playhead"
+                          Command="{Binding AddZoomAtPlayheadCommand}" />
+                  <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <TextBlock Classes="caption" Text="In" VerticalAlignment="Center" />
+                    <NumericUpDown Width="140" Minimum="0" Maximum="{Binding Document.Duration}" Increment="0.1" FormatString="0.00"
+                                   Value="{Binding Document.TrimStart}" />
+                  </StackPanel>
+                  <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" Margin="16,0,0,0" VerticalAlignment="Center">
+                    <TextBlock Classes="caption" Text="Out" VerticalAlignment="Center" />
+                    <NumericUpDown Width="140" Minimum="0" Maximum="{Binding Document.Duration}" Increment="0.1" FormatString="0.00"
+                                   Value="{Binding Document.TrimEnd}" />
+                  </StackPanel>
+                </Grid>
+              </StackPanel>
+            </Border>
+          </Grid>
+
+          <!-- Inspector -->
+          <Border Grid.Column="2" Width="{StaticResource Width.Inspector}" Background="{DynamicResource Brush.Surface}"
+                  BorderBrush="{DynamicResource Brush.BorderSubtle}" BorderThickness="1,0,0,0" IsVisible="{Binding IsInspectorVisible}">
+            <Grid RowDefinitions="Auto,Auto,*">
+              <Border Grid.Row="0" Classes="panel-header">
+                <ListBox Theme="{StaticResource Chips}" ItemContainerTheme="{StaticResource InspectorTabItem}"
+                         ItemsSource="{Binding InspectorTabs}" SelectedItem="{Binding SelectedTab}">
+                  <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:InspectorTab">
+                      <ui:Icon Data="{Binding Icon}" Size="17" ToolTip.Tip="{Binding Title}" />
+                    </DataTemplate>
+                  </ListBox.ItemTemplate>
+                </ListBox>
+              </Border>
+              <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="16,0,16,12">
+                <TextBlock Classes="section" Text="{Binding SelectedTab.Title}" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1" Classes="caption" Text="{Binding Document.CanvasLabel}" VerticalAlignment="Center" />
+              </Grid>
+              <Border Grid.Row="1" Classes="divider" VerticalAlignment="Bottom" />
+
+              <ScrollViewer Grid.Row="2" HorizontalScrollBarVisibility="Disabled" IsEnabled="{Binding IsNotExporting}">
+                <Panel Margin="16,16,16,28">
+
+                  <!-- Canvas -->
+                  <StackPanel Classes="inspector-section" IsVisible="{Binding ShowCanvasTab}">
+                    <StackPanel Classes="field">
+                      <TextBlock Classes="field-label" Text="Aspect ratio" />
+                      <ListBox Theme="{StaticResource Chips}" ItemsSource="{Binding AspectOptions}" SelectedItem="{Binding SelectedAspect}">
+                        <ListBox.ItemContainerTheme>
+                          <ControlTheme TargetType="ListBoxItem" BasedOn="{StaticResource ChipItem}">
+                            <Setter Property="Width" Value="68" />
+                            <Setter Property="Padding" Value="4,8" />
+                          </ControlTheme>
+                        </ListBox.ItemContainerTheme>
+                        <ListBox.ItemTemplate>
+                          <DataTemplate x:DataType="vm:AspectOption">
+                            <StackPanel Spacing="6">
+                              <Panel Height="26">
+                                <Border Width="{Binding IconWidth}" Height="{Binding IconHeight}" BorderThickness="1.5" CornerRadius="3"
+                                        BorderBrush="{Binding $parent[ListBoxItem].Foreground}" VerticalAlignment="Center" />
+                              </Panel>
+                              <TextBlock Text="{Binding Label}" FontSize="11" HorizontalAlignment="Center" />
+                            </StackPanel>
+                          </DataTemplate>
+                        </ListBox.ItemTemplate>
+                      </ListBox>
+                    </StackPanel>
+                    <StackPanel Classes="field">
+                      <TextBlock Classes="field-label" Text="Canvas size" />
+                      <ComboBox Classes="fill" ItemsSource="{Binding CanvasSizes}" SelectedItem="{Binding SelectedCanvasSize}" />
+                    </StackPanel>
+                    <Grid ColumnDefinitions="*,12,*" IsVisible="{Binding IsCustomCanvas}">
+                      <StackPanel Classes="field">
+                        <TextBlock Classes="field-label" Text="Width · px" />
+                        <NumericUpDown Minimum="0" Maximum="7680" Increment="2" FormatString="0" Value="{Binding Document.Presentation.CanvasWidth}" />
+                      </StackPanel>
+                      <StackPanel Grid.Column="2" Classes="field">
+                        <TextBlock Classes="field-label" Text="Height · px" />
+                        <NumericUpDown Minimum="0" Maximum="7680" Increment="2" FormatString="0" Value="{Binding Document.Presentation.CanvasHeight}" />
+                      </StackPanel>
+                    </Grid>
+                    <StackPanel Classes="field">
+                      <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Classes="field-label" Text="Padding" />
+                        <Button Grid.Column="1" Classes="link small" Content="Reset" Command="{Binding ResetPaddingCommand}" VerticalAlignment="Top" />
+                      </Grid>
+                      <ui:SliderField Classes="fill" Value="{Binding Document.Presentation.Padding}" Minimum="0" Maximum="240" Step="1" Format="{}{0:0} px" />
+                    </StackPanel>
+
+                    <TextBlock Classes="group" Text="STYLE PRESETS" />
+                    <ComboBox Classes="fill" ItemsSource="{Binding Document.Presets}" SelectedItem="{Binding Document.SelectedPreset}" />
+                    <Button Classes="stretch" Content="Apply preset" Command="{Binding Document.ApplyPresetCommand}" />
+                    <TextBox Watermark="Name a new preset" Text="{Binding Document.PresetName}" />
+                    <Grid ColumnDefinitions="*,8,*,8,*">
+                      <Button Classes="small stretch" Content="Save" Command="{Binding Document.SavePresetCommand}" />
+                      <Button Grid.Column="2" Classes="small stretch" Content="Rename" Command="{Binding Document.RenamePresetCommand}" />
+                      <Button Grid.Column="4" Classes="small stretch danger-ghost" Content="Delete" Command="{Binding Document.DeletePresetCommand}" />
+                    </Grid>
+                  </StackPanel>
+
+                  <!-- Background -->
+                  <StackPanel Classes="inspector-section" IsVisible="{Binding ShowBackgroundTab}">
+                    <StackPanel Classes="field">
+                      <TextBlock Classes="field-label" Text="Scenes" />
+                      <ItemsControl ItemsSource="{Binding BackgroundPresets}">
+                        <ItemsControl.ItemsPanel>
+                          <ItemsPanelTemplate>
+                            <UniformGrid Columns="3" />
+                          </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate x:DataType="m:BackgroundPreset">
+                            <Button Classes="card" Margin="0,0,6,6" Padding="4" ToolTip.Tip="{Binding Label}"
+                                    Command="{Binding $parent[Window].((vm:EditorViewModel)DataContext).ApplyBackgroundPresetCommand}" CommandParameter="{Binding}">
+                              <StackPanel Spacing="4">
+                                <Border Classes="swatch" Height="34">
+                                  <Border.Background>
+                                    <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%">
+                                      <GradientStop Color="{Binding Color1, Converter={x:Static ui:Converters.HexToColor}}" Offset="0" />
+                                      <GradientStop Color="{Binding Color2, Converter={x:Static ui:Converters.HexToColor}}" Offset="1" />
+                                    </LinearGradientBrush>
+                                  </Border.Background>
+                                </Border>
+                                <TextBlock Text="{Binding Label}" FontSize="10" TextTrimming="CharacterEllipsis" HorizontalAlignment="Center" />
+                              </StackPanel>
+                            </Button>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                    </StackPanel>
+                    <StackPanel Classes="field">
+                      <TextBlock Classes="field-label" Text="Type" />
+                      <ListBox Theme="{StaticResource Segmented}" HorizontalAlignment="Stretch" ItemsSource="{Binding BackgroundModes}" SelectedItem="{Binding SelectedBackgroundMode}">
+                        <ListBox.ItemTemplate>
+                          <DataTemplate x:DataType="vm:ChoiceOption">
+                            <TextBlock Text="{Binding Label}" />
+                          </DataTemplate>
+                        </ListBox.ItemTemplate>
+                      </ListBox>
+                    </StackPanel>
+                    <TextBlock Classes="caption" TextWrapping="Wrap" IsVisible="{Binding ShowNoBackgroundNote}"
+                               Text="No background artwork. MP4 and GIF use a black canvas." />
+
+                    <StackPanel Classes="field" IsVisible="{Binding ShowGradientSettings}">
+                      <TextBlock Classes="field-label" Text="Gradient palette" />
+                      <ItemsControl ItemsSource="{Binding GradientPresets}">
+                        <ItemsControl.ItemsPanel>
+                          <ItemsPanelTemplate>
+                            <UniformGrid Columns="4" />
+                          </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate x:DataType="vm:GradientPreset">
+                            <Button Classes="card" Margin="0,0,6,6" Padding="0" Height="36" ToolTip.Tip="{Binding Name}"
+                                    Command="{Binding $parent[Window].((vm:EditorViewModel)DataContext).ApplyGradientCommand}" CommandParameter="{Binding}">
+                              <Border CornerRadius="11">
+                                <Border.Background>
+                                  <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%">
+                                    <GradientStop Color="{Binding ColorA, Converter={x:Static ui:Converters.HexToColor}}" Offset="0" />
+                                    <GradientStop Color="{Binding ColorB, Converter={x:Static ui:Converters.HexToColor}}" Offset="1" />
+                                  </LinearGradientBrush>
+                                </Border.Background>
+                              </Border>
+                            </Button>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                    </StackPanel>
+
+                    <StackPanel Classes="inspector-section" IsVisible="{Binding ShowColourSettings}">
+                      <StackPanel Classes="field">
+                        <TextBlock Classes="field-label" Text="Recent colours" />
+                        <ItemsControl ItemsSource="{Binding RecentColours}">
+                          <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                              <StackPanel Orientation="Horizontal" Spacing="6" />
+                            </ItemsPanelTemplate>
+                          </ItemsControl.ItemsPanel>
+                          <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="x:String">
+                              <Button Classes="card" Width="30" Height="30" Padding="0" CornerRadius="8" ToolTip.Tip="{Binding}"
+                                      Background="{Binding Converter={x:Static ui:Converters.HexToBrush}}"
+                                      Command="{Binding $parent[Window].((vm:EditorViewModel)DataContext).UseColourCommand}" CommandParameter="{Binding}" />
+                            </DataTemplate>
+                          </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                      </StackPanel>
+                      <StackPanel Classes="field">
+                        <TextBlock Classes="field-label" Text="Colour A" />
+                        <Grid ColumnDefinitions="*,8,Auto">
+                          <TextBox Text="{Binding Document.Presentation.BackgroundColor, UpdateSourceTrigger=LostFocus}" MaxLength="7" LostFocus="OnColourCommitted" />
+                          <ColorPicker Grid.Column="2" IsAlphaEnabled="False" IsAlphaVisible="False"
+                                       Color="{Binding Document.Presentation.BackgroundColor, Converter={x:Static ui:Converters.HexToColor}}" />
+                        </Grid>
+                      </StackPanel>
+                      <StackPanel Classes="field" IsVisible="{Binding ShowGradientSettings}">
+                        <TextBlock Classes="field-label" Text="Colour B" />
+                        <Grid ColumnDefinitions="*,8,Auto">
+                          <TextBox Text="{Binding Document.Presentation.BackgroundColor2, UpdateSourceTrigger=LostFocus}" MaxLength="7" />
+                          <ColorPicker Grid.Column="2" IsAlphaEnabled="False" IsAlphaVisible="False"
+                                       Color="{Binding Document.Presentation.BackgroundColor2, Converter={x:Static ui:Converters.HexToColor}}" />
+                        </Grid>
+                      </StackPanel>
+                      <StackPanel Classes="field" IsVisible="{Binding ShowGradientSettings}">
+                        <TextBlock Classes="field-label" Text="Angle" />
+                        <ui:SliderField Classes="fill" Value="{Binding Document.Presentation.GradientAngle}" Minimum="0" Maximum="360" Step="1" Format="{}{0:0}°" />
+                      </StackPanel>
+                    </StackPanel>
+
+                    <StackPanel Classes="inspector-section" IsVisible="{Binding ShowImageSettings}">
+                      <Border Classes="stage" Height="120">
+                        <Panel>
+                          <Image Source="{Binding BackgroundThumbnail}" Stretch="UniformToFill" />
+                          <TextBlock Classes="caption" Text="No image chosen" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                     IsVisible="{Binding BackgroundThumbnail, Converter={x:Static ObjectConverters.IsNull}}" />
+                        </Panel>
+                      </Border>
+                      <Grid ColumnDefinitions="*,8,Auto">
+                        <Button Classes="stretch" ui:Ui.Icon="{StaticResource Icon.Image}" Content="Choose image…" Command="{Binding ChooseBackgroundCommand}" />
+                        <Button Grid.Column="2" Classes="danger-ghost" Content="Remove" Command="{Binding RemoveBackgroundCommand}" />
+                      </Grid>
+                      <StackPanel Classes="field">
+                        <TextBlock Classes="field-label" Text="Fit" />
+                        <ListBox Theme="{StaticResource Segmented}" HorizontalAlignment="Stretch" ItemsSource="{Binding ImageFits}"
+                                 SelectedItem="{Binding Document.Presentation.BackgroundImageFit}" />
+                      </StackPanel>
+                      <StackPanel Classes="field">
+                        <TextBlock Classes="field-label" Text="Blur" />
+                        <ui:SliderField Classes="fill" Value="{Binding Document.Presentation.BackgroundBlur}" Minimum="0" Maximum="64" Step="1" Format="{}{0:0} px" />
+                      </StackPanel>
+                      <StackPanel Classes="field">
+                        <TextBlock Classes="field-label" Text="Dim" />
+                        <ui:SliderField Classes="fill" Value="{Binding Document.Presentation.BackgroundDim}" Minimum="0" Maximum="1" Step="0.05" Format="{}{0:0}%" ValueScale="100" />
+                      </StackPanel>
+                      <TextBlock Classes="caption" TextWrapping="Wrap" Text="PNG or JPEG. If the image goes missing, Colour A is used in preview and export." />
+                    </StackPanel>
+                  </StackPanel>
+
+                  <!-- Video -->
+                  <StackPanel Classes="inspector-section" IsVisible="{Binding ShowVideoTab}">
+                    <StackPanel Classes="field">
+                      <TextBlock Classes="field-label" Text="Scale" />
+                      <ui:SliderField Classes="fill" Value="{Binding Document.Presentation.VideoScale}" Minimum="0.4" Maximum="1.2" Step="0.01" Format="{}{0:0}%" ValueScale="100" />
+                    </StackPanel>
+                    <StackPanel Classes="field">
+                      <TextBlock Classes="field-label" Text="Fit" />
+                      <ListBox Theme="{StaticResource Segmented}" HorizontalAlignment="Stretch" ItemsSource="{Binding FitModes}"
+                               SelectedItem="{Binding Document.Presentation.FitMode}" />
+                      <TextBlock Classes="caption" TextWrapping="Wrap"
+                                 Text="Fit keeps the whole recording. Fill crops to the canvas. Original uses source pixels; Custom is Fit plus your scale and offsets." />
+                    </StackPanel>
+                    <StackPanel Classes="field">
+                      <TextBlock Classes="field-label" Text="Position" />
+                      <ComboBox Classes="fill" ItemsSource="{Binding VideoPositions}" SelectedItem="{Binding Document.Presentation.VideoPosition}" />
+                    </StackPanel>
+                    <Grid ColumnDefinitions="*,12,*">
+                      <StackPanel Classes="field">
+                        <TextBlock Classes="field-label" Text="X offset · px" />
+                        <NumericUpDown Minimum="-7680" Maximum="7680" Increment="1" FormatString="0" Value="{Binding Document.Presentation.VideoOffsetX}" />
+                      </StackPanel>
+                      <StackPanel Grid.Column="2" Classes="field">
+                        <TextBlock Classes="field-label" Text="Y offset · px" />
+                        <NumericUpDown Minimum="-7680" Maximum="7680" Increment="1" FormatString="0" Value="{Binding Document.Presentation.VideoOffsetY}" />
+                      </StackPanel>
+                    </Grid>
+                    <StackPanel Classes="field">
+                      <TextBlock Classes="field-label" Text="Rotation" />
+                      <ui:SliderField Classes="fill" Value="{Binding Document.Presentation.RotationZ}" Minimum="-15" Maximum="15" Step="0.5" Format="{}{0:0.#}°" />
+                    </StackPanel>
+
+                    <TextBlock Classes="group" Text="PERSPECTIVE PREVIEW" />
+                    <ItemsControl ItemsSource="{Binding PerspectivePresets}">
+                      <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                          <WrapPanel />
+                        </ItemsPanelTemplate>
+                      </ItemsControl.ItemsPanel>
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="m:PerspectivePreset">
+                          <Button Classes="small" Margin="0,0,6,6" Content="{Binding Label}"
+                                  Command="{Binding $parent[Window].((vm:EditorViewModel)DataContext).ApplyPerspectiveCommand}" CommandParameter="{Binding}" />
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <StackPanel Classes="field">
+                      <TextBlock Classes="field-label" Text="Tilt X" />
+                      <ui:SliderField Classes="fill" Value="{Binding Document.Presentation.RotationX}" Minimum="-35" Maximum="35" Step="0.5" Format="{}{0:0.#}°" />
+                    </StackPanel>
+                    <StackPanel Classes="field">
+                      <TextBlock Classes="field-label" Text="Tilt Y" />
+                      <ui:SliderField Classes="fill" Value="{Binding Document.Presentation.RotationY}" Minimum="-35" Maximum="35" Step="0.5" Format="{}{0:0.#}°" />
+                    </StackPanel>
+                    <StackPanel Classes="field">
+                      <TextBlock Classes="field-label" Text="Depth" />
+                      <ui:SliderField Classes="fill" Value="{Binding Document.Presentation.PerspectiveDepth}" Minimum="400" Maximum="3000" Step="10" Format="{}{0:0}" />
+                    </StackPanel>
+                    <TextBlock Classes="caption" TextWrapping="Wrap"
+                               Text="Tilt and depth shape the editor preview. Exported videos apply scale, offsets and rotation." />
+                    <Button Classes="small" HorizontalAlignment="Left" ui:Ui.Icon="{StaticResource Icon.Reset}" Content="Reset transform" Command="{Binding ResetTransformCommand}" />
+
+                    <Grid ColumnDefinitions="*,Auto" Margin="0,12,0,0">
+                      <TextBlock Classes="group" Text="CAMERA MOVES" Margin="0" VerticalAlignment="Center" />
+                      <Button Grid.Column="1" Classes="small" ui:Ui.Icon="{StaticResource Icon.Plus}" Content="Add at playhead" Command="{Binding AddZoomAtPlayheadCommand}" />
+                    </Grid>
+                    <ItemsControl ItemsSource="{Binding Document.ZoomRegions}">
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="m:ZoomRegion">
+                          <Border Classes="inset" Padding="12" Margin="0,0,0,10">
+                            <StackPanel Spacing="10">
+                              <Grid ColumnDefinitions="*,Auto">
+                                <CheckBox Content="Zoom region" IsChecked="{Binding Enabled}" />
+                                <Button Grid.Column="1" Classes="icon small" ui:Ui.Icon="{StaticResource Icon.Trash}"
+                                        Command="{Binding $parent[Window].((vm:EditorViewModel)DataContext).RemoveZoomCommand}" CommandParameter="{Binding}"
+                                        ToolTip.Tip="Remove" />
+                              </Grid>
+                              <Grid ColumnDefinitions="*,8,*">
+                                <StackPanel Classes="field">
+                                  <TextBlock Classes="field-label" Text="Start · s" />
+                                  <NumericUpDown Minimum="0" Increment="0.1" FormatString="0.00" Value="{Binding StartSeconds}" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="2" Classes="field">
+                                  <TextBlock Classes="field-label" Text="End · s" />
+                                  <NumericUpDown Minimum="0" Increment="0.1" FormatString="0.00" Value="{Binding EndSeconds}" />
+                                </StackPanel>
+                              </Grid>
+                              <StackPanel Classes="field">
+                                <TextBlock Classes="field-label" Text="Zoom" />
+                                <ui:SliderField Classes="fill" Value="{Binding Scale}" Minimum="1" Maximum="4" Step="0.1" Format="{}{0:0.0}×" />
+                              </StackPanel>
+                              <StackPanel Classes="field">
+                                <TextBlock Classes="field-label" Text="Focus X" />
+                                <ui:SliderField Classes="fill" Value="{Binding CenterX}" Minimum="0" Maximum="1" Step="0.01" Format="{}{0:0}%" ValueScale="100" />
+                              </StackPanel>
+                              <StackPanel Classes="field">
+                                <TextBlock Classes="field-label" Text="Focus Y" />
+                                <ui:SliderField Classes="fill" Value="{Binding CenterY}" Minimum="0" Maximum="1" Step="0.01" Format="{}{0:0}%" ValueScale="100" />
+                              </StackPanel>
+                            </StackPanel>
+                          </Border>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </StackPanel>
+
+                  <!-- Corners, shadow, border -->
+                  <StackPanel Classes="inspector-section" IsVisible="{Binding ShowStyleTab}">
+                    <StackPanel Classes="field">
+                      <TextBlock Classes="field-label" Text="Corner radius" />
+                      <ui:SliderField Classes="fill" Value="{Binding Document.Presentation.CornerRadius}" Minimum="0" Maximum="64" Step="1" Format="{}{0:0} px" />
+                      <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,4,0,0">
+                        <Button Classes="small" Content="Square" Command="{Binding SetCornerRadiusCommand}" CommandParameter="0" />
+                        <Button Classes="small" Content="Subtle" Command="{Binding SetCornerRadiusCommand}" CommandParameter="12" />
+                        <Button Classes="small" Content="Round" Command="{Binding SetCornerRadiusCommand}" CommandParameter="32" />
+                      </StackPanel>
+                    </StackPanel>
+
+                    <Grid ColumnDefinitions="*,Auto" Margin="0,8,0,0">
+                      <TextBlock Classes="group" Text="SHADOW" Margin="0" VerticalAlignment="Center" />
+                      <ToggleSwitch Grid.Column="1" IsChecked="{Binding Document.Presentation.Shadow}" />
+                    </Grid>
+                    <StackPanel Classes="inspector-section" IsEnabled="{Binding Document.Presentation.Shadow}">
+                      <ComboBox Classes="fill" ItemsSource="{Binding ShadowPresets}" SelectedItem="{Binding SelectedShadowPreset}" />
+                      <StackPanel Classes="field">
+                        <TextBlock Classes="field-label" Text="Blur" />
+                        <ui:SliderField Classes="fill" Value="{Binding Document.Presentation.ShadowBlur}" Minimum="0" Maximum="100" Step="1" Format="{}{0:0} px" />
+                      </StackPanel>
+                      <StackPanel Classes="field">
+                        <TextBlock Classes="field-label" Text="Opacity" />
+                        <ui:SliderField Classes="fill" Value="{Binding Document.Presentation.ShadowOpacity}" Minimum="0" Maximum="1" Step="0.01" Format="{}{0:0}%" ValueScale="100" />
+                      </StackPanel>
+                      <StackPanel Classes="field">
+                        <TextBlock Classes="field-label" Text="X offset" />
+                        <ui:SliderField Classes="fill" Value="{Binding Document.Presentation.ShadowOffsetX}" Minimum="-200" Maximum="200" Step="1" Format="{}{0:0} px" />
+                      </StackPanel>
+                      <StackPanel Classes="field">
+                        <TextBlock Classes="field-label" Text="Y offset" />
+                        <ui:SliderField Classes="fill" Value="{Binding Document.Presentation.ShadowOffsetY}" Minimum="-200" Maximum="200" Step="1" Format="{}{0:0} px" />
+                      </StackPanel>
+                    </StackPanel>
+
+                    <Grid ColumnDefinitions="*,Auto" Margin="0,8,0,0">
+                      <TextBlock Classes="group" Text="BORDER" Margin="0" VerticalAlignment="Center" />
+                      <ToggleSwitch Grid.Column="1" IsChecked="{Binding Document.Presentation.BorderEnabled}" />
+                    </Grid>
+                    <StackPanel Classes="inspector-section" IsEnabled="{Binding Document.Presentation.BorderEnabled}">
+                      <StackPanel Classes="field">
+                        <TextBlock Classes="field-label" Text="Colour" />
+                        <Grid ColumnDefinitions="*,8,Auto">
+                          <TextBox Text="{Binding Document.Presentation.BorderColor, UpdateSourceTrigger=LostFocus}" MaxLength="7" />
+                          <ColorPicker Grid.Column="2" IsAlphaEnabled="False" IsAlphaVisible="False"
+                                       Color="{Binding Document.Presentation.BorderColor, Converter={x:Static ui:Converters.HexToColor}}" />
+                        </Grid>
+                      </StackPanel>
+                      <StackPanel Classes="field">
+                        <TextBlock Classes="field-label" Text="Width" />
+                        <ui:SliderField Classes="fill" Value="{Binding Document.Presentation.BorderWidth}" Minimum="0" Maximum="12" Step="0.5" Format="{}{0:0.#} px" />
+                      </StackPanel>
+                      <StackPanel Classes="field">
+                        <TextBlock Classes="field-label" Text="Opacity" />
+                        <ui:SliderField Classes="fill" Value="{Binding Document.Presentation.BorderOpacity}" Minimum="0" Maximum="1" Step="0.05" Format="{}{0:0}%" ValueScale="100" />
+                      </StackPanel>
+                      <TextBlock Classes="caption" TextWrapping="Wrap" Text="The border follows the video corners and stays inside the video edge." />
+                    </StackPanel>
+                  </StackPanel>
+
+                  <!-- Frame -->
+                  <StackPanel Classes="inspector-section" IsVisible="{Binding ShowFrameTab}">
+                    <StackPanel Classes="field">
+                      <TextBlock Classes="field-label" Text="Window style" />
+                      <ComboBox Classes="fill" ItemsSource="{Binding FrameStyles}" SelectedItem="{Binding Document.Presentation.DeviceFrameStyle}" />
+                    </StackPanel>
+                    <StackPanel Classes="field">
+                      <TextBlock Classes="field-label" Text="Theme" />
+                      <ListBox Theme="{StaticResource Segmented}" HorizontalAlignment="Stretch" ItemsSource="{Binding FrameThemes}"
+                               SelectedItem="{Binding Document.Presentation.FrameTheme}" />
+                    </StackPanel>
+                    <Grid ColumnDefinitions="*,Auto">
+                      <TextBlock Classes="body" Text="Title bar" VerticalAlignment="Center" />
+                      <ToggleSwitch Grid.Column="1" IsChecked="{Binding Document.Presentation.FrameTitleBar}" />
+                    </Grid>
+                    <Grid ColumnDefinitions="*,Auto">
+                      <TextBlock Classes="body" Text="Window controls" VerticalAlignment="Center" />
+                      <ToggleSwitch Grid.Column="1" IsChecked="{Binding Document.Presentation.FrameControls}" />
+                    </Grid>
+                    <StackPanel Classes="field">
+                      <TextBlock Classes="field-label" Text="Frame padding" />
+                      <ui:SliderField Classes="fill" Value="{Binding Document.Presentation.FramePadding}" Minimum="0" Maximum="24" Step="1" Format="{}{0:0} px" />
+                    </StackPanel>
+                    <TextBlock Classes="caption" TextWrapping="Wrap" Text="Original, neutral window designs. The frame is included in the canvas layout." />
+                  </StackPanel>
+
+                  <!-- Watermark -->
+                  <StackPanel Classes="inspector-section" IsVisible="{Binding ShowWatermarkTab}">
+                    <Grid ColumnDefinitions="*,Auto">
+                      <TextBlock Classes="body" Text="Show watermark" VerticalAlignment="Center" />
+                      <ToggleSwitch Grid.Column="1" IsChecked="{Binding Document.Presentation.WatermarkEnabled}" />
+                    </Grid>
+                    <Border Classes="inset" Padding="12,10">
+                      <Grid ColumnDefinitions="Auto,*">
+                        <ui:Icon Data="{StaticResource Icon.Stamp}" Margin="0,0,10,0" Foreground="{DynamicResource Brush.TextSecondary}" />
+                        <TextBlock Grid.Column="1" Classes="secondary" Text="{Binding WatermarkFileName}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                      </Grid>
+                    </Border>
+                    <Grid ColumnDefinitions="*,8,Auto">
+                      <Button Classes="stretch" Content="Choose logo…" Command="{Binding ChooseWatermarkCommand}" />
+                      <Button Grid.Column="2" Classes="danger-ghost" Content="Remove" Command="{Binding RemoveWatermarkCommand}" />
+                    </Grid>
+                    <StackPanel Classes="inspector-section" IsEnabled="{Binding Document.Presentation.WatermarkEnabled}">
+                      <StackPanel Classes="field">
+                        <TextBlock Classes="field-label" Text="Size · canvas width" />
+                        <ui:SliderField Classes="fill" Value="{Binding Document.Presentation.WatermarkScale}" Minimum="0.03" Maximum="0.5" Step="0.01" Format="{}{0:0}%" ValueScale="100" />
+                      </StackPanel>
+                      <StackPanel Classes="field">
+                        <TextBlock Classes="field-label" Text="Opacity" />
+                        <ui:SliderField Classes="fill" Value="{Binding Document.Presentation.WatermarkOpacity}" Minimum="0" Maximum="1" Step="0.05" Format="{}{0:0}%" ValueScale="100" />
+                      </StackPanel>
+                      <StackPanel Classes="field">
+                        <TextBlock Classes="field-label" Text="Position" />
+                        <ComboBox Classes="fill" ItemsSource="{Binding WatermarkPositions}" SelectedItem="{Binding Document.Presentation.WatermarkPosition}" />
+                      </StackPanel>
+                      <StackPanel Classes="field">
+                        <TextBlock Classes="field-label" Text="Margin" />
+                        <ui:SliderField Classes="fill" Value="{Binding Document.Presentation.WatermarkMargin}" Minimum="0" Maximum="200" Step="1" Format="{}{0:0} px" />
+                      </StackPanel>
+                      <Grid ColumnDefinitions="*,12,*">
+                        <StackPanel Classes="field">
+                          <TextBlock Classes="field-label" Text="X offset · px" />
+                          <NumericUpDown Minimum="-7680" Maximum="7680" Increment="1" FormatString="0" Value="{Binding Document.Presentation.WatermarkOffsetX}" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="2" Classes="field">
+                          <TextBlock Classes="field-label" Text="Y offset · px" />
+                          <NumericUpDown Minimum="-7680" Maximum="7680" Increment="1" FormatString="0" Value="{Binding Document.Presentation.WatermarkOffsetY}" />
+                        </StackPanel>
+                      </Grid>
+                    </StackPanel>
+                  </StackPanel>
+
+                  <!-- Text -->
+                  <Panel IsVisible="{Binding ShowTextTab}">
+                  <StackPanel Classes="inspector-section" DataContext="{Binding Text}" x:DataType="vm:TextLayerEditor">
+                    <Grid ColumnDefinitions="*,8,Auto,4,Auto">
+                      <ComboBox Classes="fill" ItemsSource="{Binding Layers}" SelectedIndex="{Binding SelectedIndex}" />
+                      <Button Grid.Column="2" Classes="icon outlined" ui:Ui.Icon="{StaticResource Icon.Plus}" Command="{Binding AddLayerCommand}" ToolTip.Tip="Add text layer" />
+                      <Button Grid.Column="4" Classes="icon outlined" ui:Ui.Icon="{StaticResource Icon.Trash}" Command="{Binding RemoveLayerCommand}" ToolTip.Tip="Remove this layer" />
+                    </Grid>
+                    <StackPanel Classes="field">
+                      <TextBlock Classes="field-label" Text="Text" />
+                      <TextBox Text="{Binding Text}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="76" Watermark="Type text to place on the video" />
+                    </StackPanel>
+                    <StackPanel Classes="field">
+                      <TextBlock Classes="field-label" Text="Font" />
+                      <ComboBox Classes="fill" ItemsSource="{Binding Fonts}" SelectedItem="{Binding FontFamily}" MaxDropDownHeight="320" />
+                    </StackPanel>
+                    <Grid ColumnDefinitions="*,12,*">
+                      <StackPanel Classes="field">
+                        <TextBlock Classes="field-label" Text="Size · px" />
+                        <NumericUpDown Minimum="8" Maximum="240" Increment="1" FormatString="0" Value="{Binding FontSize}" />
+                      </StackPanel>
+                      <StackPanel Grid.Column="2" Classes="field">
+                        <TextBlock Classes="field-label" Text="Colour" />
+                        <Grid ColumnDefinitions="*,6,Auto">
+                          <TextBox Text="{Binding Color, UpdateSourceTrigger=LostFocus}" MaxLength="7" />
+                          <ColorPicker Grid.Column="2" IsAlphaEnabled="False" IsAlphaVisible="False"
+                                       Color="{Binding Color, Converter={x:Static ui:Converters.HexToColor}}" />
+                        </Grid>
+                      </StackPanel>
+                    </Grid>
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                      <ToggleButton Classes="small" Content="Bold" FontWeight="Bold" IsChecked="{Binding Bold}" />
+                      <ToggleButton Classes="small" Content="Italic" FontStyle="Italic" IsChecked="{Binding Italic}" />
+                      <Button Classes="small ghost" Content="Clear text" Command="{Binding ClearTextCommand}" />
+                    </StackPanel>
+                    <StackPanel Classes="field">
+                      <TextBlock Classes="field-label" Text="Opacity" />
+                      <ui:SliderField Classes="fill" Value="{Binding Opacity}" Minimum="0" Maximum="1" Step="0.05" Format="{}{0:0}%" ValueScale="100" />
+                    </StackPanel>
+                    <Grid ColumnDefinitions="*,12,*">
+                      <StackPanel Classes="field">
+                        <TextBlock Classes="field-label" Text="X · %" />
+                        <NumericUpDown Minimum="0" Maximum="100" Increment="1" FormatString="0.#" Value="{Binding XPercent}" />
+                      </StackPanel>
+                      <StackPanel Grid.Column="2" Classes="field">
+                        <TextBlock Classes="field-label" Text="Y · %" />
+                        <NumericUpDown Minimum="0" Maximum="100" Increment="1" FormatString="0.#" Value="{Binding YPercent}" />
+                      </StackPanel>
+                    </Grid>
+                    <StackPanel Classes="field">
+                      <TextBlock Classes="field-label" Text="Horizontal alignment" />
+                      <ListBox Theme="{StaticResource Segmented}" HorizontalAlignment="Stretch" ItemsSource="{Binding HorizontalAlignments}" SelectedItem="{Binding HorizontalAlignment}" />
+                    </StackPanel>
+                    <StackPanel Classes="field">
+                      <TextBlock Classes="field-label" Text="Vertical alignment" />
+                      <ListBox Theme="{StaticResource Segmented}" HorizontalAlignment="Stretch" ItemsSource="{Binding VerticalAlignments}" SelectedItem="{Binding VerticalAlignment}" />
+                    </StackPanel>
+                    <StackPanel Classes="field">
+                      <TextBlock Classes="field-label" Text="Intro animation" />
+                      <ComboBox Classes="fill" ItemsSource="{Binding Animations}" SelectedItem="{Binding Animation}" />
+                    </StackPanel>
+                    <StackPanel Classes="field">
+                      <TextBlock Classes="field-label" Text="Animation length" />
+                      <ui:SliderField Classes="fill" Value="{Binding AnimationDuration}" Minimum="0.1" Maximum="3" Step="0.1" Format="{}{0:0.0} s" />
+                    </StackPanel>
+                    <TextBlock Classes="caption" TextWrapping="Wrap"
+                               Text="Drag text on the canvas to place it. Fonts come from your installed Windows fonts and fall back to Segoe UI." />
+                  </StackPanel>
+                  </Panel>
+
+                  <!-- Export -->
+                  <StackPanel Classes="inspector-section" IsVisible="{Binding ShowExportTab}">
+                    <Border Classes="inset" Padding="16">
+                      <StackPanel Spacing="2">
+                        <TextBlock Classes="caption" Text="MP4 · H.264 · exported at canvas size" />
+                        <TextBlock Classes="title" Text="{Binding Document.CanvasLabel}" />
+                        <TextBlock Classes="caption" Text="{Binding Document.TrimLabel}" />
+                      </StackPanel>
+                    </Border>
+                    <StackPanel Classes="field">
+                      <TextBlock Classes="field-label" Text="Quality" />
+                      <ComboBox Classes="fill" ItemsSource="{Binding ExportQualities}" SelectedItem="{Binding Document.Export.Quality}" />
+                    </StackPanel>
+                    <StackPanel Classes="field">
+                      <TextBlock Classes="field-label" Text="Frame rate" />
+                      <ComboBox Classes="fill" ItemsSource="{Binding ExportFrameRates}" SelectedItem="{Binding Document.Export.FrameRate}" />
+                    </StackPanel>
+                    <StackPanel Classes="field">
+                      <TextBlock Classes="field-label" Text="Encoder" />
+                      <ComboBox Classes="fill" ItemsSource="{Binding ExportEncoders}" SelectedItem="{Binding Document.Export.Encoder}" />
+                    </StackPanel>
+                    <Grid ColumnDefinitions="*,Auto">
+                      <TextBlock Classes="body" Text="Include audio" VerticalAlignment="Center" />
+                      <ToggleSwitch Grid.Column="1" IsChecked="{Binding Document.Export.IncludeAudio}" />
+                    </Grid>
+                    <TextBlock Classes="caption" TextWrapping="Wrap" Text="Hardware encoders need a compatible GPU. If a hardware export fails, choose Software." />
+                    <Button Classes="primary large stretch" ui:Ui.Icon="{StaticResource Icon.Export}" Content="Export video" Command="{Binding ExportVideoCommand}" />
+                    <Button Classes="stretch" ui:Ui.Icon="{StaticResource Icon.Gif}" Content="Export GIF · 720px / 12 fps" Command="{Binding ExportGifCommand}" />
+                    <Border Classes="divider" Margin="0,4" />
+                    <Button Classes="stretch ghost" Content="Keep original &amp; close" Command="{Binding KeepOriginalCommand}" />
+                    <Button Classes="stretch ghost" ui:Ui.Icon="{StaticResource Icon.FolderOpen}" Content="Open output folder" Command="{Binding OpenOutputFolderCommand}" />
+                    <Button Classes="stretch danger-ghost" ui:Ui.Icon="{StaticResource Icon.Trash}" Content="Discard original…" Command="{Binding DiscardCommand}" />
+                  </StackPanel>
+                </Panel>
+              </ScrollViewer>
+            </Grid>
+          </Border>
+        </Grid>
+
+        <!-- ===================== Footer ===================== -->
+        <Border Grid.Row="2" Background="{DynamicResource Brush.BackgroundSecondary}" BorderBrush="{DynamicResource Brush.BorderSubtle}"
+                BorderThickness="0,1,0,0" Padding="16,8" MinHeight="40">
+          <Grid ColumnDefinitions="*,Auto">
+            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+              <Ellipse Width="7" Height="7" Fill="{DynamicResource Brush.Success}" IsVisible="{Binding IsNotExporting}" VerticalAlignment="Center" />
+              <TextBlock Classes="caption" Text="{Binding Document.Status}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" IsVisible="{Binding IsNotExporting}" />
+              <StackPanel Orientation="Horizontal" Spacing="12" IsVisible="{Binding IsExporting}" VerticalAlignment="Center">
+                <ProgressBar Width="240" Minimum="0" Maximum="100" Value="{Binding ExportProgress}" VerticalAlignment="Center" />
+                <TextBlock Classes="caption" Text="{Binding ExportStage}" VerticalAlignment="Center" />
+                <TextBlock Classes="caption" Text="{Binding ExportProgress, StringFormat='{}{0:0}%'}" VerticalAlignment="Center" />
+              </StackPanel>
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+              <Button Classes="small" Content="Cancel export" Command="{Binding CancelExportCommand}" IsVisible="{Binding IsExporting}" />
+              <Button Classes="small ghost" ui:Ui.Icon="{StaticResource Icon.Copy}" Content="Copy error details" Click="OnCopyErrorClick" IsVisible="{Binding HasLastError}" />
+              <Button Classes="small ghost" ui:Ui.Icon="{StaticResource Icon.FolderOpen}" Content="Open output folder" Command="{Binding OpenOutputFolderCommand}" IsVisible="{Binding HasLastOutput}" />
+            </StackPanel>
+          </Grid>
+        </Border>
+
+        <!-- Toasts -->
+        <ItemsControl Grid.Row="1" Margin="24" HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                      DataContext="{Binding Toasts}" x:DataType="services:ToastService"
+                      ItemsSource="{Binding Items}" ItemTemplate="{StaticResource ToastTemplate}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <StackPanel Spacing="8" />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+        </ItemsControl>
+      </Grid>
+    </ui:DialogHost>
+  </Panel>
+</Window>

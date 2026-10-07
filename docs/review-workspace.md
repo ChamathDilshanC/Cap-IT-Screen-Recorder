@@ -1,82 +1,104 @@
 # Review & Export workspace
 
-The existing WinUI application now opens a non-modal composition workspace after recording finalization. Home also offers **Open recording** for MP4 and MKV files. A review can remain open while another recording is made; opening another recording no longer cancels an earlier review's export.
+Stopping a recording opens a non-modal Review & Export window. **Recordings** (and **Open recording**,
+Ctrl+O) open any MP4 or MKV in it; `ScreenRecorderApp.exe --review <file>` opens one standalone. A
+review can stay open while another recording is made, and each recording gets its own window.
 
 ## Editing
 
-- Compact title/command bar with undo, redo, reset, inspector toggle and Export Video.
-- Aspect-correct canvas with Original, 16:9, 9:16, 1:1, 4:5, 3:2, 4:3 and custom dimensions. Resolution presets preserve the chosen aspect ratio.
-- Padding, 40–120% video scale, proportional Fit/Fill/Original/Custom modes, alignment and pixel offsets.
-- Solid colours, a colour picker and recent swatches, eleven gradients, gradient angle, and PNG/JPEG image backgrounds with fit/fill/stretch, blur and dimming.
-- Real rounded video clipping, shadow controls/presets, rounded border, six neutral frame styles and image watermarks with canvas-relative size, opacity, alignment, margin and offsets.
-- Playback, seeking, frame step, mute/volume, full-screen preview and automatic fit. The inspector collapses at narrow widths and remains manually accessible.
-- Thumbnail timeline with original-time ruler, playhead, keyboard-accessible trim handles, numeric in/out values and zoom markers. Zoom editing is under Video.
-- Six built-in presentation presets plus custom save, rename and delete. Built-ins cannot be overwritten.
-- MP4 export at canvas resolution with source/24/30/60 fps, quality presets, software or explicit hardware encoders, optional audio, real progress and cancellation. GIF uses the same composition with a two-pass palette, 720px width and 12 fps.
+- Title bar with back (keep original), layers and inspector toggles, undo, redo, reset styling, GIF and
+  Export video (Ctrl+E).
+- **Layers panel:** recording details, the video layer, zoom regions (click to jump, remove) and text layers.
+- **Canvas:** Original, 16:9, 9:16, 1:1, 4:5, 3:2, 4:3 and custom sizes as visual chips; 1080p / 1440p /
+  2160p size presets keep the aspect; padding; built-in and custom style presets (save, rename, delete).
+- **Background:** thirteen scenes, solid colour, eleven gradients with angle, recent colours, a colour
+  picker, and PNG/JPEG images with fit/fill/stretch, blur and dimming.
+- **Video:** 40–120% scale, Fit/Fill/Original/Custom, position and pixel offsets, rotation, perspective
+  presets and tilt (preview), and zoom regions with timing, focus point and zoom level.
+- **Corners & shadow:** radius with presets, shadow presets and custom blur/opacity/offsets, rounded border.
+- **Frame:** six neutral window styles, dark/light, title bar and window controls, frame padding.
+- **Watermark:** logo image with canvas-relative size, opacity, position, margin and offsets.
+- **Text:** multiple layers with any installed font, size, colour, opacity, bold/italic, alignment,
+  position (or drag on the canvas) and intro animations (bounce letters, fade, pop, slide up).
+- **Export:** MP4 at canvas resolution with source/24/30/60 fps, quality presets, software or explicit
+  hardware encoders, optional audio, real progress and cancellation; GIF uses the same composition with a
+  two-pass palette at 720 px / 12 fps.
+- **Playback:** play/pause (Space), frame step, scrubbing, mute/volume, full-screen preview (F11).
+- **Timeline:** time ruler, thumbnail strip, draggable trim handles, zoom-region lane, scrubbable
+  playhead; ←/→ step the playhead (Shift = 1 s), I / O set the in and out points, plus numeric in/out fields.
 
-The original recording is retained. Export uses a separate destination, builds a temporary output next to it, and replaces the chosen destination only after successful encoding. Cancellation/failure removes the partial output and preserves a previous destination. Discarding the original remains available behind an explicit confirmation.
+The original recording is never modified. Exports go to `Edited/<date>/` beside the `Recordings/` folder,
+are written to a temporary file first and only replace the destination after encoding succeeds.
+Cancellation or failure removes the partial file. **Discard original…** deletes the source and its edit
+metadata only after an explicit confirmation; exported copies are kept.
 
-## Architecture and changed areas
+## Architecture
 
 | Area | Files / responsibilities |
 | --- | --- |
-| Shared design system | `Themes/DesignSystem.xaml`, merged by `App.xaml`: light/dark/high-contrast surfaces, spacing/radius tokens, native-template control styles, inspector navigation and cards. Main pages, shell and source picker consume these resources. |
-| Review document | `ViewModels/ReviewViewModel.cs`: observable document state, bounded snapshot history, trim and zoom restoration, input sanitation, debounced atomic persistence, custom presets. |
-| Data | `Models/PresentationSettings.cs`, `PresentationPreset.cs`, `ExportSettings.cs`, `RecordingMetadata.cs`: defaults, normalization, canvas resolution, legacy migration and trim retention. The existing cursor enum is isolated in `CursorStyle.cs` so composition checks can link the real models without loading WinUI. |
-| Window | `Views/TrimExportWindow.xaml` and partial host/inspector/export files: window, picker and playback lifecycle; application commands; error/progress UI. |
-| Live preview | `Views/Controls/VideoPreviewCanvas.*`: a reusable MediaPlayerElement viewport, GPU geometric corner clip, proportional crop/zoom positioning and static artwork layers. Styling does not transcode the video. |
-| Timeline | `Views/Controls/EditorTimeline.*`, `Services/Export/TimelineThumbnailService.cs`: reusable timeline, draggable/keyboard trim handles, original-time markers and eight asynchronously sampled thumbnails. |
-| Composition contract | `Services/Export/CompositionLayout.cs`: shared integer geometry and source crop calculations, including zoom overlap precedence. |
-| Static artwork | `Services/Export/CompositionAssets.cs`: background, image blur, frame, shadow, border, watermark and mask rendering on worker threads. Preview and export consume identical artwork. Preview updates are cancelled/debounced and do not rebuild the video tree. |
-| Export | `Services/Export/CompositionExportService.cs`: one graph shared by MP4 and both GIF passes, safe argument lists, bounded logs, progress, cancellation and temporary output ownership. Existing MP4/GIF service entry points remain as adapters. |
-| Integration | `MainViewModel`, Home, App and MainWindow: post-finalization review, reopening, concurrent review ownership, theme propagation, Mica and standalone `--review <file>` support. Capture/encoder/audio/tracking services retain their existing recording behavior. |
+| Window | `src/CapIT.Desktop/Views/ReviewWindow.axaml(.cs)`: custom chrome, layers / stage / inspector / timeline layout, responsive panels, keyboard shortcuts, full screen, save-before-close. |
+| Session | `ViewModels/Editor/EditorViewModel.cs`: inspector state, canvas/background/frame/perspective helpers, zoom regions, export (MP4/GIF), discard, errors. |
+| Document | `ViewModels/Editor/ReviewViewModel.cs`: observable document state, bounded snapshot history (undo/redo), trim and zoom restoration, input sanitation, debounced atomic persistence, custom presets. |
+| Text layers | `ViewModels/Editor/TextLayerEditor.cs`: observable editor for the selected `PresentationTextOverlay`; every change goes through the document (normalised, recorded in history, saved). |
+| Playback | `ViewModels/Editor/VideoPlaybackController.cs` over `CapIT.Infrastructure.Windows/Services/Playback/FrameServerVideoPlayer.cs`: Windows `MediaPlayer` (Media Foundation decoding and audio) in frame-server mode; frames are copied into a D3D11 texture, read back as BGRA (scaled to ≤1920×1440) and shown in an Avalonia bitmap. Only the newest frame is uploaded. |
+| Live preview | `Views/Editor/CompositionPreview.axaml(.cs)`: static artwork layers, rounded video viewport, zoom-region crop, text animation and text dragging. |
+| Timeline | `Controls/EditorTimeline.cs` (single-pass custom drawing), `CapIT.Core/Services/Export/TimelineThumbnailService.cs`. |
+| Composition contract | `CapIT.Core/Services/Export/CompositionLayout.cs`: shared integer geometry and source-crop calculation, including zoom overlap precedence. |
+| Static artwork | `CapIT.Core/Services/Export/CompositionAssets.cs`: background, image blur, frame, shadow, border, watermark, text and mask rendering on worker threads. Preview and export consume identical artwork. |
+| Export | `CapIT.Core/Services/Export/CompositionExportService.cs`: one FFmpeg graph shared by MP4 and both GIF passes, safe argument lists, progress, cancellation and temporary output ownership. |
 
 ### Preview/export agreement
 
-All layout distances are **output canvas pixels**. The source crop remains proportional, rounded clipping covers the video itself, and overflow is clipped to the canvas. The shared layout drives both MediaPlayerElement positioning and FFmpeg's crop/scale stages. Static artwork is identical in both consumers; export uses a grayscale corner mask generated from the same rounded rectangle.
+All layout distances are **output canvas pixels**. Preview and export use the same `CompositionLayout`,
+the same static artwork, and the same `SourceCrop` for zoom regions (the preview crops the decoded frame;
+export crops in FFmpeg). Z rotation is applied the way export applies it (rotate, then fit the rotated
+bounds back into the video rectangle). **Tilt X/Y and depth are a preview-only perspective** — export
+applies scale, offsets and Z rotation — and the inspector says so.
 
-Zoom regions remain relative to the original recording timeline. Export subtracts the trim start only when building segment boundaries; regions crossing either trim boundary are retained, and the later-starting region wins overlaps. Preview uses that same precedence. No edit shifts stored zoom times.
-
-MP4/GIF output metadata describes a neutral, already-composed recording. Reopening an export does not apply its styling twice. Stale output zoom sidecars are cleared when replacing an exported file.
+Zoom regions stay relative to the original recording timeline. Export subtracts the trim start only when
+building segment boundaries; regions crossing a trim boundary are kept, and the later-starting region wins
+overlaps. MP4/GIF output metadata describes a neutral, already-composed recording, so reopening an export
+never applies its styling twice.
 
 ### Persistence and compatibility
 
-Schema 2 adds presentation fields and trim bounds without removing schema-1 JSON names. Missing fields get defaults; null/malformed metadata falls back safely; numeric values, colours and option names are normalized. The legacy `DeviceFrame` flag maps to the neutral Minimal frame. Cursor metadata remains retained; cursor graphics already baked into recordings are not presented as editable post-record effects.
-
-Recording edits stay beside the source in `.metadata.json` and `.zoom.json`. Custom presets live in `%LocalAppData%\Cap-IT Screen Recorder\presentation-presets.json`. Temporary playback/inspector state is not persisted. Save failures surface in the status line instead of failing the recording.
+Schema 2 adds presentation fields and trim bounds without removing schema-1 JSON names. Missing fields get
+defaults; malformed metadata falls back safely; numbers, colours and option names are normalised. Edits
+live beside the source in `Cap-IT Metadata/<file>.metadata.json` and `.zoom.json` (older sidecars next to
+the video are still read). Custom presets live in
+`%LocalAppData%\Cap-IT Screen Recorder\presentation-presets.json`.
 
 ## Verification
 
-Validated on 26 September 2026: Debug and Release x64 builds both completed with zero warnings and errors; the composition suite passed 633 assertions; the final in-app smoke run passed 116 checks with no binding failures and exited cleanly. Separate legacy-metadata and missing-metadata playback runs passed 5 and 4 checks respectively.
-
-From the repository root on Windows with .NET 8+ and `ffmpeg/ffmpeg.exe` available:
-
 ```powershell
-dotnet build -p:Platform=x64
-dotnet build -c Release -p:Platform=x64
-dotnet run --project Tests/CompositionChecks
+dotnet run --project Tests/CompositionChecks/CompositionChecks.csproj
 ```
 
-The dependency-light executable links the production composition/model/export code. It checks metadata migration and sanitation; aspect/fit/scale/padding combinations; bounded crops; real MP4 and GIF export; trim, audio and fps; original-time zoom precedence; rounded masks and static pixel comparisons; every frame style; missing images; Unicode/quoted paths; portrait overflow; 4K; cancellation and preservation of existing output. It writes fixtures and results under ignored `artifacts/composition-checks`.
+The composition suite links the production model/composition/export code (via `CapIT.Core`) and checks
+metadata migration and sanitation, aspect/fit/scale/padding combinations, bounded crops, real MP4 and GIF
+export, trim/audio/fps, original-time zoom precedence, rounded masks and static pixel parity, every frame
+style, missing images, Unicode/quoted paths, portrait overflow, 4K, cancellation, and every text animation
+(text must be on screen after its intro) including bouncing letters in GIF. It writes fixtures under the
+ignored `artifacts/composition-checks`. Requires `ffmpeg/ffmpeg.exe`.
 
-A Debug-only in-app smoke harness can verify real MediaPlayer playback, seeking, frame step, mute, two-way bindings, nonblank selectors, inspector switching, numeric recovery, undo/redo, custom preset operations, themes, resizing, full screen and save/restore:
+Debug builds also include opt-in, in-app checks (excluded from Release):
 
 ```powershell
-$env:CAPIT_REVIEW_SMOKE_DIR = "$PWD\artifacts\ui-smoke"
-& .\bin\x64\Debug\net8.0-windows10.0.19041.0\win-x64\ScreenRecorderApp.exe --review "$PWD\artifacts\composition-checks\source.mp4"
+# Editor: playback, trim, zoom region, text layer, undo/redo, MP4 + GIF export, metadata persistence.
+$env:CAPIT_EDITOR_SMOKE_DIR = "$PWD\artifacts\editor-smoke"
+& .\src\CapIT.Desktop\bin\Debug\net8.0-windows10.0.19041.0\win-x64\ScreenRecorderApp.exe --review "C:\path\to\a\copy.mp4"
+
+# Layout: every page (or the editor's inspector tabs) in both themes at the given sizes, as PNGs.
+$env:CAPIT_UI_SNAPSHOT_DIR = "$PWD\artifacts\ui-snapshots"; $env:CAPIT_UI_SNAPSHOT_SIZES = "1280x720,1500x850"
 ```
 
-Use a disposable fixture: this run exercises autosave. Custom presets are isolated inside the smoke folder. It writes `ui-smoke.txt`, any binding failures, and layout images, then closes. Do not regenerate the same source fixture while this process has it open. The harness and its preset override are excluded from Release builds.
+Use a disposable copy of a recording for the editor run — it saves edits and writes exports beside it.
 
-**Layout image limitation:** WinUI RenderTargetBitmap excludes MediaPlayerElement's external video surface. These images verify chrome/layout, not the decoded video pixels. Playback is verified through the real MediaPlayer session; export pixels are checked separately against the shared geometry/artwork.
+## Limitations
 
-## Deliberate limitations and remaining manual checks
-
-- Ambient moving-video backgrounds, waveform rendering, direct canvas dragging, WebP inputs, transparent export and file-size estimates are omitted. None renders a black canvas for both supported export formats.
-- Image backgrounds use static image blur. Live styling regenerates static artwork after a 120ms debounce; large canvases can take longer. Playback remains independent of that work.
-- Native Windows decoder limitations still apply to older 4:4:4 or otherwise unsupported recordings. Errors preserve the original and offer retry, external playback and FFmpeg export; no automatic proxy transcode is performed.
-- Hardware export choices require compatible GPU drivers. Software H.264 is the default and the tested path. Hardware encoders, every capture/audio device combination and all physical DPI configurations still need manual validation on target machines.
-- The automated layout run covers Dark, Light and System plus 1366×768, 1100×700 and 900×650 window sizes at the host's actual scaling. This is not certification of physical 100/125/150/200% scaling on every monitor.
-- Native UI automation was unavailable in this environment. Final human visual review of the live video surface and an actual record → stop → style → export session is still recommended; the in-app harness and FFmpeg checks are repeatable independently.
-
-Relevant API contracts: [MediaPlayer playback](https://learn.microsoft.com/en-us/windows/apps/develop/media-playback/play-audio-and-video-with-mediaplayer), [FFmpeg filters](https://www.ffmpeg.org/ffmpeg-filters.html).
+- Tilt X/Y and perspective depth are previewed but not exported (unchanged from earlier releases).
+- Native Windows decoders still can't preview some recordings (for example yuv444p "maximize text
+  clarity" files). The original is preserved; the editor offers retry, external playback and FFmpeg export.
+- Hardware export encoders need compatible GPU drivers; Software H.264 is the default and tested path.
+- Image backgrounds use static image blur. Styling regenerates static artwork after a short debounce;
+  large canvases can take longer. Playback is independent of that work.

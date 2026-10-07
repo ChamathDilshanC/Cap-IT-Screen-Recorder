@@ -1,0 +1,267 @@
+<!-- Templates for the Cap-IT building blocks (Controls/*.cs) and the compact toggle switch. -->
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:ui="using:ScreenRecorderApp.Controls">
+
+  <!-- Page header: title + description, actions bottom-aligned on the right -->
+  <ControlTheme x:Key="{x:Type ui:PageHeader}" TargetType="ui:PageHeader">
+    <Setter Property="Margin" Value="0,0,0,28" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Grid ColumnDefinitions="*,Auto">
+          <StackPanel Spacing="6" VerticalAlignment="Bottom">
+            <TextBlock Classes="display" Text="{TemplateBinding Title}" />
+            <TextBlock Classes="secondary" Text="{TemplateBinding Description}" TextWrapping="Wrap" MaxWidth="720" HorizontalAlignment="Left"
+                       IsVisible="{TemplateBinding Description, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+          </StackPanel>
+          <ContentPresenter Grid.Column="1" Margin="24,0,0,2" VerticalAlignment="Bottom" Content="{TemplateBinding Actions}" />
+        </Grid>
+      </ControlTemplate>
+    </Setter>
+  </ControlTheme>
+
+  <!-- Section: heading row above one flush card -->
+  <ControlTheme x:Key="{x:Type ui:SettingsSection}" TargetType="ui:SettingsSection">
+    <Setter Property="Template">
+      <ControlTemplate>
+        <StackPanel Spacing="12">
+          <Grid ColumnDefinitions="*,Auto" IsVisible="{TemplateBinding Header, Converter={x:Static ObjectConverters.IsNotNull}}">
+            <StackPanel Spacing="2" VerticalAlignment="Center">
+              <ContentPresenter Content="{TemplateBinding Header}" FontSize="{StaticResource FontSize.Section}" FontWeight="SemiBold"
+                                Foreground="{DynamicResource Brush.TextPrimary}" />
+              <TextBlock Classes="secondary" Text="{TemplateBinding Description}" TextWrapping="Wrap"
+                         IsVisible="{TemplateBinding Description, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+            </StackPanel>
+            <ContentPresenter Grid.Column="1" Margin="16,0,0,0" VerticalAlignment="Center" Content="{TemplateBinding HeaderActions}" />
+          </Grid>
+          <Border Classes="card-flush">
+            <ContentPresenter Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}" />
+          </Border>
+        </StackPanel>
+      </ControlTemplate>
+    </Setter>
+  </ControlTheme>
+
+  <!-- Row: [icon] title/description ........ control ; optional details beneath -->
+  <ControlTheme x:Key="{x:Type ui:SettingsRow}" TargetType="ui:SettingsRow">
+    <Setter Property="Padding" Value="{StaticResource Pad.Row}" />
+    <Setter Property="MinHeight" Value="64" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border x:Name="RowBorder" Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}"
+                MinHeight="{TemplateBinding MinHeight}"
+                BorderBrush="{DynamicResource Brush.BorderSubtle}" BorderThickness="0,1,0,0">
+          <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto">
+            <Border Width="32" Height="32" CornerRadius="8" Margin="0,0,14,0" VerticalAlignment="Center"
+                    Background="{DynamicResource Brush.Hover}"
+                    IsVisible="{TemplateBinding Icon, Converter={x:Static ObjectConverters.IsNotNull}}">
+              <ui:Icon Data="{TemplateBinding Icon}" Size="16" Foreground="{DynamicResource Brush.TextSecondary}" />
+            </Border>
+            <StackPanel Grid.Column="1" Spacing="3" VerticalAlignment="Center">
+              <TextBlock Classes="row-title" Text="{TemplateBinding Title}" />
+              <TextBlock Classes="row-description" Text="{TemplateBinding Description}"
+                         IsVisible="{TemplateBinding Description, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+            </StackPanel>
+            <ContentPresenter Grid.Column="2" Margin="24,0,0,0" VerticalAlignment="Center" HorizontalAlignment="Right"
+                              Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}" />
+            <ContentPresenter Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,16,0,2"
+                              Content="{TemplateBinding Details}"
+                              IsVisible="{TemplateBinding Details, Converter={x:Static ObjectConverters.IsNotNull}}" />
+          </Grid>
+        </Border>
+      </ControlTemplate>
+    </Setter>
+    <Style Selector="^:nth-child(1) /template/ Border#RowBorder">
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="^:disabled">
+      <Setter Property="Opacity" Value="0.55" />
+    </Style>
+  </ControlTheme>
+
+  <!-- Slider with an aligned value column -->
+  <ControlTheme x:Key="{x:Type ui:SliderField}" TargetType="ui:SliderField">
+    <Setter Property="MinWidth" Value="260" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Grid ColumnDefinitions="*,72">
+          <Slider x:Name="PART_Slider" VerticalAlignment="Center" Margin="0,0,12,0" IsSnapToTickEnabled="True" />
+          <TextBlock Grid.Column="1" Classes="value" HorizontalAlignment="Right" VerticalAlignment="Center"
+                     Text="{TemplateBinding DisplayText}" />
+        </Grid>
+      </ControlTemplate>
+    </Setter>
+    <Style Selector="^.fill">
+      <Setter Property="MinWidth" Value="0" />
+    </Style>
+  </ControlTheme>
+
+  <!-- Empty state -->
+  <ControlTheme x:Key="{x:Type ui:EmptyState}" TargetType="ui:EmptyState">
+    <Setter Property="HorizontalAlignment" Value="Center" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <StackPanel Spacing="8" HorizontalAlignment="Center" MaxWidth="380">
+          <Border Width="56" Height="56" CornerRadius="16" HorizontalAlignment="Center" Margin="0,0,0,8"
+                  Background="{DynamicResource Brush.Hover}" BorderBrush="{DynamicResource Brush.BorderSubtle}" BorderThickness="1"
+                  IsVisible="{TemplateBinding Icon, Converter={x:Static ObjectConverters.IsNotNull}}">
+            <ui:Icon Data="{TemplateBinding Icon}" Size="24" Foreground="{DynamicResource Brush.TextSecondary}" />
+          </Border>
+          <TextBlock Classes="section" HorizontalAlignment="Center" TextAlignment="Center" Text="{TemplateBinding Title}" />
+          <TextBlock Classes="secondary" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"
+                     Text="{TemplateBinding Description}" />
+          <ContentPresenter Margin="0,12,0,0" HorizontalAlignment="Center" Content="{TemplateBinding Content}"
+                            IsVisible="{TemplateBinding Content, Converter={x:Static ObjectConverters.IsNotNull}}" />
+        </StackPanel>
+      </ControlTemplate>
+    </Setter>
+  </ControlTheme>
+
+  <!-- Status badge -->
+  <ControlTheme x:Key="{x:Type ui:StatusBadge}" TargetType="ui:StatusBadge">
+    <Setter Property="Background" Value="{DynamicResource Brush.Hover}" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.TextSecondary}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Brush.BorderSubtle}" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="HorizontalAlignment" Value="Left" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1"
+                CornerRadius="{StaticResource Radius.Pill}" Padding="8,3,10,3" Height="22">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <Ellipse x:Name="Dot" Width="6" Height="6" VerticalAlignment="Center" Fill="{TemplateBinding Foreground}"
+                     IsVisible="{TemplateBinding ShowDot}" />
+            <TextBlock VerticalAlignment="Center" FontSize="{StaticResource FontSize.Caption}" FontWeight="SemiBold"
+                       Foreground="{TemplateBinding Foreground}" Text="{TemplateBinding Text}" />
+          </StackPanel>
+        </Border>
+      </ControlTemplate>
+    </Setter>
+    <Style Selector="^.success">
+      <Setter Property="Background" Value="{DynamicResource Brush.SuccessSubtle}" />
+      <Setter Property="Foreground" Value="{DynamicResource Brush.Success}" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+    <Style Selector="^.warning">
+      <Setter Property="Background" Value="{DynamicResource Brush.WarningSubtle}" />
+      <Setter Property="Foreground" Value="{DynamicResource Brush.Warning}" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+    <Style Selector="^.error">
+      <Setter Property="Background" Value="{DynamicResource Brush.ErrorSubtle}" />
+      <Setter Property="Foreground" Value="{DynamicResource Brush.Error}" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+    <Style Selector="^.info">
+      <Setter Property="Background" Value="{DynamicResource Brush.InfoSubtle}" />
+      <Setter Property="Foreground" Value="{DynamicResource Brush.Info}" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+    <Style Selector="^.accent">
+      <Setter Property="Background" Value="{DynamicResource Brush.AccentSubtle}" />
+      <Setter Property="Foreground" Value="{DynamicResource Brush.AccentText}" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+    <Style Selector="^.recording">
+      <Setter Property="Background" Value="{DynamicResource Brush.ErrorSubtle}" />
+      <Setter Property="Foreground" Value="{DynamicResource Brush.Recording}" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+    <!-- Over video/screenshots: a solid scrim keeps the label legible on any content, in both themes. -->
+    <Style Selector="^.on-media">
+      <Setter Property="Background" Value="#CC0B0D11" />
+      <Setter Property="BorderBrush" Value="#26FFFFFF" />
+    </Style>
+    <Style Selector="^.on-media.accent">
+      <Setter Property="Foreground" Value="#5EDCEA" />
+    </Style>
+    <Style Selector="^.on-media.recording">
+      <Setter Property="Foreground" Value="#FF7A7E" />
+    </Style>
+  </ControlTheme>
+
+  <!-- Audio meter colours -->
+  <ControlTheme x:Key="{x:Type ui:AudioMeter}" TargetType="ui:AudioMeter">
+    <Setter Property="Height" Value="8" />
+    <Setter Property="TrackBrush" Value="{DynamicResource Brush.MeterTrack}" />
+    <Setter Property="FillBrush" Value="{DynamicResource Brush.Success}" />
+    <Setter Property="PeakBrush" Value="{DynamicResource Brush.Error}" />
+    <Setter Property="IdleBrush" Value="{DynamicResource Brush.TextMuted}" />
+  </ControlTheme>
+
+  <!-- Editor timeline colours -->
+  <ControlTheme x:Key="{x:Type ui:EditorTimeline}" TargetType="ui:EditorTimeline">
+    <Setter Property="TrackBrush" Value="{DynamicResource Brush.SurfaceSunken}" />
+    <Setter Property="AccentBrush" Value="{DynamicResource Brush.Accent}" />
+    <Setter Property="AccentForegroundBrush" Value="{DynamicResource Brush.TextOnAccent}" />
+    <Setter Property="TextBrush" Value="{DynamicResource Brush.TextMuted}" />
+    <Setter Property="PlayheadBrush" Value="{DynamicResource Brush.TextPrimary}" />
+    <Setter Property="DimBrush" Value="{DynamicResource Brush.Overlay}" />
+    <Setter Property="Cursor" Value="Hand" />
+  </ControlTheme>
+
+  <!-- Compact toggle switch (36×20), no On/Off text — the row title is the label -->
+  <ControlTheme x:Key="{x:Type ToggleSwitch}" TargetType="ToggleSwitch">
+    <Setter Property="Foreground" Value="{DynamicResource Brush.TextPrimary}" />
+    <Setter Property="HorizontalAlignment" Value="Left" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="FocusAdorner" Value="{x:Null}" />
+    <Setter Property="KnobTransitions">
+      <Transitions>
+        <DoubleTransition Easing="CubicEaseOut" Property="Canvas.Left" Duration="0:0:0.16" />
+      </Transitions>
+    </Setter>
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Grid ColumnDefinitions="Auto,Auto" Background="Transparent">
+          <Panel Width="36" Height="20" VerticalAlignment="Center">
+            <Border x:Name="FocusRing" Margin="-3" CornerRadius="13" BorderThickness="2"
+                    BorderBrush="{DynamicResource Brush.FocusRing}" IsVisible="False" />
+            <Border x:Name="OuterBorder" CornerRadius="10" Background="{DynamicResource ToggleSwitchFillOff}" />
+            <Border x:Name="SwitchKnobBounds" CornerRadius="10" Background="{DynamicResource ToggleSwitchFillOn}" Opacity="0">
+              <Border.Transitions>
+                <Transitions>
+                  <DoubleTransition Property="Opacity" Duration="0:0:0.14" />
+                </Transitions>
+              </Border.Transitions>
+            </Border>
+            <Canvas x:Name="PART_SwitchKnob" Width="16" Height="20" HorizontalAlignment="Left">
+              <Grid x:Name="PART_MovingKnobs" Width="20" Height="20">
+                <Ellipse x:Name="SwitchKnobOff" Width="14" Height="14" Fill="{DynamicResource ToggleSwitchKnobFillOff}" />
+                <Ellipse x:Name="SwitchKnobOn" Width="14" Height="14" Fill="{DynamicResource ToggleSwitchKnobFillOn}" Opacity="0" />
+              </Grid>
+            </Canvas>
+          </Panel>
+          <ContentPresenter x:Name="PART_ContentPresenter" Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center"
+                            Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
+                            IsVisible="{TemplateBinding Content, Converter={x:Static ObjectConverters.IsNotNull}}" />
+        </Grid>
+      </ControlTemplate>
+    </Setter>
+    <Style Selector="^:pointerover /template/ Border#OuterBorder">
+      <Setter Property="Background" Value="{DynamicResource ToggleSwitchFillOffPointerOver}" />
+    </Style>
+    <Style Selector="^:pointerover /template/ Border#SwitchKnobBounds">
+      <Setter Property="Background" Value="{DynamicResource ToggleSwitchFillOnPointerOver}" />
+    </Style>
+    <Style Selector="^:checked /template/ Border#SwitchKnobBounds">
+      <Setter Property="Opacity" Value="1" />
+    </Style>
+    <Style Selector="^:checked /template/ Ellipse#SwitchKnobOn">
+      <Setter Property="Opacity" Value="1" />
+    </Style>
+    <Style Selector="^:checked /template/ Ellipse#SwitchKnobOff">
+      <Setter Property="Opacity" Value="0" />
+    </Style>
+    <Style Selector="^:focus-visible /template/ Border#FocusRing">
+      <Setter Property="IsVisible" Value="True" />
+    </Style>
+    <Style Selector="^:disabled">
+      <Setter Property="Opacity" Value="0.4" />
+      <Setter Property="Cursor" Value="Arrow" />
+    </Style>
+  </ControlTheme>
+</ResourceDictionary>

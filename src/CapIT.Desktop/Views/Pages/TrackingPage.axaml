@@ -1,0 +1,79 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="using:ScreenRecorderApp.Controls"
+             xmlns:vm="using:ScreenRecorderApp.ViewModels"
+             xmlns:c="using:ScreenRecorderApp.Views.Components"
+             x:Class="ScreenRecorderApp.Views.Pages.TrackingPage"
+             x:DataType="vm:ShellViewModel">
+  <ScrollViewer Classes="page">
+    <Border Padding="{StaticResource Pad.Page}" MaxWidth="{StaticResource Width.Page}">
+      <StackPanel DataContext="{Binding Main}" x:DataType="vm:MainViewModel">
+        <ui:PageHeader Title="Smart Tracking" Description="A camera that follows the action: it glides toward your cursor and caret, then eases back out.">
+          <ui:PageHeader.Actions>
+            <ToggleSwitch IsChecked="{Binding MouseTrackingZoomEnabled}" Content="Enabled" FontWeight="Medium" />
+          </ui:PageHeader.Actions>
+        </ui:PageHeader>
+
+        <ui:AdaptiveColumns Breakpoint="960" SideWidth="360">
+          <StackPanel Spacing="32">
+            <ui:SettingsSection Header="Tracking mode" Description="Applies immediately — even mid-recording, the camera eases between modes.">
+              <StackPanel>
+                <ui:SettingsRow Title="What moves the camera" Icon="{StaticResource Icon.CursorClick}"
+                                Description="Follow cursor and typing, or only push in when you click."
+                                IsEnabled="{Binding MouseTrackingZoomEnabled}">
+                  <ListBox Theme="{StaticResource Segmented}" SelectedIndex="{Binding ZoomTriggerIndex}">
+                    <ListBoxItem ui:Ui.Icon="{StaticResource Icon.Cursor}" Content="Cursor &amp; typing" />
+                    <ListBoxItem ui:Ui.Icon="{StaticResource Icon.CursorClick}" Content="Clicks only" />
+                  </ListBox>
+                  <ui:SettingsRow.Details>
+                    <Border Classes="inset" Padding="14,12">
+                      <Panel>
+                        <TextBlock Classes="secondary" TextWrapping="Wrap" IsVisible="{Binding !ZoomOnClickOnly}"
+                                   Text="Zooms toward the mouse while you move or click it, and toward the text caret while you type — then eases back to the full desktop about 1.5 s after you stop. Motion uses a critically damped spring: smooth acceleration, no overshoot." />
+                        <TextBlock Classes="secondary" TextWrapping="Wrap" IsVisible="{Binding ZoomOnClickOnly}"
+                                   Text="Only a click pushes the camera in. Moving the mouse or typing leaves the full desktop in view. After a click the zoom holds for about 2.5 s so viewers see what happened, then eases out." />
+                      </Panel>
+                    </Border>
+                  </ui:SettingsRow.Details>
+                </ui:SettingsRow>
+              </StackPanel>
+            </ui:SettingsSection>
+
+            <ui:SettingsSection Header="Zoom">
+              <StackPanel IsEnabled="{Binding MouseTrackingZoomEnabled}">
+                <ui:SettingsRow Title="Zoom level" Description="How far the camera pushes in." Icon="{StaticResource Icon.ZoomIn}">
+                  <ListBox Theme="{StaticResource Segmented}" ItemsSource="{Binding ZoomLevelOptions}" SelectedItem="{Binding SelectedZoomLevel}">
+                    <ListBox.ItemTemplate>
+                      <DataTemplate>
+                        <TextBlock Text="{Binding Label}" />
+                      </DataTemplate>
+                    </ListBox.ItemTemplate>
+                  </ListBox>
+                </ui:SettingsRow>
+                <ui:SettingsRow Title="Animation speed" Description="0% keeps the default smooth timing. Higher values zoom in and out faster."
+                                Icon="{StaticResource Icon.Timer}">
+                  <ui:SliderField Value="{Binding ZoomAnimationSpeedPercent}" Minimum="0" Maximum="50" Step="1" Format="{}{0:0}%" />
+                </ui:SettingsRow>
+                <ui:SettingsRow Title="Instant zoom-out" Description="Snap back to the full desktop when the zoom releases. Zooming in stays smooth."
+                                Icon="{StaticResource Icon.Maximize}">
+                  <ToggleSwitch IsChecked="{Binding InstantZoomOut}" />
+                </ui:SettingsRow>
+              </StackPanel>
+            </ui:SettingsSection>
+
+            <ui:SettingsSection Header="Keystrokes">
+              <StackPanel>
+                <ui:SettingsRow Title="Keystroke overlay" Description="Shows recent keystrokes on screen as you type, fading out after each key. Applies immediately."
+                                Icon="{StaticResource Icon.Keyboard}">
+                  <ToggleSwitch IsChecked="{Binding KeystrokeOverlayEnabled}" />
+                </ui:SettingsRow>
+              </StackPanel>
+            </ui:SettingsSection>
+          </StackPanel>
+
+          <c:LivePreviewCard Hint="Smart Tracking runs in the live preview too — move the mouse or type to see the camera follow." />
+        </ui:AdaptiveColumns>
+      </StackPanel>
+    </Border>
+  </ScrollViewer>
+</UserControl>
