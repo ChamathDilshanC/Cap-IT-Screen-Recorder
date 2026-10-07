@@ -37,7 +37,10 @@ public sealed class FrameView : Control
 
     public FrameView()
     {
-        RenderOptions.SetBitmapInterpolationMode(this, BitmapInterpolationMode.MediumQuality);
+        // Capture frames are kept at the source resolution and usually displayed smaller than native.
+        // Use Avalonia's higher-quality downsampler here so preview text does not look softer than the
+        // independently rendered recording. The recording pipeline does not use this control.
+        RenderOptions.SetBitmapInterpolationMode(this, BitmapInterpolationMode.HighQuality);
     }
 
     public Bitmap? Source { get => GetValue(SourceProperty); set => SetValue(SourceProperty, value); }

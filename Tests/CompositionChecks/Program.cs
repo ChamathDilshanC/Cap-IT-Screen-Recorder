@@ -4,6 +4,7 @@ using System.Text.Json;
 using ScreenRecorderApp.Models;
 using ScreenRecorderApp.Services.Encoding;
 using ScreenRecorderApp.Services.Export;
+using ScreenRecorderApp.Services.Capture;
 
 var root = Path.GetFullPath(args.FirstOrDefault() ?? "artifacts/composition-checks");
 Directory.CreateDirectory(root);
@@ -11,6 +12,44 @@ var ffmpeg = Path.GetFullPath("ffmpeg/ffmpeg.exe");
 Environment.SetEnvironmentVariable("PATH", Path.GetDirectoryName(ffmpeg) + Path.PathSeparator + Environment.GetEnvironmentVariable("PATH"));
 var assertions = 0;
 void Check(bool value, string message) { if (!value) throw new Exception(message); assertions++; }
+
+// Smart Tracking springs must make the same progress at the same wall-clock time at 30 and 60 FPS,
+// stay monotonic toward a fixed target, and retain momentum when a target changes mid-transition.
+static (double Position, double Velocity) SimulateZoom(double totalSeconds, double frameSeconds)
+{
+    double position = 1.0, velocity = 0.0, elapsed = 0.0;
+    while (elapsed < totalSeconds - 1e-9)
+    {
+        var dt = Math.Min(frameSeconds, totalSeconds - elapsed);
+        position = VideoCaptureService.SmoothDamp(position, 2.0, ref velocity, .5, dt);
+        elapsed += dt;
+    }
+    return (position, velocity);
+}
+
+var zoomAt30Fps = SimulateZoom(.3, 1.0 / 30.0);
+var zoomAt60Fps = SimulateZoom(.3, 1.0 / 60.0);
+Check(Math.Abs(zoomAt30Fps.Position - zoomAt60Fps.Position) < .005, "Zoom spring is frame-rate independent");
+Check(Math.Abs(VideoCaptureService.SmoothTimeForAnimationSpeed(.5, 0) - .5) < 1e-9
+    && Math.Abs(VideoCaptureService.SmoothTimeForAnimationSpeed(.5, 50) - .25) < 1e-9
+    && Math.Abs(VideoCaptureService.SmoothTimeForAnimationSpeed(.5, 100) - .25) < 1e-9, "Animation speed has a bounded smooth-time range");
+
+double springPosition = 1.0, springVelocity = 0.0;
+double redirectPosition = 1.0, redirectVelocity = 0.0;
+for (var i = 0; i < 10; i++)
+    redirectPosition = VideoCaptureService.SmoothDamp(redirectPosition, 2.0, ref redirectVelocity, .32, 1.0 / 60.0);
+var velocityBeforeRedirect = redirectVelocity;
+var redirectedPosition = VideoCaptureService.SmoothDamp(redirectPosition, 2.5, ref redirectVelocity, .32, 1.0 / 60.0);
+Check(velocityBeforeRedirect > 0 && redirectVelocity > 0 && redirectedPosition > redirectPosition,
+    "Target redirect preserves momentum during a transition");
+
+for (var i = 0; i < 120; i++)
+{
+    var next = VideoCaptureService.SmoothDamp(springPosition, 2.0, ref springVelocity, .32, 1.0 / 60.0);
+    Check(next >= springPosition - 1e-9 && next <= 2.0 + 1e-9, "Zoom spring approaches without overshoot");
+    springPosition = next;
+}
+Check(springVelocity > 0, "Zoom spring reaches its target with no residual reverse motion");
 
 // Missing, legacy, explicit-null and damaged sidecars must be safe to open.
 var legacyPath = Path.Combine(root, "legacy.mp4");

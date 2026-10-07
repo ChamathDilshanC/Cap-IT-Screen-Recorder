@@ -10,7 +10,7 @@ Capture the right source, follow the action with smart zoom, draw over the deskt
 the result, and export without leaving the app.
 
 <a href="https://github.com/ChamathDilshanC/Cap-IT-Screen-Recorder/releases/latest"><img src="https://img.shields.io/badge/Download-Windows%20Installer-18dce8?style=for-the-badge&logo=windows&logoColor=white" alt="Download Windows installer" /></a>
-<a href="https://github.com/ChamathDilshanC/Cap-IT-Screen-Recorder/releases/download/v3.13.0/CapIT-Screen-Recorder-Setup-3.13.0.exe"><img src="https://img.shields.io/badge/Direct%20Download-v3.13.0-10b981?style=for-the-badge&logo=windows&logoColor=white" alt="Direct download Cap-IT v3.13.0 installer" /></a>
+<a href="https://github.com/ChamathDilshanC/Cap-IT-Screen-Recorder/releases/download/v3.13.1/CapIT-Screen-Recorder-Setup-3.13.1.exe"><img src="https://img.shields.io/badge/Direct%20Download-v3.13.1-10b981?style=for-the-badge&logo=windows&logoColor=white" alt="Direct download Cap-IT v3.13.1 installer" /></a>
 <a href="docs/screenshots/README.md"><img src="https://img.shields.io/badge/Explore-Screenshot%20Gallery-7c5cff?style=for-the-badge&logo=googleimages&logoColor=white" alt="Explore screenshot gallery" /></a>
 <a href="https://github.com/ChamathDilshanC/Cap-IT-Screen-Recorder/issues"><img src="https://img.shields.io/badge/Report-an%20Issue-24292f?style=for-the-badge&logo=github&logoColor=white" alt="Report an issue" /></a>
 
@@ -23,7 +23,7 @@ the result, and export without leaving the app.
 <br />
 <br />
 
-<img src="docs/screenshots/v3.13.0/home.png" alt="Cap-IT Screen Recorder v3.13.0 Home dashboard" width="960" />
+<img src="docs/screenshots/v3.13.0/home.png" alt="Cap-IT Screen Recorder Home dashboard" width="960" />
 
 </div>
 
@@ -116,8 +116,8 @@ flowchart LR
 
 ## Visual tour
 
-The complete **v3.13.0 Avalonia** screenshot set is in
-[`docs/screenshots/v3.13.0/`](docs/screenshots/v3.13.0/README.md).
+The v3.13.1 patch changes Smart Tracking motion and preview sampling without changing the page layouts;
+the current Avalonia screenshot gallery remains [`v3.13.0/`](docs/screenshots/v3.13.0/README.md).
 
 <div align="center">
 <table>
@@ -179,8 +179,8 @@ dedicated `Cap-IT Metadata` folder. Older sidecar files remain readable for comp
 
 ## Installation
 
-Download **`CapIT-Screen-Recorder-Setup-3.13.0.exe`** from
-the [v3.13.0 GitHub Release](https://github.com/ChamathDilshanC/Cap-IT-Screen-Recorder/releases/tag/v3.13.0)
+Download **`CapIT-Screen-Recorder-Setup-3.13.1.exe`** from
+the [v3.13.1 GitHub Release](https://github.com/ChamathDilshanC/Cap-IT-Screen-Recorder/releases/tag/v3.13.1)
 and run it. The installer is self-contained: no separate .NET runtime, Windows App SDK runtime, or
 manual FFmpeg setup is required.
 
@@ -321,6 +321,7 @@ shared preview/export rendering path.
 
 | Version | Highlights |
 |---|---|
+| [v3.13.1](https://github.com/ChamathDilshanC/Cap-IT-Screen-Recorder/releases/tag/v3.13.1) | Smoother Smart Tracking motion and sharper live preview scaling |
 | [v3.13.0](https://github.com/ChamathDilshanC/Cap-IT-Screen-Recorder/releases/tag/v3.13.0) | Avalonia desktop interface, recordings library, refreshed review workspace, and versioned screenshots |
 | [v3.7.0](https://github.com/ChamathDilshanC/Cap-IT-Screen-Recorder/releases/tag/v3.7.0) | Configurable click sounds with four selectable effects, volume control, and bundled WAV/MP3 assets |
 | [v3.6.0](https://github.com/ChamathDilshanC/Cap-IT-Screen-Recorder/releases/tag/v3.6.0) | Smart Tracking instant zoom-out, adjustable animation speed, live propagation, and preset persistence |

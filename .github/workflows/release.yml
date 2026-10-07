@@ -106,13 +106,21 @@ jobs:
           $version = "$env:RELEASE_TAG".TrimStart('v', 'V')
           $installer = "Installer\Output\CapIT-Screen-Recorder-Setup-$version.exe"
           if (-not (Test-Path $installer)) { throw "Installer was not produced: $installer" }
+          $notesPath = Join-Path $env:RUNNER_TEMP "release-notes.md"
+          @'
+          ## Highlights
+
+          - Smoothed Smart Tracking zoom and pan response across supported capture frame rates.
+          - Improved live preview downscaling for clearer text and interface details.
+          - Includes the self-contained Windows installer; FFmpeg is bundled.
+          '@ | Set-Content -LiteralPath $notesPath -Encoding utf8
 
           gh release view "$env:RELEASE_TAG" --repo "${{ github.repository }}" 2>$null
           if ($LASTEXITCODE -ne 0) {
             gh release create "$env:RELEASE_TAG" $installer `
               --repo "${{ github.repository }}" `
               --title "Cap-IT Screen Recorder $env:RELEASE_TAG" `
-              --generate-notes --latest
+              --notes-file $notesPath --latest
           } else {
             gh release upload "$env:RELEASE_TAG" $installer `
               --repo "${{ github.repository }}" --clobber

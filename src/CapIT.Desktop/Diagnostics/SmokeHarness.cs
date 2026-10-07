@@ -1,6 +1,7 @@
 #if DEBUG
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using System.Runtime.InteropServices;
 using ScreenRecorderApp.Models;
 using ScreenRecorderApp.Services.Encoding;
 using ScreenRecorderApp.ViewModels;
@@ -11,6 +12,8 @@ namespace ScreenRecorderApp.Diagnostics;
 /// Opt-in end-to-end checks for Debug builds, driven through the same view models the UI uses:
 ///   CAPIT_RECORD_SMOKE_DIR — record ~5 s of the primary display (with pause/resume) into that folder,
 ///                            then probe the result. Leaves the editor that opens afterwards closed.
+///   CAPIT_TRACKING_SMOKE_FPS — optional 30 or 60: enables Smart Tracking, moves the pointer during the
+///                              recording, and verifies the resulting MP4 frame rate.
 ///   CAPIT_EDITOR_SMOKE_DIR — in a --review window: play, trim, add a zoom region and a text layer,
 ///                            undo/redo, export MP4 and GIF, and verify the files and saved metadata.
 /// Results are written to results.txt as PASS/FAIL lines.
@@ -25,13 +28,23 @@ internal static class SmokeHarness
         var log = new List<string>();
         void Check(bool pass, string name) => log.Add((pass ? "PASS " : "FAIL ") + name);
         var main = shell.Main;
+        int? trackingFps = int.TryParse(Environment.GetEnvironmentVariable("CAPIT_TRACKING_SMOKE_FPS"), out var requestedFps)
+            && requestedFps is 30 or 60 ? requestedFps : null;
         try
         {
             Directory.CreateDirectory(directory);
             await Task.Delay(2500);
             main.UseWholeDisplayCommand.Execute(null);
             main.OutputDirectory = Path.Combine(directory, "out");
+            main.CaptureSystemAudio = false;
             main.CaptureMicrophone = false; // keep the smoke recording free of room audio
+            if (trackingFps is int fps)
+            {
+                main.Fps = fps;
+                main.MouseTrackingZoomEnabled = true;
+                main.ZoomAnimationSpeedPercent = 25;
+                Check(main.Fps == fps && main.MouseTrackingZoomEnabled, $"Smart Tracking configured at {fps} FPS");
+            }
             Check(main.HasCaptureTarget, "A display is selected");
             Check(main.StartRecordingCommand.CanExecute(null), "Start is enabled");
 
@@ -40,7 +53,15 @@ internal static class SmokeHarness
             await Task.Delay(800);
             var windows = (Avalonia.Application.Current!.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)!.Windows;
             Check(windows.Any(w => w is Views.RecordingControllerWindow { IsVisible: true }), "Floating controller shown");
-            await Task.Delay(1700);
+            if (trackingFps is not null)
+            {
+                // Let the smoke clip show the text stimulus behind the app instead of a recursive
+                // desktop preview. The controller remains instantiated/visible for the harness check.
+                foreach (var window in windows.Where(w => w is Views.MainWindow or Views.RecordingControllerWindow))
+                    window.WindowState = WindowState.Minimized;
+                await MovePointerForTrackingAsync();
+            }
+            else await Task.Delay(1700);
             main.PauseResumeCommand.Execute(null);
             Check(main.IsPaused, "Paused");
             await Task.Delay(800);
@@ -58,7 +79,9 @@ internal static class SmokeHarness
             {
                 Check(new FileInfo(path).Length > 10_000, $"Recording has data ({new FileInfo(path).Length} bytes)");
                 var probe = await MediaProbe.ProbeAsync(path, CancellationToken.None);
-                Check(probe.Width > 0 && probe.Height > 0, $"Video stream {probe.Width}×{probe.Height}");
+                Check(probe.Width > 0 && probe.Height > 0, $"Video stream {probe.Width}×{probe.Height} at {probe.FrameRate} FPS");
+                if (trackingFps is int expectedFps)
+                    Check(probe.FrameRate == expectedFps, $"Recorded frame rate is {expectedFps} FPS");
                 Check(probe.Duration?.TotalSeconds > 3, $"Duration {probe.Duration?.TotalSeconds:0.0}s");
                 Check(path.Contains(Path.Combine("out", MediaOutputPathsRecordings)), "Saved under Recordings/<date>");
             }
@@ -79,6 +102,35 @@ internal static class SmokeHarness
     }
 
     private const string MediaOutputPathsRecordings = Services.MediaOutputPaths.RecordingsFolderName;
+
+    private static async Task MovePointerForTrackingAsync()
+    {
+        var width = GetSystemMetrics(0);  // primary display width
+        var height = GetSystemMetrics(1); // primary display height
+        if (width <= 0 || height <= 0) { await Task.Delay(1700); return; }
+
+        // Large, deliberate steps trigger the existing mouse-activity path without clicking or typing.
+        (int X, int Y)[] points =
+        [
+            (width / 4, height / 4),
+            (width * 3 / 4, height / 4),
+            (width * 3 / 4, height * 3 / 4),
+            (width / 4, height * 3 / 4),
+            (width / 2, height / 2),
+        ];
+        foreach (var point in points)
+        {
+            SetCursorPos(point.X, point.Y);
+            await Task.Delay(340);
+        }
+    }
+
+    [DllImport("user32.dll")]
+    private static extern int GetSystemMetrics(int index);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetCursorPos(int x, int y);
 
     public static async Task RunEditorAsync(Window window, string directory, Action exit)
     {

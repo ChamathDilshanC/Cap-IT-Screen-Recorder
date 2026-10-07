@@ -1622,9 +1622,8 @@ public sealed class VideoCaptureService : IDisposable
 
         var targetFactor = CurrentZoomTargetFactor();
         var factorSmoothTime = targetFactor > _zoomCurrentFactor
-            ? ZoomInSmoothTime
-            : _instantZoomOut ? .01 : ZoomOutSmoothTime;
-        factorSmoothTime *= 1 - _zoomAnimationSpeedPercent / 100;
+            ? SmoothTimeForAnimationSpeed(ZoomInSmoothTime, _zoomAnimationSpeedPercent)
+            : _instantZoomOut ? .01 : SmoothTimeForAnimationSpeed(ZoomOutSmoothTime, _zoomAnimationSpeedPercent);
         _zoomCurrentFactor = SmoothDamp(_zoomCurrentFactor, targetFactor, ref _zoomFactorVelocity, factorSmoothTime, dt);
         if (_zoomCurrentFactor < 1.0)
         {
@@ -1670,8 +1669,9 @@ public sealed class VideoCaptureService : IDisposable
         if (followY - _panAnchorY > deadZoneY) _panAnchorY = followY - deadZoneY;
         else if (_panAnchorY - followY > deadZoneY) _panAnchorY = followY + deadZoneY;
 
-        _zoomCenterX = SmoothDamp(_zoomCenterX, _panAnchorX, ref _zoomCenterVelocityX, ZoomPanSmoothTime, dt);
-        _zoomCenterY = SmoothDamp(_zoomCenterY, _panAnchorY, ref _zoomCenterVelocityY, ZoomPanSmoothTime, dt);
+        var panSmoothTime = SmoothTimeForAnimationSpeed(ZoomPanSmoothTime, _zoomAnimationSpeedPercent);
+        _zoomCenterX = SmoothDamp(_zoomCenterX, _panAnchorX, ref _zoomCenterVelocityX, panSmoothTime, dt);
+        _zoomCenterY = SmoothDamp(_zoomCenterY, _panAnchorY, ref _zoomCenterVelocityY, panSmoothTime, dt);
 
     }
 
@@ -1764,7 +1764,15 @@ public sealed class VideoCaptureService : IDisposable
     /// unconditionally stable at any dt, unlike a naive Euler integration of the same spring, which is
     /// what makes it safe on a capture thread whose frame timing is not guaranteed.
     /// </summary>
-    private static double SmoothDamp(double current, double target, ref double velocity, double smoothTime, double dt)
+    internal static double SmoothTimeForAnimationSpeed(double baseSmoothTime, double speedPercent)
+    {
+        // The UI caps this control at 50%, which keeps the fastest setting at half the base spring time.
+        // Clamp saved values too, so an out-of-range preference cannot turn a smooth move into a snap.
+        var speed = Math.Clamp(speedPercent, 0, 50);
+        return baseSmoothTime * (1 - speed / 100.0);
+    }
+
+    internal static double SmoothDamp(double current, double target, ref double velocity, double smoothTime, double dt)
     {
         if (dt <= 0) return current;
 
