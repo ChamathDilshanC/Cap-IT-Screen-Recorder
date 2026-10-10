@@ -110,8 +110,10 @@ jobs:
           @'
           ## Highlights
 
-          - Smoothed Smart Tracking zoom and pan response across supported capture frame rates.
-          - Improved live preview downscaling for clearer text and interface details.
+          - Smart Tracking recordings keep an exact timeline: no lost frames when the pacer wakes late, no torn frames, and a hardware encoder that stalls no longer freezes the picture.
+          - Audio now ends with the video (the audio tail could previously be up to 0.9 s short) and stays aligned over long recordings.
+          - Zoomed text and edges are sharper.
+          - Window capture is steadier: fewer skipped frames and no timeline drift over long sessions.
           - Includes the self-contained Windows installer; FFmpeg is bundled.
           '@ | Set-Content -LiteralPath $notesPath -Encoding utf8
 

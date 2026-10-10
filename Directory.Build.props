@@ -4,7 +4,7 @@
     <!-- Single source of truth for the app version. UpdateService reads it back at runtime (assembly
          version) and compares it against the latest GitHub release tag; the Inno Setup script's
          MyAppVersion must be kept in lockstep with it for each release (release.yml enforces this). -->
-    <Version>3.13.1</Version>
+    <Version>3.14.0</Version>
     <Product>Cap-IT Screen Recorder</Product>
     <Company>ChamathDilshanC</Company>
     <Authors>ChamathDilshanC</Authors>
