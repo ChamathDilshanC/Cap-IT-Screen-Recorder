@@ -1,0 +1,721 @@
+{
+  "$schema": "cap-it-theme/1",
+  "name": "Arctic Precision",
+  "theme": "light",
+  "generated": "2026-10-10",
+  "status": {
+    "implemented": "EXISTING — parsed from src/CapIT.Desktop/Styles/Colors.axaml (Dictionary \"Light\"). Do not edit by hand.",
+    "proposed": "PROPOSED — design recommendation, verified against WCAG 2.2 AA. Not applied to the application."
+  },
+  "implemented": {
+    "Color.Accent": "#0A8FA0",
+    "Color.Shadow": "#26101828",
+    "Brush.BackgroundPrimary": "#F4F5F7",
+    "Brush.BackgroundSecondary": "#ECEEF1",
+    "Brush.Surface": "#FFFFFF",
+    "Brush.SurfaceRaised": "#FFFFFF",
+    "Brush.SurfaceHover": "#F1F3F6",
+    "Brush.SurfacePressed": "#E7EAEF",
+    "Brush.SurfaceSunken": "#F7F8FA",
+    "Brush.Stage": "#E6E9EE",
+    "Brush.Overlay": "#66101828",
+    "Brush.Hover": "#0A101828",
+    "Brush.Pressed": "#14101828",
+    "Brush.BorderSubtle": "#E4E7EC",
+    "Brush.BorderNormal": "#D5DAE1",
+    "Brush.BorderStrong": "#B6BEC9",
+    "Brush.TextPrimary": "#12161C",
+    "Brush.TextSecondary": "#4D5664",
+    "Brush.TextMuted": "#78818F",
+    "Brush.TextDisabled": "#A9B0BB",
+    "Brush.TextOnAccent": "#FFFFFF",
+    "Brush.Accent": "#0A8FA0",
+    "Brush.AccentHover": "#0B9DB0",
+    "Brush.AccentPressed": "#087A89",
+    "Brush.AccentSubtle": "#140A8FA0",
+    "Brush.AccentSubtleHover": "#220A8FA0",
+    "Brush.AccentText": "#08788A",
+    "Brush.FocusRing": "#660A8FA0",
+    "Brush.Success": "#0E9F6E",
+    "Brush.SuccessSubtle": "#140E9F6E",
+    "Brush.Warning": "#B7740B",
+    "Brush.WarningSubtle": "#16D99A1E",
+    "Brush.Error": "#D23B3B",
+    "Brush.ErrorSubtle": "#12D23B3B",
+    "Brush.Info": "#2F6FDB",
+    "Brush.InfoSubtle": "#122F6FDB",
+    "Brush.Danger": "#D93036",
+    "Brush.DangerHover": "#E2474C",
+    "Brush.DangerPressed": "#BB262B",
+    "Brush.Recording": "#E5383E",
+    "Brush.MeterTrack": "#E4E7EC",
+    "Brush.SegmentTrack": "#E9ECF0",
+    "Brush.SliderThumbBorder": "#AEB6C2",
+    "Brush.SegmentSelected": "#FFFFFF",
+    "Brush.Checker": "#DCE0E6"
+  },
+  "implementedAudit": [
+    {
+      "foreground": "Brush.TextPrimary",
+      "background": "Brush.BackgroundPrimary",
+      "fgHex": "#12161C",
+      "bgHex": "#F4F5F7",
+      "ratio": 16.63,
+      "kind": "text",
+      "verdict": "AAA"
+    },
+    {
+      "foreground": "Brush.TextSecondary",
+      "background": "Brush.BackgroundPrimary",
+      "fgHex": "#4D5664",
+      "bgHex": "#F4F5F7",
+      "ratio": 6.8,
+      "kind": "text",
+      "verdict": "AA"
+    },
+    {
+      "foreground": "Brush.TextSecondary",
+      "background": "Brush.Surface",
+      "fgHex": "#4D5664",
+      "bgHex": "#FFFFFF",
+      "ratio": 7.42,
+      "kind": "text",
+      "verdict": "AAA"
+    },
+    {
+      "foreground": "Brush.TextMuted",
+      "background": "Brush.BackgroundPrimary",
+      "fgHex": "#78818F",
+      "bgHex": "#F4F5F7",
+      "ratio": 3.61,
+      "kind": "text",
+      "verdict": "FAIL"
+    },
+    {
+      "foreground": "Brush.TextMuted",
+      "background": "Brush.Surface",
+      "fgHex": "#78818F",
+      "bgHex": "#FFFFFF",
+      "ratio": 3.94,
+      "kind": "text",
+      "verdict": "FAIL"
+    },
+    {
+      "foreground": "Brush.AccentText",
+      "background": "Brush.Surface",
+      "fgHex": "#08788A",
+      "bgHex": "#FFFFFF",
+      "ratio": 5.17,
+      "kind": "text",
+      "verdict": "AA"
+    },
+    {
+      "foreground": "Brush.Accent",
+      "background": "Brush.BackgroundPrimary",
+      "fgHex": "#0A8FA0",
+      "bgHex": "#F4F5F7",
+      "ratio": 3.53,
+      "kind": "non-text",
+      "verdict": "AA"
+    },
+    {
+      "foreground": "Brush.Accent",
+      "background": "Brush.Surface",
+      "fgHex": "#0A8FA0",
+      "bgHex": "#FFFFFF",
+      "ratio": 3.85,
+      "kind": "non-text",
+      "verdict": "AA"
+    },
+    {
+      "foreground": "Brush.TextOnAccent",
+      "background": "Brush.Accent",
+      "fgHex": "#FFFFFF",
+      "bgHex": "#0A8FA0",
+      "ratio": 3.85,
+      "kind": "text",
+      "verdict": "FAIL"
+    },
+    {
+      "foreground": "Brush.Success",
+      "background": "Brush.Surface",
+      "fgHex": "#0E9F6E",
+      "bgHex": "#FFFFFF",
+      "ratio": 3.39,
+      "kind": "text",
+      "verdict": "FAIL"
+    },
+    {
+      "foreground": "Brush.Warning",
+      "background": "Brush.Surface",
+      "fgHex": "#B7740B",
+      "bgHex": "#FFFFFF",
+      "ratio": 3.81,
+      "kind": "text",
+      "verdict": "FAIL"
+    },
+    {
+      "foreground": "Brush.Error",
+      "background": "Brush.Surface",
+      "fgHex": "#D23B3B",
+      "bgHex": "#FFFFFF",
+      "ratio": 4.74,
+      "kind": "text",
+      "verdict": "AA"
+    },
+    {
+      "foreground": "Brush.Info",
+      "background": "Brush.Surface",
+      "fgHex": "#2F6FDB",
+      "bgHex": "#FFFFFF",
+      "ratio": 4.75,
+      "kind": "text",
+      "verdict": "AA"
+    },
+    {
+      "foreground": "Brush.Recording",
+      "background": "Brush.Surface",
+      "fgHex": "#E5383E",
+      "bgHex": "#FFFFFF",
+      "ratio": 4.23,
+      "kind": "text",
+      "verdict": "FAIL"
+    },
+    {
+      "foreground": "Brush.BorderNormal",
+      "background": "Brush.Surface",
+      "fgHex": "#D5DAE1",
+      "bgHex": "#FFFFFF",
+      "ratio": 1.41,
+      "kind": "non-text",
+      "verdict": "FAIL"
+    },
+    {
+      "foreground": "Brush.BorderStrong",
+      "background": "Brush.Surface",
+      "fgHex": "#B6BEC9",
+      "bgHex": "#FFFFFF",
+      "ratio": 1.88,
+      "kind": "non-text",
+      "verdict": "FAIL"
+    },
+    {
+      "foreground": "Brush.TextDisabled",
+      "background": "Brush.Surface",
+      "fgHex": "#A9B0BB",
+      "bgHex": "#FFFFFF",
+      "ratio": 2.18,
+      "kind": "disabled (exempt)",
+      "verdict": "exempt"
+    }
+  ],
+  "proposed": {
+    "textBackgrounds": [
+      "#FFFFFF",
+      "#F6F8FB",
+      "#F1F5F9"
+    ],
+    "tokens": {
+      "bg.app": {
+        "token": "bg.app",
+        "hex": "#FFFFFF",
+        "alpha": 1.0,
+        "rgb": "255, 255, 255",
+        "hsl": "0, 0%, 100%",
+        "cmykApprox": "0, 0, 0, 0",
+        "usage": "Window background, sidebar and title bar; marketing and document canvas."
+      },
+      "bg.secondary": {
+        "token": "bg.secondary",
+        "hex": "#F6F8FB",
+        "alpha": 1.0,
+        "rgb": "246, 248, 251",
+        "hsl": "216, 38%, 97%",
+        "cmykApprox": "2, 1, 0, 2",
+        "usage": "Page canvas behind cards inside the application."
+      },
+      "surface.layer1": {
+        "token": "surface.layer1",
+        "hex": "#FFFFFF",
+        "alpha": 1.0,
+        "rgb": "255, 255, 255",
+        "hsl": "0, 0%, 100%",
+        "cmykApprox": "0, 0, 0, 0",
+        "usage": "Cards, panels and the default container surface."
+      },
+      "surface.layer2": {
+        "token": "surface.layer2",
+        "hex": "#F1F5F9",
+        "alpha": 1.0,
+        "rgb": "241, 245, 249",
+        "hsl": "210, 40%, 96%",
+        "cmykApprox": "3, 2, 0, 2",
+        "usage": "Raised or inset wells: inputs, segmented tracks, hovered rows."
+      },
+      "surface.layer3": {
+        "token": "surface.layer3",
+        "hex": "#E8EEF4",
+        "alpha": 1.0,
+        "rgb": "232, 238, 244",
+        "hsl": "210, 35%, 93%",
+        "cmykApprox": "5, 2, 0, 4",
+        "usage": "Tracks, meters and skeletons. Non-text only: no text is placed on this layer."
+      },
+      "fg.primary": {
+        "token": "fg.primary",
+        "hex": "#111827",
+        "alpha": 1.0,
+        "rgb": "17, 24, 39",
+        "hsl": "221, 39%, 11%",
+        "cmykApprox": "56, 38, 0, 85",
+        "usage": "Headlines, body copy, values and any text that carries meaning.",
+        "contrast": {
+          "#FFFFFF": 17.74,
+          "#F6F8FB": 16.67,
+          "#F1F5F9": 16.19
+        },
+        "wcag": "AAA",
+        "accessibleOn": [
+          "#FFFFFF",
+          "#F6F8FB",
+          "#F1F5F9"
+        ]
+      },
+      "fg.secondary": {
+        "token": "fg.secondary",
+        "hex": "#475569",
+        "alpha": 1.0,
+        "rgb": "71, 85, 105",
+        "hsl": "215, 19%, 35%",
+        "cmykApprox": "32, 19, 0, 59",
+        "usage": "Descriptions, labels, secondary values.",
+        "contrast": {
+          "#FFFFFF": 7.58,
+          "#F6F8FB": 7.12,
+          "#F1F5F9": 6.92
+        },
+        "wcag": "AA",
+        "accessibleOn": [
+          "#FFFFFF",
+          "#F6F8FB",
+          "#F1F5F9"
+        ]
+      },
+      "fg.muted": {
+        "token": "fg.muted",
+        "hex": "#667182",
+        "alpha": 1.0,
+        "rgb": "102, 113, 130",
+        "hsl": "216, 12%, 45%",
+        "cmykApprox": "22, 13, 0, 49",
+        "usage": "Captions, placeholders, timestamps and helper text.",
+        "adjustedFrom": "#7B8798",
+        "contrast": {
+          "#FFFFFF": 4.94,
+          "#F6F8FB": 4.65,
+          "#F1F5F9": 4.51
+        },
+        "wcag": "AA",
+        "accessibleOn": [
+          "#FFFFFF",
+          "#F6F8FB",
+          "#F1F5F9"
+        ]
+      },
+      "fg.disabled": {
+        "token": "fg.disabled",
+        "hex": "#A9B4C2",
+        "alpha": 1.0,
+        "rgb": "169, 180, 194",
+        "hsl": "214, 17%, 71%",
+        "cmykApprox": "13, 7, 0, 24",
+        "usage": "Disabled text and icons. Exempt from contrast by WCAG; never use for information that is not available elsewhere."
+      },
+      "brand.primary": {
+        "token": "brand.primary",
+        "hex": "#087C88",
+        "alpha": 1.0,
+        "rgb": "8, 124, 136",
+        "hsl": "186, 89%, 28%",
+        "cmykApprox": "94, 9, 0, 47",
+        "usage": "The Cap-IT accent: primary button fill, switch and slider fill, active navigation, links, focus ring.",
+        "adjustedFrom": "#087F8C",
+        "contrast": {
+          "#FFFFFF": 4.94,
+          "#F6F8FB": 4.65,
+          "#F1F5F9": 4.51
+        },
+        "wcag": "AA",
+        "accessibleOn": [
+          "#FFFFFF",
+          "#F6F8FB",
+          "#F1F5F9"
+        ],
+        "onColor": {
+          "token": "brand.on-primary",
+          "hex": "#FFFFFF",
+          "contrast": 4.94,
+          "wcag": "AA"
+        },
+        "nonTextContrast": {
+          "#FFFFFF": 4.94,
+          "#F6F8FB": 4.65,
+          "#F1F5F9": 4.51
+        }
+      },
+      "brand.primary.hover": {
+        "token": "brand.primary.hover",
+        "hex": "#066A76",
+        "alpha": 1.0,
+        "rgb": "6, 106, 118",
+        "hsl": "186, 90%, 24%",
+        "cmykApprox": "95, 10, 0, 54",
+        "usage": "Hover state of brand.primary fills."
+      },
+      "brand.primary.pressed": {
+        "token": "brand.primary.pressed",
+        "hex": "#055C66",
+        "alpha": 1.0,
+        "rgb": "5, 92, 102",
+        "hsl": "186, 91%, 21%",
+        "cmykApprox": "95, 10, 0, 60",
+        "usage": "Pressed state of brand.primary fills."
+      },
+      "brand.on-primary": {
+        "token": "brand.on-primary",
+        "hex": "#FFFFFF",
+        "alpha": 1.0,
+        "rgb": "255, 255, 255",
+        "hsl": "0, 0%, 100%",
+        "cmykApprox": "0, 0, 0, 0",
+        "usage": "Label and icon colour placed on a brand.primary fill."
+      },
+      "brand.secondary": {
+        "token": "brand.secondary",
+        "hex": "#6941C6",
+        "alpha": 1.0,
+        "rgb": "105, 65, 198",
+        "hsl": "258, 54%, 52%",
+        "cmykApprox": "47, 67, 0, 22",
+        "usage": "Creative accent for graphics, gradients, illustrations and non-text indicators."
+      },
+      "brand.secondary.text": {
+        "token": "brand.secondary.text",
+        "hex": "#6941C6",
+        "alpha": 1.0,
+        "rgb": "105, 65, 198",
+        "hsl": "258, 54%, 52%",
+        "cmykApprox": "47, 67, 0, 22",
+        "usage": "Violet as text or small icon on any text-bearing surface.",
+        "contrast": {
+          "#FFFFFF": 6.62,
+          "#F6F8FB": 6.22,
+          "#F1F5F9": 6.04
+        },
+        "wcag": "AA",
+        "accessibleOn": [
+          "#FFFFFF",
+          "#F6F8FB",
+          "#F1F5F9"
+        ]
+      },
+      "brand.secondary.solid": {
+        "token": "brand.secondary.solid",
+        "hex": "#6941C6",
+        "alpha": 1.0,
+        "rgb": "105, 65, 198",
+        "hsl": "258, 54%, 52%",
+        "cmykApprox": "47, 67, 0, 22",
+        "usage": "Violet as a solid fill that carries a label.",
+        "onColor": {
+          "token": "brand.secondary.on-solid",
+          "hex": "#FFFFFF",
+          "contrast": 6.62,
+          "wcag": "AA"
+        }
+      },
+      "brand.secondary.on-solid": {
+        "token": "brand.secondary.on-solid",
+        "hex": "#FFFFFF",
+        "alpha": 1.0,
+        "rgb": "255, 255, 255",
+        "hsl": "0, 0%, 100%",
+        "cmykApprox": "0, 0, 0, 0",
+        "usage": "Label colour on brand.secondary.solid."
+      },
+      "border.subtle": {
+        "token": "border.subtle",
+        "hex": "#E2E8F0",
+        "alpha": 1.0,
+        "rgb": "226, 232, 240",
+        "hsl": "214, 32%, 91%",
+        "cmykApprox": "6, 3, 0, 6",
+        "usage": "Decorative card and panel outlines. Not relied on to identify a control."
+      },
+      "divider": {
+        "token": "divider",
+        "hex": "#E9EEF3",
+        "alpha": 1.0,
+        "rgb": "233, 238, 243",
+        "hsl": "210, 29%, 93%",
+        "cmykApprox": "4, 2, 0, 5",
+        "usage": "Hairlines between rows and sections."
+      },
+      "border.control": {
+        "token": "border.control",
+        "hex": "#8191A8",
+        "alpha": 1.0,
+        "rgb": "129, 145, 168",
+        "hsl": "215, 18%, 58%",
+        "cmykApprox": "23, 14, 0, 34",
+        "usage": "Outline of inputs, dropdowns, checkboxes and sliders: meets the 3:1 non-text rule (SC 1.4.11).",
+        "adjustedFrom": "#B0BAC8",
+        "contrast": {
+          "#FFFFFF": 3.21,
+          "#F6F8FB": 3.01
+        },
+        "wcag": "AA (non-text 3:1)"
+      },
+      "status.info": {
+        "token": "status.info",
+        "hex": "#2A6BDA",
+        "alpha": 1.0,
+        "rgb": "42, 107, 218",
+        "hsl": "218, 70%, 51%",
+        "cmykApprox": "81, 51, 0, 15",
+        "usage": "Informational messages and neutral highlights.",
+        "adjustedFrom": "#2F6FDB",
+        "contrast": {
+          "#FFFFFF": 4.98,
+          "#F6F8FB": 4.68,
+          "#F1F5F9": 4.55
+        },
+        "wcag": "AA",
+        "accessibleOn": [
+          "#FFFFFF",
+          "#F6F8FB",
+          "#F1F5F9"
+        ]
+      },
+      "status.success": {
+        "token": "status.success",
+        "hex": "#047857",
+        "alpha": 1.0,
+        "rgb": "4, 120, 87",
+        "hsl": "163, 94%, 24%",
+        "cmykApprox": "97, 0, 27, 53",
+        "usage": "Success feedback and completed states.",
+        "contrast": {
+          "#FFFFFF": 5.48,
+          "#F6F8FB": 5.15,
+          "#F1F5F9": 5.01
+        },
+        "wcag": "AA",
+        "accessibleOn": [
+          "#FFFFFF",
+          "#F6F8FB",
+          "#F1F5F9"
+        ]
+      },
+      "status.warning": {
+        "token": "status.warning",
+        "hex": "#B45309",
+        "alpha": 1.0,
+        "rgb": "180, 83, 9",
+        "hsl": "26, 90%, 37%",
+        "cmykApprox": "0, 54, 95, 29",
+        "usage": "Warnings and paused or at-risk states.",
+        "contrast": {
+          "#FFFFFF": 5.02,
+          "#F6F8FB": 4.72,
+          "#F1F5F9": 4.58
+        },
+        "wcag": "AA",
+        "accessibleOn": [
+          "#FFFFFF",
+          "#F6F8FB",
+          "#F1F5F9"
+        ]
+      },
+      "status.error": {
+        "token": "status.error",
+        "hex": "#DA2323",
+        "alpha": 1.0,
+        "rgb": "218, 35, 35",
+        "hsl": "0, 72%, 50%",
+        "cmykApprox": "0, 84, 84, 15",
+        "usage": "Errors and destructive confirmations.",
+        "adjustedFrom": "#DC2626",
+        "contrast": {
+          "#FFFFFF": 4.95,
+          "#F6F8FB": 4.65,
+          "#F1F5F9": 4.51
+        },
+        "wcag": "AA",
+        "accessibleOn": [
+          "#FFFFFF",
+          "#F6F8FB",
+          "#F1F5F9"
+        ]
+      },
+      "rec.active": {
+        "token": "rec.active",
+        "hex": "#DC1D23",
+        "alpha": 1.0,
+        "rgb": "220, 29, 35",
+        "hsl": "358, 77%, 49%",
+        "cmykApprox": "0, 87, 84, 14",
+        "usage": "The live recording indicator, timer dot and record state.",
+        "adjustedFrom": "#E5383E",
+        "contrast": {
+          "#FFFFFF": 4.95,
+          "#F6F8FB": 4.65,
+          "#F1F5F9": 4.52
+        },
+        "wcag": "AA",
+        "accessibleOn": [
+          "#FFFFFF",
+          "#F6F8FB",
+          "#F1F5F9"
+        ]
+      },
+      "rec.paused": {
+        "token": "rec.paused",
+        "hex": "#B45309",
+        "alpha": 1.0,
+        "rgb": "180, 83, 9",
+        "hsl": "26, 90%, 37%",
+        "cmykApprox": "0, 54, 95, 29",
+        "usage": "Paused recording indicator.",
+        "contrast": {
+          "#FFFFFF": 5.02,
+          "#F6F8FB": 4.72,
+          "#F1F5F9": 4.58
+        },
+        "wcag": "AA",
+        "accessibleOn": [
+          "#FFFFFF",
+          "#F6F8FB",
+          "#F1F5F9"
+        ]
+      },
+      "rec.exporting": {
+        "token": "rec.exporting",
+        "hex": "#6941C6",
+        "alpha": 1.0,
+        "rgb": "105, 65, 198",
+        "hsl": "258, 54%, 52%",
+        "cmykApprox": "47, 67, 0, 22",
+        "usage": "Export in progress.",
+        "contrast": {
+          "#FFFFFF": 6.62,
+          "#F6F8FB": 6.22,
+          "#F1F5F9": 6.04
+        },
+        "wcag": "AA",
+        "accessibleOn": [
+          "#FFFFFF",
+          "#F6F8FB",
+          "#F1F5F9"
+        ]
+      },
+      "rec.export-complete": {
+        "token": "rec.export-complete",
+        "hex": "#047857",
+        "alpha": 1.0,
+        "rgb": "4, 120, 87",
+        "hsl": "163, 94%, 24%",
+        "cmykApprox": "97, 0, 27, 53",
+        "usage": "Export finished successfully.",
+        "contrast": {
+          "#FFFFFF": 5.48,
+          "#F6F8FB": 5.15,
+          "#F1F5F9": 5.01
+        },
+        "wcag": "AA",
+        "accessibleOn": [
+          "#FFFFFF",
+          "#F6F8FB",
+          "#F1F5F9"
+        ]
+      },
+      "state.hover": {
+        "token": "state.hover",
+        "hex": "#09111D",
+        "alpha": 0.05,
+        "rgb": "9, 17, 29",
+        "hsl": "216, 53%, 7%",
+        "cmykApprox": "69, 41, 0, 89",
+        "usage": "Hover wash over any surface."
+      },
+      "state.pressed": {
+        "token": "state.pressed",
+        "hex": "#09111D",
+        "alpha": 0.09,
+        "rgb": "9, 17, 29",
+        "hsl": "216, 53%, 7%",
+        "cmykApprox": "69, 41, 0, 89",
+        "usage": "Pressed wash over any surface."
+      },
+      "state.selected": {
+        "token": "state.selected",
+        "hex": "#087C88",
+        "alpha": 0.1,
+        "rgb": "8, 124, 136",
+        "hsl": "186, 89%, 28%",
+        "cmykApprox": "94, 9, 0, 47",
+        "usage": "Selected row, tab or navigation item background."
+      },
+      "state.focus-ring": {
+        "token": "state.focus-ring",
+        "hex": "#087C88",
+        "alpha": 1.0,
+        "rgb": "8, 124, 136",
+        "hsl": "186, 89%, 28%",
+        "cmykApprox": "94, 9, 0, 47",
+        "usage": "2px focus ring with a 2px offset on every focusable control.",
+        "contrast": {
+          "#FFFFFF": 4.94,
+          "#F6F8FB": 4.65,
+          "#F1F5F9": 4.51
+        }
+      },
+      "state.selection-text": {
+        "token": "state.selection-text",
+        "hex": "#087C88",
+        "alpha": 0.22,
+        "rgb": "8, 124, 136",
+        "hsl": "186, 89%, 28%",
+        "cmykApprox": "94, 9, 0, 47",
+        "usage": "Selected text highlight."
+      },
+      "state.disabled-fill": {
+        "token": "state.disabled-fill",
+        "hex": "#09111D",
+        "alpha": 0.04,
+        "rgb": "9, 17, 29",
+        "hsl": "216, 53%, 7%",
+        "cmykApprox": "69, 41, 0, 89",
+        "usage": "Disabled control fill."
+      },
+      "surface.overlay": {
+        "token": "surface.overlay",
+        "hex": "#FFFFFF",
+        "alpha": 1.0,
+        "rgb": "255, 255, 255",
+        "hsl": "0, 0%, 100%",
+        "cmykApprox": "0, 0, 0, 0",
+        "usage": "Popovers, menus, tooltips and dialogs. Pair with the overlay shadow."
+      },
+      "surface.scrim": {
+        "token": "surface.scrim",
+        "hex": "#09111D",
+        "alpha": 0.4,
+        "rgb": "9, 17, 29",
+        "hsl": "216, 53%, 7%",
+        "cmykApprox": "69, 41, 0, 89",
+        "usage": "Dim layer behind modal dialogs."
+      }
+    }
+  }
+}

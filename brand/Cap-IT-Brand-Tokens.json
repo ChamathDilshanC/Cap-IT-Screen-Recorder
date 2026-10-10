@@ -1,0 +1,638 @@
+{
+  "$schema": "cap-it-brand/1",
+  "name": "Cap-IT Brand Tokens",
+  "generated": "2026-10-10",
+  "legend": {
+    "EXISTING": "verified in the repository",
+    "PROPOSED": "new recommendation, not applied",
+    "CONCEPT": "exploratory, not part of the system"
+  },
+  "sources": [
+    "src/CapIT.Desktop/Styles/Tokens.axaml",
+    "src/CapIT.Desktop/Styles/Colors.axaml",
+    "src/CapIT.Desktop/Styles/Typography.axaml",
+    "src/CapIT.Desktop/Styles/Motion.axaml",
+    "src/CapIT.Desktop/Styles/Icons.axaml",
+    "assets/Logo-CapIT.png",
+    "assets/Logo-Mark.png",
+    "src/CapIT.Infrastructure.Windows/Services/Capture/VideoCaptureService.cs"
+  ],
+  "logo": {
+    "status": "EXISTING",
+    "source": "assets/Logo-CapIT.png (2000x2000 RGBA, transparent background)",
+    "colors": {
+      "green": "#85C536",
+      "magenta": "#EA0B7F",
+      "purple": "#971A8D",
+      "orange": "#FFAA21",
+      "blue": "#1AABE3",
+      "wordmark": "#3A3939"
+    },
+    "note": "Raster only: the repository has no vector master. All variants in Cap-IT-Brand-Assets are derived by recolouring or cropping this artwork — nothing is redrawn."
+  },
+  "spacing": {
+    "status": "EXISTING",
+    "unit": "px",
+    "base": 4,
+    "scale": {
+      "1": 4.0,
+      "2": 8.0,
+      "3": 12.0,
+      "4": 16.0,
+      "5": 20.0,
+      "6": 24.0,
+      "8": 32.0,
+      "10": 40.0,
+      "12": 48.0
+    }
+  },
+  "radius": {
+    "status": "EXISTING",
+    "unit": "px",
+    "scale": {
+      "xsmall": 4.0,
+      "small": 6.0,
+      "medium": 8.0,
+      "large": 12.0,
+      "xlarge": 14.0,
+      "pill": 999.0
+    }
+  },
+  "controlHeight": {
+    "status": "EXISTING",
+    "unit": "px",
+    "scale": {
+      "small": 30.0,
+      "default": 36.0,
+      "large": 44.0,
+      "titlebar": 44.0,
+      "navitem": 36.0
+    }
+  },
+  "layout": {
+    "status": "EXISTING",
+    "unit": "px",
+    "pageMax": 1440.0,
+    "form": 880.0,
+    "sidebar": 232.0,
+    "sidebarCompact": 68.0,
+    "inspector": 340.0,
+    "controlColumn": 240.0,
+    "padding": {
+      "page": [
+        32,
+        28,
+        32,
+        40
+      ],
+      "card": 20,
+      "cardCompact": 16,
+      "row": [
+        20,
+        14
+      ],
+      "dialog": 24,
+      "panel": 16
+    }
+  },
+  "typography": {
+    "status": "EXISTING",
+    "families": {
+      "ui": "Inter, Segoe UI Variable Text, Segoe UI",
+      "mono": "Cascadia Mono, Consolas, Courier New"
+    },
+    "license": "Inter is licensed under the SIL Open Font License 1.1 (bundled via Avalonia.Fonts.Inter).",
+    "scale": {
+      "display": {
+        "size": 28,
+        "weight": 600,
+        "letterSpacing": -0.5
+      },
+      "title": {
+        "size": 20,
+        "weight": 600,
+        "letterSpacing": -0.25
+      },
+      "section": {
+        "size": 16,
+        "weight": 600
+      },
+      "cardTitle": {
+        "size": 14,
+        "weight": 600
+      },
+      "body": {
+        "size": 13,
+        "weight": 400
+      },
+      "rowTitle": {
+        "size": 13,
+        "weight": 500
+      },
+      "secondary": {
+        "size": 12.5,
+        "weight": 400,
+        "lineHeight": 18
+      },
+      "caption": {
+        "size": 11.5,
+        "weight": 400
+      },
+      "overline": {
+        "size": 10.5,
+        "weight": 600,
+        "letterSpacing": 0.8,
+        "case": "upper"
+      }
+    }
+  },
+  "typographyEditorial": {
+    "status": "PROPOSED",
+    "note": "For the brand book, website and marketing; the application keeps its own scale.",
+    "scale": {
+      "hero": {
+        "size": 120,
+        "weight": 700,
+        "lineHeight": 1.0,
+        "letterSpacing": -0.04
+      },
+      "display": {
+        "size": 72,
+        "weight": 700,
+        "lineHeight": 1.04,
+        "letterSpacing": -0.035
+      },
+      "h1": {
+        "size": 48,
+        "weight": 650,
+        "lineHeight": 1.1,
+        "letterSpacing": -0.03
+      },
+      "h2": {
+        "size": 32,
+        "weight": 600,
+        "lineHeight": 1.18,
+        "letterSpacing": -0.02
+      },
+      "h3": {
+        "size": 24,
+        "weight": 600,
+        "lineHeight": 1.25,
+        "letterSpacing": -0.012
+      },
+      "h4": {
+        "size": 20,
+        "weight": 600,
+        "lineHeight": 1.3,
+        "letterSpacing": -0.008
+      },
+      "h5": {
+        "size": 16,
+        "weight": 600,
+        "lineHeight": 1.4
+      },
+      "h6": {
+        "size": 14,
+        "weight": 600,
+        "lineHeight": 1.4
+      },
+      "subtitle": {
+        "size": 22,
+        "weight": 400,
+        "lineHeight": 1.45
+      },
+      "bodyLarge": {
+        "size": 18,
+        "weight": 400,
+        "lineHeight": 1.6
+      },
+      "body": {
+        "size": 15,
+        "weight": 400,
+        "lineHeight": 1.6
+      },
+      "caption": {
+        "size": 12,
+        "weight": 400,
+        "lineHeight": 1.5
+      },
+      "overline": {
+        "size": 11,
+        "weight": 600,
+        "lineHeight": 1.2,
+        "letterSpacing": 0.14,
+        "case": "upper"
+      },
+      "button": {
+        "size": 13,
+        "weight": 600,
+        "lineHeight": 1
+      },
+      "code": {
+        "size": 13,
+        "weight": 400,
+        "lineHeight": 1.55,
+        "family": "mono"
+      }
+    }
+  },
+  "icons": {
+    "status": "EXISTING",
+    "grid": 24,
+    "strokeWidth": 1.75,
+    "cap": "round",
+    "join": "round",
+    "sizes": {
+      "small": 14,
+      "default": 16,
+      "medium": 18,
+      "large": 20,
+      "xlarge": 24
+    },
+    "style": "Lucide-compatible outline strokes; solid glyphs (record, play, pause, stop) are filled"
+  },
+  "motion": {
+    "status": "EXISTING",
+    "duration": {
+      "fast": 120,
+      "normal": 180,
+      "slow": 220,
+      "unit": "ms"
+    },
+    "easing": "CubicEaseOut",
+    "entrance": {
+      "toast": {
+        "ms": 220,
+        "translateY": 10
+      },
+      "overlayCard": {
+        "ms": 200,
+        "translateY": 8
+      },
+      "scrim": {
+        "ms": 160
+      }
+    },
+    "smartTracking": {
+      "model": "critically damped spring (SmoothDamp); no overshoot; framerate independent",
+      "zoomInSmoothTime": 0.5,
+      "zoomOutSmoothTime": 0.75,
+      "panSmoothTime": 0.32,
+      "idleReleaseSeconds": 1.5,
+      "clickHoldSeconds": 2.5,
+      "panDeadZoneFraction": 0.12,
+      "animationSpeedRangePercent": [
+        0,
+        50
+      ],
+      "zoomLevels": [
+        1.25,
+        1.5,
+        1.75,
+        2.0,
+        3.0
+      ],
+      "unit": "seconds",
+      "source": "VideoCaptureService.cs"
+    }
+  },
+  "motionProposed": {
+    "status": "PROPOSED",
+    "easing": {
+      "standard": "cubic-bezier(0.22, 1, 0.36, 1)",
+      "enter": "cubic-bezier(0.16, 1, 0.3, 1)",
+      "exit": "cubic-bezier(0.4, 0, 1, 1)",
+      "camera": "critically damped spring (no overshoot)"
+    },
+    "duration": {
+      "instant": 80,
+      "fast": 120,
+      "normal": 180,
+      "slow": 220,
+      "camera": 500,
+      "unit": "ms"
+    },
+    "reducedMotion": "Replace transforms with a 0-80 ms opacity change; never remove state feedback.",
+    "specs": [
+      {
+        "name": "Hover",
+        "ms": 120,
+        "easing": "standard",
+        "props": "background-color, border-color",
+        "distance": 0,
+        "scale": 1
+      },
+      {
+        "name": "Press",
+        "ms": 80,
+        "easing": "standard",
+        "props": "background-color, scale",
+        "distance": 0,
+        "scale": 0.98
+      },
+      {
+        "name": "Focus ring",
+        "ms": 120,
+        "easing": "standard",
+        "props": "opacity",
+        "distance": 0,
+        "scale": 1
+      },
+      {
+        "name": "Tab switch",
+        "ms": 180,
+        "easing": "standard",
+        "props": "opacity, translateX",
+        "distance": 8,
+        "scale": 1
+      },
+      {
+        "name": "Sidebar collapse",
+        "ms": 220,
+        "easing": "standard",
+        "props": "width (232 → 68)",
+        "distance": 164,
+        "scale": 1
+      },
+      {
+        "name": "Dropdown",
+        "ms": 160,
+        "easing": "enter",
+        "props": "opacity, translateY",
+        "distance": 6,
+        "scale": 1
+      },
+      {
+        "name": "Dialog enter",
+        "ms": 200,
+        "easing": "enter",
+        "props": "opacity, translateY",
+        "distance": 8,
+        "scale": 1
+      },
+      {
+        "name": "Dialog exit",
+        "ms": 140,
+        "easing": "exit",
+        "props": "opacity",
+        "distance": 0,
+        "scale": 1
+      },
+      {
+        "name": "Toast",
+        "ms": 220,
+        "easing": "enter",
+        "props": "opacity, translateY",
+        "distance": 10,
+        "scale": 1
+      },
+      {
+        "name": "Record start",
+        "ms": 180,
+        "easing": "standard",
+        "props": "indicator opacity, scale 0.8 → 1",
+        "distance": 0,
+        "scale": 1
+      },
+      {
+        "name": "Export progress",
+        "ms": 220,
+        "easing": "standard",
+        "props": "width (determinate)",
+        "distance": 0,
+        "scale": 1
+      },
+      {
+        "name": "Smart Tracking camera",
+        "ms": 500,
+        "easing": "camera",
+        "props": "crop rectangle (rendered video, not UI)",
+        "distance": 0,
+        "scale": 1
+      }
+    ]
+  },
+  "elevation": {
+    "status": "PROPOSED",
+    "dark": {
+      "e0": "none",
+      "e1": "0 1px 0 rgba(255,255,255,0.04) inset, 0 1px 2px rgba(0,0,0,0.40)",
+      "e2": "0 8px 24px rgba(0,0,0,0.45)",
+      "overlay": "0 16px 48px rgba(0,0,0,0.55)"
+    },
+    "light": {
+      "e0": "none",
+      "e1": "0 1px 2px rgba(16,24,40,0.06)",
+      "e2": "0 6px 20px rgba(16,24,40,0.10)",
+      "overlay": "0 16px 40px rgba(16,24,40,0.16)"
+    }
+  },
+  "gradients": {
+    "status": "PROPOSED",
+    "identity": {
+      "css": "linear-gradient(135deg, #18DCE8 0%, #7C5CFF 100%)",
+      "use": "Illustration, hero accents, progress highlights. Never behind body text."
+    },
+    "spotlightDark": {
+      "css": "radial-gradient(60% 55% at 50% 0%, rgba(24,220,232,0.20) 0%, rgba(24,220,232,0) 70%)",
+      "use": "Cover and chapter openers on Midnight."
+    },
+    "spotlightLight": {
+      "css": "radial-gradient(60% 55% at 50% 0%, rgba(8,127,140,0.12) 0%, rgba(8,127,140,0) 70%)",
+      "use": "Cover and chapter openers on Arctic."
+    },
+    "midnightSurface": {
+      "css": "linear-gradient(180deg, #101C2B 0%, #09111D 100%)",
+      "use": "Window and page backgrounds."
+    },
+    "arcticSurface": {
+      "css": "linear-gradient(180deg, #FFFFFF 0%, #F6F8FB 100%)",
+      "use": "Window and page backgrounds."
+    },
+    "recording": {
+      "css": "radial-gradient(120% 90% at 50% 120%, rgba(242,85,90,0.22) 0%, rgba(242,85,90,0) 60%)",
+      "use": "A restrained glow at the edge of the live preview while recording. Always paired with the REC label."
+    },
+    "accentSubtle": {
+      "css": "linear-gradient(90deg, rgba(24,220,232,0) 0%, rgba(24,220,232,0.16) 100%)",
+      "use": "Highlight behind selected items."
+    },
+    "spectrum": {
+      "css": "linear-gradient(90deg, #FFAA21, #EA0B7F, #971A8D, #1AABE3, #85C536)",
+      "use": "EXISTING-derived: the five logo hues as a thin brand strip (≤ 6 px). Decorative only."
+    }
+  },
+  "breakpoints": {
+    "status": "PROPOSED",
+    "unit": "px",
+    "compact": 960,
+    "default": 1280,
+    "wide": 1600,
+    "ultra": 1920,
+    "note": "Application windows. The sidebar auto-compacts from 232 to 68 below \"default\"."
+  },
+  "features": [
+    {
+      "key": "capture",
+      "name": "Capture",
+      "icon": "Icon.Monitor",
+      "benefit": "Pick exactly what gets recorded — a display or a single window.",
+      "microcopy": "Choose source",
+      "colorDark": "#18DCE8",
+      "colorLight": "#087F8C",
+      "chipDark": {
+        "hex": "#18DCE8",
+        "alpha": 0.16
+      },
+      "chipLight": {
+        "hex": "#087F8C",
+        "alpha": 0.12
+      },
+      "status": "PROPOSED"
+    },
+    {
+      "key": "smart-tracking",
+      "name": "Smart Tracking",
+      "icon": "Icon.Focus",
+      "benefit": "A camera that follows your cursor and caret, then eases back out.",
+      "microcopy": "A camera that follows the action",
+      "colorDark": "#7C5CFF",
+      "colorLight": "#6941C6",
+      "chipDark": {
+        "hex": "#7C5CFF",
+        "alpha": 0.16
+      },
+      "chipLight": {
+        "hex": "#6941C6",
+        "alpha": 0.12
+      },
+      "status": "PROPOSED"
+    },
+    {
+      "key": "audio",
+      "name": "Audio",
+      "icon": "Icon.Volume",
+      "benefit": "See system and microphone levels before you press record.",
+      "microcopy": "System audio · Microphone",
+      "colorDark": "#85C536",
+      "colorLight": "#4E7F0C",
+      "chipDark": {
+        "hex": "#85C536",
+        "alpha": 0.16
+      },
+      "chipLight": {
+        "hex": "#4E7F0C",
+        "alpha": 0.12
+      },
+      "status": "PROPOSED"
+    },
+    {
+      "key": "webcam",
+      "name": "Webcam",
+      "icon": "Icon.Video",
+      "benefit": "Put yourself in the frame with a picture-in-picture template.",
+      "microcopy": "Picture-in-picture",
+      "colorDark": "#EA0B7F",
+      "colorLight": "#C4046A",
+      "chipDark": {
+        "hex": "#EA0B7F",
+        "alpha": 0.16
+      },
+      "chipLight": {
+        "hex": "#C4046A",
+        "alpha": 0.12
+      },
+      "status": "PROPOSED"
+    },
+    {
+      "key": "effects",
+      "name": "Effects",
+      "icon": "Icon.Sparkles",
+      "benefit": "Spotlight, click ripples and click sounds that make actions readable.",
+      "microcopy": "Make every click visible",
+      "colorDark": "#FFAA21",
+      "colorLight": "#A15F00",
+      "chipDark": {
+        "hex": "#FFAA21",
+        "alpha": 0.16
+      },
+      "chipLight": {
+        "hex": "#A15F00",
+        "alpha": 0.12
+      },
+      "status": "PROPOSED"
+    },
+    {
+      "key": "annotations",
+      "name": "Annotations",
+      "icon": "Icon.Pen",
+      "benefit": "Draw over your desktop while you record.",
+      "microcopy": "Draw while you record",
+      "colorDark": "#6AA8FF",
+      "colorLight": "#2567D6",
+      "chipDark": {
+        "hex": "#6AA8FF",
+        "alpha": 0.16
+      },
+      "chipLight": {
+        "hex": "#2567D6",
+        "alpha": 0.12
+      },
+      "status": "PROPOSED"
+    },
+    {
+      "key": "review-export",
+      "name": "Review & Export",
+      "icon": "Icon.Film",
+      "benefit": "Trim, compose and deliver an MP4 or GIF without leaving the app.",
+      "microcopy": "Original recording preserved",
+      "colorDark": "#18DCE8",
+      "colorLight": "#087F8C",
+      "chipDark": {
+        "hex": "#18DCE8",
+        "alpha": 0.16
+      },
+      "chipLight": {
+        "hex": "#087F8C",
+        "alpha": 0.12
+      },
+      "status": "PROPOSED"
+    },
+    {
+      "key": "recordings",
+      "name": "Recordings",
+      "icon": "Icon.Film",
+      "benefit": "Find any recording by name, date or thumbnail.",
+      "microcopy": "Search recordings",
+      "colorDark": "#93A8B9",
+      "colorLight": "#475569",
+      "chipDark": {
+        "hex": "#93A8B9",
+        "alpha": 0.16
+      },
+      "chipLight": {
+        "hex": "#475569",
+        "alpha": 0.12
+      },
+      "status": "PROPOSED"
+    },
+    {
+      "key": "settings",
+      "name": "Settings",
+      "icon": "Icon.Settings",
+      "benefit": "Preferences, theme and update behaviour.",
+      "microcopy": "Settings",
+      "colorDark": "#93A8B9",
+      "colorLight": "#475569",
+      "chipDark": {
+        "hex": "#93A8B9",
+        "alpha": 0.16
+      },
+      "chipLight": {
+        "hex": "#475569",
+        "alpha": 0.12
+      },
+      "status": "PROPOSED"
+    }
+  ]
+}

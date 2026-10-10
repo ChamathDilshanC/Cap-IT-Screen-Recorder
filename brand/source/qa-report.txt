@@ -1,0 +1,27 @@
+PASS  all 62 image/font references resolve
+PASS  PDF has 68 pages (target 35–50+)
+PASS  every page is 16:9
+PASS  every page has selectable text
+PASS  Inter embedded (7 font faces)
+PASS  PDF outline has 61 entries
+PASS  contents page has 21 internal links
+PASS  every contents link resolves to a page
+PASS  footer page numbers match the page index on 55 pages
+PASS  no embedded raster is shown at more than 2× its pixel size
+PASS  Dark: all 36 proposed token hex values appear in the PDF
+PASS  Dark: all proposed token hex values appear in the Markdown
+PASS  Dark: all 45 implemented values exist in Colors.axaml
+PASS  Dark: contrast figures recompute identically
+PASS  Dark: every text token ≥ 4.5 : 1 on every text layer
+PASS  Dark: border.control ≥ 3 : 1 (3.01)
+PASS  Light: all 36 proposed token hex values appear in the PDF
+PASS  Light: all proposed token hex values appear in the Markdown
+PASS  Light: all 45 implemented values exist in Colors.axaml
+PASS  Light: contrast figures recompute identically
+PASS  Light: every text token ≥ 4.5 : 1 on every text layer
+PASS  Light: border.control ≥ 3 : 1 (3.01)
+PASS  Avalonia dictionary contains every dark token value
+PASS  no text/media overflow beyond page or into the footer zone (0 pages flagged)
+PASS  13 files from the pre-brand snapshot (Smart Tracking changes + harness) are byte-identical
+
+25 passed, 0 failed
