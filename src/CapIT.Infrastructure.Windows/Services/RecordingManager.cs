@@ -1,4 +1,5 @@
 ﻿using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Threading.Channels;
 using ScreenRecorderApp.Models;
 using ScreenRecorderApp.Services.Capture;
@@ -22,6 +23,9 @@ public sealed class RecordingManager : IDisposable
 
     private byte[] _blackFrame = [];
     private CancellationTokenSource? _pacerCts;
+    private FrameClock? _frameClock;
+    private long _videoTimelineStart;
+    private int _poolSize;
     private Task? _pacerTask;
     private Task? _writerTask;
     private Channel<byte[]?>? _frameQueue;
@@ -30,11 +34,21 @@ public sealed class RecordingManager : IDisposable
     private long _repeatedFrameCount;
 
     /// <summary>
-    /// How many frame buffers circulate between the pacer and the pipe writer. Three is enough to
-    /// absorb the encoder's normal hiccups (a keyframe, a disk flush) without the pacer ever waiting,
-    /// and small enough that the memory cost stays bounded — at 4K each NV12 buffer is 12.4MB.
+    /// How many frame buffers circulate between the pacer and the pipe writer: about a fifth of a second
+    /// of frames, so an encoder stall of that length (a keyframe, a disk flush, a hardware encoder
+    /// context-switching with the GPU work around it) is absorbed instead of turning into repeated
+    /// frames — three buffers was only ~50ms at 60fps, which hardware encoders were seen to exceed.
+    /// Bounded by memory rather than count at high resolutions (a 4K NV12 buffer is 12.4MB), but never
+    /// below the original three.
     /// </summary>
-    private const int FramePoolSize = 3;
+    private static int FramePoolSizeFor(int fps, int frameBytes)
+    {
+        const int MinFrames = 3, MaxFrames = 14;
+        const long MemoryBudgetBytes = 96L * 1024 * 1024;
+        int wanted = (int)Math.Ceiling(fps * 0.2);
+        int affordable = (int)Math.Max(MinFrames, MemoryBudgetBytes / Math.Max(1, frameBytes));
+        return Math.Clamp(Math.Min(wanted, affordable), MinFrames, MaxFrames);
+    }
 
     /// <summary>
     /// Frames the pacer had to emit as a repeat of the previous one because every pooled buffer was
@@ -43,6 +57,9 @@ public sealed class RecordingManager : IDisposable
     /// of how much motion detail was lost to the encoder falling behind.
     /// </summary>
     public long RepeatedFrameCount => Interlocked.Read(ref _repeatedFrameCount);
+
+    /// <summary>Counters for the recording in progress (or the last one). See <see cref="RecordingDiagnostics"/>.</summary>
+    public RecordingDiagnostics Diagnostics { get; private set; } = new();
 
     // The path ffmpeg actually writes to during capture (a fragmented ".part.mp4"), and the final
     // path the user asked for. For MP4 output these differ: on stop the fragmented file is remuxed
@@ -107,6 +124,10 @@ public sealed class RecordingManager : IDisposable
 
     /// <summary>Resumes live frames after <see cref="FreezeScreen"/>.</summary>
     public void UnfreezeScreen() => IsScreenFrozen = false;
+
+    /// <summary>Whether the running capture composes on the GPU or on the CPU kernels — diagnostic only.</summary>
+    public bool UsesGpuPipeline => _video.UsesGpuPipeline;
+    public string? GpuUnavailableReason => _video.GpuUnavailableReason;
 
     public int PreviewWidth => _video.Width;
     public int PreviewHeight => _video.Height;
@@ -366,7 +387,8 @@ public sealed class RecordingManager : IDisposable
             _blackFrame = new byte[frameBytes];
             Nv12Converter.FillBlack(_blackFrame, _video.Width, _video.Height);
             _framePool.Clear();
-            for (int i = 0; i < FramePoolSize; i++)
+            _poolSize = FramePoolSizeFor(settings.Fps, frameBytes);
+            for (int i = 0; i < _poolSize; i++)
             {
                 var pooled = new byte[frameBytes];
                 Nv12Converter.FillBlack(pooled, _video.Width, _video.Height);
@@ -374,11 +396,32 @@ public sealed class RecordingManager : IDisposable
             }
             Interlocked.Exchange(ref _repeatedFrameCount, 0);
 
-            lock (_videoLock) { _video.BeginCapture(); }
+            Diagnostics = new RecordingDiagnostics();
+            Diagnostics.BeginProcessCounters();
+            _video.Diagnostics = Diagnostics;
 
             // Held for the recording only — see TimerResolutionScope for why a 60fps pacer is not
-            // actually a 60fps pacer without it.
+            // actually a 60fps pacer without it. Taken before capture starts because the capture loop's
+            // own deadlines are millisecond waits too.
             _timerResolution = new TimerResolutionScope();
+
+            // The output schedule. On the GPU path the capture thread composes frame k at slot k, and the
+            // readback ring hands that frame over one slot later, so the pacer samples slot k a slot and a
+            // half after it opens: half a slot of margin on either side of the moment the frame is
+            // published, which is what absorbs wakeup and compose jitter. Everywhere else (CPU path) there
+            // is no such lag and the lead is zero.
+            bool slotDriven = _video.UsesGpuPipeline;
+            long leadTicks = slotDriven ? (long)(1.5 * Stopwatch.Frequency / settings.Fps) : 0;
+            _frameClock = new FrameClock(settings.Fps, Stopwatch.Frequency, Stopwatch.GetTimestamp() + leadTicks);
+            _video.SetComposeClock(slotDriven ? _frameClock : null, leadTicks);
+            // t=0 of the recording is when the clock was created, not when its lead-shifted first slot opens:
+            // frame k shows the screen as of slot k's *content* time. Audio is aligned to the same instant.
+            _videoTimelineStart = _frameClock.SlotTimestamp(0) - leadTicks;
+            _audio.TimelineStartTimestamp = _videoTimelineStart;
+            var audioClock = _frameClock;
+            long audioStart = _videoTimelineStart;
+            _audio.ElapsedSecondsAt = ts => Math.Max(0, (ts - audioStart - audioClock.PausedTicks(ts)) / (double)Stopwatch.Frequency);
+            lock (_videoLock) { _video.BeginCapture(); }
 
             _frameQueue = Channel.CreateUnbounded<byte[]?>(
                 // SingleWriter stays false even though the pacer is the only thing that enqueues frames:
@@ -388,7 +431,11 @@ public sealed class RecordingManager : IDisposable
 
             _pacerCts = new CancellationTokenSource();
             _writerTask = Task.Run(() => WriterLoopAsync(_frameQueue.Reader));
-            _pacerTask = Task.Run(() => PacerLoopAsync(settings.Fps, _frameQueue.Writer, _pacerCts.Token));
+            var pacerClock = _frameClock;
+            var pacerQueue = _frameQueue.Writer;
+            var pacerToken = _pacerCts.Token;
+            _pacerTask = Task.Factory.StartNew(() => PacerLoop(pacerClock, pacerQueue, pacerToken, leadTicks),
+                CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
 
             if (audioRequested)
             {
@@ -427,63 +474,149 @@ public sealed class RecordingManager : IDisposable
     }
 
     /// <summary>
-    /// Samples the latest captured frame once per output frame interval and hands it to
-    /// <see cref="WriterLoopAsync"/>. Deliberately does no I/O itself — see the remarks.
+    /// Fills the output frame schedule: for every slot the wall clock has opened, hands
+    /// <see cref="WriterLoopAsync"/> either the latest captured frame or a repeat marker. Deliberately
+    /// does no I/O itself — see the remarks.
     /// </summary>
     /// <remarks>
-    /// The pipe write used to happen inline, on this loop, which made the pacer's cadence hostage to the
-    /// encoder's: any time ffmpeg stalled (a keyframe, a disk flush, a slow software preset at 4K) the
-    /// await blocked past the next tick, and PeriodicTimer does not make up missed ticks. Because ffmpeg
-    /// is fed fixed-rate rawvideo with no timestamps, a missed tick is not a late frame — it is a frame
-    /// that never exists, so the finished video runs short while the audio, which never stalls, does
-    /// not. That is the drift this split removes: the pacer now always emits exactly one frame per tick,
-    /// and a slow encoder costs motion detail (a repeated frame) instead of timeline.
+    /// Two separate things used to cost this timeline frames, and both are handled here.
+    ///
+    /// The pipe write used to happen inline, so any ffmpeg stall (a keyframe, a disk flush, a slow
+    /// software preset at 4K) held the loop past its next tick; the writer split removed that.
+    ///
+    /// The other one was the timer itself. The loop used a PeriodicTimer, which (a) truncates its period to
+    /// whole milliseconds — 16.67ms became 16ms, so a "60fps" pacer ran at 62.5fps and the video came out
+    /// ~4% longer than the audio — and (b) never makes up a tick it was late for. Because ffmpeg is fed
+    /// untimestamped rawvideo, a tick that never fires is not a late frame, it is a frame that does not
+    /// exist, and the video runs short while the audio does not. <see cref="FrameClock"/> replaces it:
+    /// slot k opens at exactly start + k/fps, and whenever this thread wakes up late (a long GC pause, a
+    /// starved core, a hiccup anywhere else) it fills every slot that opened in the meantime. The missed
+    /// slots repeat the previous frame — the screen as it last verifiably was — and only the newest slot
+    /// gets the fresh capture, so nothing is invented and the timeline stays whole. Repeats are counted
+    /// (<see cref="RecordingDiagnostics.RepeatsPacerCatchUp"/>) rather than hidden.
+    ///
+    /// Runs on a dedicated thread, not the thread pool: a pacer whose wakeups can queue behind CPU-bound
+    /// pool work (Parallel.For in the CPU kernels, the encoder's own helpers) is exactly the kind that
+    /// wakes up late.
     /// </remarks>
-    private async Task PacerLoopAsync(int fps, ChannelWriter<byte[]?> queue, CancellationToken ct)
+    private void PacerLoop(FrameClock clock, ChannelWriter<byte[]?> queue, CancellationToken ct, long leadTicks)
     {
-        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(1000.0 / fps));
+        var diag = Diagnostics;
+        long frequency = Stopwatch.Frequency;
+        long lastWake = 0;
         try
         {
-            while (await timer.WaitForNextTickAsync(ct).ConfigureAwait(false))
+            Thread.CurrentThread.Priority = ThreadPriority.AboveNormal;
+            while (!ct.IsCancellationRequested)
             {
                 // A full pause writes NOTHING to the encoder, so the output's video timeline stops
-                // advancing along with the elapsed timer. Writing a frozen frame every tick (which is
-                // what this used to do) meant a pause still cost a second of footage per real second —
-                // pausing a 4s recording for 5s produced a 9s file. AudioCaptureService.IsPaused stops
-                // its own writes for exactly the same reason, so the two streams pause together and
-                // stay in sync.
-                if (State == RecordingState.Paused) continue;
-
-                // Screen pause is deliberately different: frames keep flowing at full rate, they're
-                // just the same (frozen) frame, so audio and the timeline carry on normally. A null is
-                // precisely that instruction to the writer, and costs neither a buffer nor a copy.
-                if (IsScreenFrozen)
+                // advancing along with the elapsed timer (the clock cuts the paused interval out of the
+                // schedule entirely). AudioCaptureService.IsPaused stops its own writes for exactly the
+                // same reason, so the two streams pause together and stay in sync.
+                if (clock.IsPaused)
                 {
-                    queue.TryWrite(null);
+                    lastWake = 0;
+                    Thread.Sleep(2);
                     continue;
                 }
 
-                if (!_framePool.TryDequeue(out var buffer))
+                long now = Stopwatch.GetTimestamp();
+                long owed = clock.Owed(now);
+                if (owed <= 0)
                 {
-                    // Every pooled buffer is still queued or in flight: the encoder is behind. Emit a
-                    // repeat rather than skipping the tick, so the frame count still matches elapsed
-                    // time — see this method's remarks.
-                    queue.TryWrite(null);
-                    Interlocked.Increment(ref _repeatedFrameCount);
+                    WaitUntil(clock.NextSlotTimestamp(), frequency, ct);
                     continue;
                 }
 
-                _video.TryGetLatestFrameNv12(buffer);
-                queue.TryWrite(buffer);
+                if (lastWake != 0) diag.PacerGapMs.Add(RunningStat.Elapsed(lastWake, now));
+                lastWake = now;
+
+                if (owed > 1)
+                {
+                    diag.PacerLateWakeups++;
+                    diag.MissedTicks += owed - 1;
+                    for (long i = 0; i < owed - 1; i++)
+                    {
+                        queue.TryWrite(null);
+                        diag.RepeatsPacerCatchUp++;
+                        diag.FramesEmitted++;
+                    }
+                }
+
+                EmitCurrentSlot(queue, diag);
+                clock.MarkEmitted(owed);
             }
-        }
-        catch (OperationCanceledException)
-        {
-            // Normal shutdown.
+
+            // Stop requested. The pacer samples a slot and a half after it opens (leadTicks), so the last
+            // slots of the recording have not been due yet; fill them now so the video ends at the stop
+            // instant rather than a frame or two before it, matching where the audio ends.
+            if (!clock.IsPaused)
+            {
+                long tail = clock.Owed(Stopwatch.GetTimestamp() + leadTicks);
+                if (tail > 0)
+                {
+                    for (long i = 0; i < tail - 1; i++) { queue.TryWrite(null); diag.FramesEmitted++; diag.TailSlotsEmitted++; }
+                    EmitCurrentSlot(queue, diag);
+                    diag.TailSlotsEmitted++;
+                    clock.MarkEmitted(tail);
+                }
+            }
         }
         finally
         {
             queue.TryComplete();
+        }
+    }
+
+    private void EmitCurrentSlot(ChannelWriter<byte[]?> queue, RecordingDiagnostics diag)
+    {
+        // Screen pause is deliberately different from a full pause: frames keep flowing at full rate,
+        // they're just the same (frozen) frame, so audio and the timeline carry on normally. A null is
+        // precisely that instruction to the writer, and costs neither a buffer nor a copy.
+        if (IsScreenFrozen)
+        {
+            queue.TryWrite(null);
+            diag.FramesEmitted++;
+            return;
+        }
+
+        if (!_framePool.TryDequeue(out var buffer))
+        {
+            // Every pooled buffer is still queued or in flight: the encoder is behind. Emit a repeat
+            // rather than skipping the slot, so the frame count still matches elapsed time.
+            queue.TryWrite(null);
+            Interlocked.Increment(ref _repeatedFrameCount);
+            diag.RepeatsEncoderBehind++;
+            diag.FramesEmitted++;
+            return;
+        }
+
+        // Buffers currently out of the pool (queued for, or being written by, the writer): how far behind
+        // the encoder is, in frames.
+        int inFlight = _poolSize - _framePool.Count;
+        if (inFlight > diag.MaxQueueDepth) diag.MaxQueueDepth = inFlight;
+
+        long copyStart = Stopwatch.GetTimestamp();
+        _video.TryGetLatestFrameNv12(buffer);
+        diag.PacerCopyMs.AddTicks(copyStart);
+        queue.TryWrite(buffer);
+        diag.FramesEmitted++;
+    }
+
+    /// <summary>
+    /// Sleeps most of the way to <paramref name="target"/> and spins the last stretch. Sleep alone lands
+    /// anywhere within the timer resolution of the deadline (1ms at best, see
+    /// <see cref="TimerResolutionScope"/>), which at 60fps is a noticeable slice of a 16.7ms slot.
+    /// </summary>
+    private static void WaitUntil(long target, long frequency, CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            long remaining = target - Stopwatch.GetTimestamp();
+            if (remaining <= 0) return;
+            double ms = remaining * 1000.0 / frequency;
+            if (ms > 2.5) Thread.Sleep((int)(ms - 1.5));
+            else Thread.SpinWait(40);
         }
     }
 
@@ -505,7 +638,10 @@ public sealed class RecordingManager : IDisposable
                 var pipe = _ffmpeg.VideoPipe;
                 if (pipe is null) return;
 
+                var diag = Diagnostics;
+                long writeStart = Stopwatch.GetTimestamp();
                 await pipe.WriteAsync(frame ?? lastWritten ?? _blackFrame).ConfigureAwait(false);
+                diag.PipeWriteMs.AddTicks(writeStart);
 
                 if (frame is null) continue;
                 if (lastWritten is not null) _framePool.Enqueue(lastWritten);
@@ -532,6 +668,7 @@ public sealed class RecordingManager : IDisposable
         State = RecordingState.Paused;
         IsScreenFrozen = false; // a full pause supersedes screen-freeze; resume comes back clean
         _audio.IsPaused = true;
+        _frameClock?.Pause(Stopwatch.GetTimestamp());
         _pauseStartedUtc = DateTime.UtcNow;
     }
 
@@ -541,6 +678,7 @@ public sealed class RecordingManager : IDisposable
         if (_pauseStartedUtc is { } p) _pausedAccum += DateTime.UtcNow - p;
         _pauseStartedUtc = null;
         _audio.IsPaused = false;
+        _frameClock?.Resume(Stopwatch.GetTimestamp());
         State = RecordingState.Recording;
     }
 
@@ -549,6 +687,7 @@ public sealed class RecordingManager : IDisposable
         if (State is RecordingState.Idle or RecordingState.Stopping) return LastOutputPath;
 
         State = RecordingState.Stopping;
+        long stopTimestamp = Stopwatch.GetTimestamp();
 
         _pacerCts?.Cancel();
         if (_pacerTask is not null)
@@ -564,10 +703,22 @@ public sealed class RecordingManager : IDisposable
             try { await _writerTask.WaitAsync(TimeSpan.FromSeconds(5)); } catch { /* drained or gave up */ }
         }
 
+        // Video is finished: tell ffmpeg so it can consume the audio tail, which is still being delivered up to
+        // the stop instant. Then end the audio there and wait for it to reach the pipe — see PcmLegPump.
+        _ffmpeg.CompleteVideoInput();
+        await Task.Run(() => _audio.StopAndDrain(stopTimestamp));
+        var audioStats = _audio.PumpStats;
+        Diagnostics.AudioSecondsWritten = _audio.BytesWritten / (double)(AudioCaptureService.SampleRate * AudioCaptureService.Channels * 2);
+        Diagnostics.AudioLeadSilenceSeconds = audioStats.Lead;
+        Diagnostics.AudioStaleDroppedMs = audioStats.StaleMs;
+        Diagnostics.AudioUnderrunMs = audioStats.UnderrunMs;
+        Diagnostics.AudioMaxQueuedMs = audioStats.MaxQueuedMs;
+        Diagnostics.AudioWriteStallMs = audioStats.WriteStallMs;
+        Diagnostics.AudioDrainTimedOut = _audio.DrainTimedOut;
+
         _timerResolution?.Dispose();
         _timerResolution = null;
 
-        _audio.Stop();
         lock (_videoLock) { _video.Stop(); }
 
         await _ffmpeg.StopAsync();

@@ -84,6 +84,56 @@ public sealed class VideoCaptureService : IDisposable
     private Thread? _captureThread;
     private volatile bool _running;
 
+    // Slot-driven composition (GPU path, recording only). When a clock is set the capture thread no longer
+    // composes every time DXGI happens to hand it a frame; it composes once per output frame slot, at a
+    // fixed lead ahead of the moment the pacer will sample that slot. Arrival-driven composition made the
+    // moment a frame became available depend on DXGI wake jitter plus however long the compose and
+    // readback took, so which frame the pacer found waiting at its tick wavered by a frame either way —
+    // the same screen shown twice, then two screen updates in one step. Composing on the slot clock makes
+    // that deterministic, and as a side effect the zoom camera advances by an even step per output frame,
+    // which is what "smooth" looks like in the file as opposed to on the preview.
+    private FrameClock? _composeClock;
+    private long _composeLeadTicks;
+    private long _composeSlot;
+    private bool _gpuDirty;
+
+    /// <summary>
+    /// Switches the GPU path to composing once per slot of <paramref name="clock"/>, <paramref name="leadTicks"/>
+    /// ahead of the slot the pacer will sample. Pass null to return to composing on every desktop frame
+    /// (preview, CPU path). Call before <see cref="BeginCapture"/>.
+    /// </summary>
+    public void SetComposeClock(FrameClock? clock, long leadTicks)
+    {
+        _composeLeadTicks = leadTicks;
+        _composeSlot = 0;
+        _gpuDirty = false;
+        _composeClock = clock;
+    }
+
+    /// <summary>True when frames are composed and converted on the GPU (monitor capture on a device that supports it); false means the CPU kernels are doing the zoom/sharpen work.</summary>
+    public bool UsesGpuPipeline => _gpu is not null;
+
+    /// <summary>Why the GPU pipeline was not built, when it was not — diagnostic only.</summary>
+    public string? GpuUnavailableReason => _gpu is null ? GpuFrameProcessor.LastFailureReason : null;
+
+    /// <summary>Optional per-recording counters, set by RecordingManager for the duration of a recording. Only counts and durations are ever stored.</summary>
+    public RecordingDiagnostics? Diagnostics
+    {
+        get => _diagnostics;
+        set { _diagnostics = value; if (_gpu is not null) _gpu.Diagnostics = value; }
+    }
+    private RecordingDiagnostics? _diagnostics;
+    private long _lastPublishTimestamp;
+
+    private void NotePublish()
+    {
+        var diag = Diagnostics;
+        if (diag is null) return;
+        long now = Stopwatch.GetTimestamp();
+        if (_lastPublishTimestamp != 0) diag.PublishIntervalMs.Add(RunningStat.Elapsed(_lastPublishTimestamp, now));
+        _lastPublishTimestamp = now;
+    }
+
     private readonly object _frameLock = new();
     private byte[]? _latestFrame;
     private int _frameWidth;
@@ -138,8 +188,16 @@ public sealed class VideoCaptureService : IDisposable
     // so it fades in and out with the push itself and there is no pop partway through. Ramp and cap are
     // set so the mildest zoom (1.5x, where the softness already shows) gets a substantial correction and
     // anything from 2x up gets the full amount.
-    private const double ZoomSharpenRamp = 1.1;
-    private const double ZoomSharpenMaxAmount = 1.0;
+    //
+    // Tuned against ground truth (Tests/RecordingChecks sharp-zoom + sharpness.py): the same text/edge
+    // layout rendered natively at the zoomed size is compared with a recording of the 1x layout zoomed by
+    // Smart Tracking, scoring high-frequency energy (1.0 = as much fine detail as the native render), edge
+    // 10-90 % width and overshoot. With the previous ramp 1.1 / cap 1.0 the encoded 2x zoom reached 0.90 of
+    // native detail energy; 1.3 / 1.3 reaches ~0.99 at 2x and about 1.05 at 1.5x for ~1.4 % overshoot on text
+    // (no visible rims). Catmull-Rom stays the kernel: Lanczos3 costs 2.25x the texture fetches and, with an
+    // equal edge width, retains less detail energy at the same overshoot.
+    private const double ZoomSharpenRamp = 1.3;
+    private const double ZoomSharpenMaxAmount = 1.3;
     private const int MovementActivityThresholdPx = 3;
     private bool _zoomEnabled;
     private bool _zoomOnClickOnly;
@@ -185,8 +243,15 @@ public sealed class VideoCaptureService : IDisposable
     // Null means every frame goes through the CPU kernels, which remain the complete, correct path —
     // see GpuFrameProcessor for what it does and why the readback format is the reason it exists.
     private GpuFrameProcessor? _gpu;
+    // Published frames are only ever *read* by other threads (the pacer, the preview), always under
+    // _gpuFrameLock. The GPU readback writes into the matching back buffer instead and the two are swapped
+    // under that same lock once the write is complete (see PublishGpuFrame). Writing straight into the
+    // published array — which is what this used to do — let the pacer copy a frame while it was half
+    // overwritten, so a frame could be assembled from two different instants: a torn frame.
     private byte[]? _gpuNv12Frame;      // published NV12, what the pacer copies out
+    private byte[]? _gpuNv12Back;       // being written by the capture thread, never visible to readers
     private byte[]? _gpuPreviewFrame;   // published BGRA, only refreshed when the preview asks
+    private byte[]? _gpuPreviewBack;
     private bool _gpuHasFrame;
     private bool _gpuPreviewHasFrame;
     private readonly object _gpuFrameLock = new();
@@ -480,12 +545,25 @@ public sealed class VideoCaptureService : IDisposable
 
         // Built on the duplication device itself, so the captured texture never leaves the GPU it was
         // produced on. Returns null on anything unsupported, which simply leaves the CPU path in charge.
-        _gpu = GpuFrameProcessor.TryCreate(_device!, _context!, Width, Height);
+        // CAPIT_FORCE_CPU_PIPELINE=1 keeps the CPU kernels in charge even where the GPU pipeline would work:
+        // a diagnostic switch for reproducing a CPU-path problem (or ruling the GPU path out of one) on a
+        // machine that would otherwise never take it.
+        _gpu = Environment.GetEnvironmentVariable("CAPIT_FORCE_CPU_PIPELINE") == "1"
+            ? null
+            : GpuFrameProcessor.TryCreate(_device!, _context!, Width, Height);
+        if (_gpu is null && Environment.GetEnvironmentVariable("CAPIT_FORCE_CPU_PIPELINE") == "1")
+        {
+            GpuFrameProcessor.LastFailureReason = "disabled by CAPIT_FORCE_CPU_PIPELINE";
+        }
         if (_gpu is not null)
         {
+            _gpu.Diagnostics = _diagnostics;
             _gpuNv12Frame = new byte[Nv12Converter.FrameByteSize(Width, Height)];
             Nv12Converter.FillBlack(_gpuNv12Frame, Width, Height);
+            _gpuNv12Back = new byte[_gpuNv12Frame.Length];
+            Nv12Converter.FillBlack(_gpuNv12Back, Width, Height);
             _gpuPreviewFrame = new byte[Width * Height * 4];
+            _gpuPreviewBack = new byte[Width * Height * 4];
             _gpuHasFrame = false;
         }
     }
@@ -812,12 +890,116 @@ public sealed class VideoCaptureService : IDisposable
         }
     }
 
+    private void ApplyPointerInfo(in OutduplFrameInfo frameInfo)
+    {
+        // AcquireNextFrame also wakes up (with AccumulatedFrames == 0) on a pointer-only update —
+        // e.g. the mouse moving over an otherwise-static desktop. PointerPosition is only valid
+        // on the call where the pointer actually changed, though: whenever LastMouseUpdateTime is
+        // 0, DXGI leaves PointerPosition zeroed out (Visible=false, Position=(0,0)) rather than
+        // repeating the last known state, so that case has to be ignored and the previous
+        // position/visibility retained — otherwise the cursor overlay would vanish on literally
+        // the very next frame after every single mouse update.
+        if (frameInfo.LastMouseUpdateTime != 0)
+        {
+            var newX = frameInfo.PointerPosition.Position.X;
+            var newY = frameInfo.PointerPosition.Position.Y;
+            if (Math.Abs(newX - _cursorX) > MovementActivityThresholdPx || Math.Abs(newY - _cursorY) > MovementActivityThresholdPx)
+            {
+                OnMouseActivity();
+            }
+
+            _cursorVisible = frameInfo.PointerPosition.Visible;
+            _cursorX = newX;
+            _cursorY = newY;
+        }
+
+        // The shape itself (what the cursor actually looks like right now — arrow, I-beam,
+        // resize handle, a custom app cursor, whatever the user's cursor theme provides) only
+        // needs re-fetching when it changes, which DXGI signals via a nonzero buffer size here.
+        if (frameInfo.PointerShapeBufferSize > 0)
+        {
+            UpdateSystemCursorShape(frameInfo.PointerShapeBufferSize);
+        }
+    }
+
+    /// <summary>
+    /// One iteration of slot-driven capture: wait (on DXGI) until either a new desktop frame arrives or
+    /// the next compose deadline passes. Arrivals are only cached on the GPU and handed straight back to
+    /// DXGI; composition happens when the deadline does. See <see cref="_composeClock"/>.
+    /// </summary>
+    private void CadenceStep(FrameClock clock)
+    {
+        var diag = Diagnostics;
+        long frequency = Stopwatch.Frequency;
+        long now = Stopwatch.GetTimestamp();
+
+        long slot = Math.Max(_composeSlot, clock.Emitted);
+        // Behind by whole slots (a long stall): compose the newest due slot once rather than catching up
+        // frame by frame. The pacer repeats the previous frame for the ones it missed.
+        while (clock.SlotTimestamp(slot + 1) - _composeLeadTicks <= now)
+        {
+            slot++;
+            if (diag is not null) diag.SlotSkips++;
+        }
+        long due = clock.SlotTimestamp(slot) - _composeLeadTicks;
+
+        int timeoutMs = (int)Math.Clamp((due - now) * 1000 / frequency, 0, AcquireTimeoutMs);
+        var result = _duplication!.AcquireNextFrame((uint)timeoutMs, out var frameInfo, out var desktopResource);
+        if (result.Success)
+        {
+            ApplyPointerInfo(in frameInfo);
+            using (desktopResource)
+            {
+                using var texture = desktopResource.QueryInterface<ID3D11Texture2D>();
+                _gpu!.CacheSource(texture);
+            }
+            _duplication.ReleaseFrame();
+            _gpuDirty = true;
+            if (diag is not null) diag.DesktopFramesAcquired++;
+        }
+
+        now = Stopwatch.GetTimestamp();
+        if (now < due) return;
+
+        if (diag is not null)
+        {
+            diag.SlotLatenessMs.Add(RunningStat.Elapsed(due, now));
+            diag.SlotComposes++;
+        }
+
+        if (_gpuDirty || NeedsAnimationTick())
+        {
+            _gpuDirty = false;
+            long composeStart = now;
+            ComposeOnGpu(null);
+            if (diag is not null)
+            {
+                diag.ComposeMs.AddTicks(composeStart);
+                if (_zoomCurrentFactor > 1.001) diag.FramesWithZoomActive++;
+            }
+        }
+        else if (_gpu!.HasPendingFrame)
+        {
+            // Nothing new to compose, but last slot's frame is still sitting in the readback ring.
+            DrainGpuFrame();
+        }
+
+        _composeSlot = slot + 1;
+    }
+
     private void CaptureLoop()
     {
         while (_running)
         {
             try
             {
+                var cadenceClock = _composeClock;
+                if (_gpu is not null && cadenceClock is not null && !cadenceClock.IsPaused)
+                {
+                    CadenceStep(cadenceClock);
+                    continue;
+                }
+
                 // The timeout doubles as the animation tick. It used to be 500ms, which was fine when
                 // the only thing that mattered was "has the screen changed" — but the zoom eases on a
                 // clock, so a static screen meant AcquireNextFrame blocked for half a second at a time
@@ -835,50 +1017,43 @@ public sealed class VideoCaptureService : IDisposable
                     // last raw frame with the eased crop advanced to now.
                     if (NeedsAnimationTick())
                     {
+                        var diag = Diagnostics;
+                        long composeStart = diag is null ? 0 : Stopwatch.GetTimestamp();
                         if (_gpu is not null) ComposeOnGpu(null);
                         else ComposeAndPublish();
+                        if (diag is not null)
+                        {
+                            diag.ComposeMs.AddTicks(composeStart);
+                            diag.AnimationTicks++;
+                            if (_zoomCurrentFactor > 1.001) diag.FramesWithZoomActive++;
+                        }
+                    }
+                    else if (_gpu is not null)
+                    {
+                        DrainGpuFrame();
                     }
                     continue;
                 }
 
-                // AcquireNextFrame also wakes up (with AccumulatedFrames == 0) on a pointer-only update —
-                // e.g. the mouse moving over an otherwise-static desktop. PointerPosition is only valid
-                // on the call where the pointer actually changed, though: whenever LastMouseUpdateTime is
-                // 0, DXGI leaves PointerPosition zeroed out (Visible=false, Position=(0,0)) rather than
-                // repeating the last known state, so that case has to be ignored and the previous
-                // position/visibility retained — otherwise the cursor overlay would vanish on literally
-                // the very next frame after every single mouse update.
-                if (frameInfo.LastMouseUpdateTime != 0)
-                {
-                    var newX = frameInfo.PointerPosition.Position.X;
-                    var newY = frameInfo.PointerPosition.Position.Y;
-                    if (Math.Abs(newX - _cursorX) > MovementActivityThresholdPx || Math.Abs(newY - _cursorY) > MovementActivityThresholdPx)
-                    {
-                        OnMouseActivity();
-                    }
-
-                    _cursorVisible = frameInfo.PointerPosition.Visible;
-                    _cursorX = newX;
-                    _cursorY = newY;
-                }
-
-                // The shape itself (what the cursor actually looks like right now — arrow, I-beam,
-                // resize handle, a custom app cursor, whatever the user's cursor theme provides) only
-                // needs re-fetching when it changes, which DXGI signals via a nonzero buffer size here.
-                if (frameInfo.PointerShapeBufferSize > 0)
-                {
-                    UpdateSystemCursorShape(frameInfo.PointerShapeBufferSize);
-                }
+                ApplyPointerInfo(in frameInfo);
 
                 // The frame itself is re-copied unconditionally (not just when AccumulatedFrames > 0),
                 // otherwise a moving cursor drawn into the buffer below would visibly lag behind real
                 // mouse movement whenever the rest of the screen happens to be still.
 
+                var diagAcquired = Diagnostics;
+                long acquiredComposeStart = diagAcquired is null ? 0 : Stopwatch.GetTimestamp();
                 using (desktopResource)
                 {
                     using var texture = desktopResource.QueryInterface<ID3D11Texture2D>();
                     if (_gpu is not null) ComposeOnGpu(texture);
                     else CopyFrameToBuffer(texture);
+                }
+                if (diagAcquired is not null)
+                {
+                    diagAcquired.ComposeMs.AddTicks(acquiredComposeStart);
+                    diagAcquired.DesktopFramesAcquired++;
+                    if (_zoomCurrentFactor > 1.001) diagAcquired.FramesWithZoomActive++;
                 }
 
                 _duplication.ReleaseFrame();
@@ -1049,6 +1224,7 @@ public sealed class VideoCaptureService : IDisposable
             _frameHeight = height;
             _hasFrame = true;
         }
+        NotePublish();
     }
 
     /// <summary>
@@ -1073,7 +1249,7 @@ public sealed class VideoCaptureService : IDisposable
     private void ComposeOnGpu(ID3D11Texture2D? texture)
     {
         var gpu = _gpu;
-        var nv12 = _gpuNv12Frame;
+        var nv12 = _gpuNv12Back;
         if (gpu is null || nv12 is null) return;
 
         AdvanceZoomCamera(Width, Height, out double cropX, out double cropY, out double cropW, out double cropH);
@@ -1107,9 +1283,20 @@ public sealed class VideoCaptureService : IDisposable
             RippleThickness: (float)RippleThicknessPx);
 
         bool wantPreview = _gpuPreviewWanted;
-        var previewBuffer = wantPreview ? _gpuPreviewFrame : null;
+        var previewBuffer = wantPreview ? _gpuPreviewBack : null;
 
-        if (!gpu.Process(texture, prm, ripples, nv12, previewBuffer))
+        var result = gpu.Process(texture, prm, ripples, nv12, previewBuffer, out bool previewProduced);
+        if (previewProduced) _gpuPreviewWanted = false;
+
+        if (result == ProcessResult.Pending)
+        {
+            // Submitted, but the readback ring has no finished frame to hand back yet. Only the preview
+            // (which is read back synchronously) may have something worth publishing.
+            if (previewProduced) PublishGpuFrame(nv12Ready: false, previewProduced: true);
+            return;
+        }
+
+        if (result == ProcessResult.Failed)
         {
             // Fall back for this frame only. The CPU path needs the frame in system memory, which it
             // only has if a real texture arrived — on an animation tick there is nothing to fall back to,
@@ -1121,13 +1308,31 @@ public sealed class VideoCaptureService : IDisposable
             return;
         }
 
-        if (wantPreview) _gpuPreviewWanted = false;
+        PublishGpuFrame(nv12Ready: true, previewProduced);
+    }
 
+    /// <summary>
+    /// Makes a finished GPU frame visible to the pacer (and the preview): swaps the back buffers it was
+    /// written into with the published ones under <see cref="_gpuFrameLock"/>, so a reader can never
+    /// observe a buffer that is still being written.
+    /// </summary>
+    private void PublishGpuFrame(bool nv12Ready, bool previewProduced)
+    {
         lock (_gpuFrameLock)
         {
-            _gpuHasFrame = true;
-            if (wantPreview) _gpuPreviewHasFrame = true;
+            if (nv12Ready && _gpuNv12Back is not null && _gpuNv12Frame is not null)
+            {
+                (_gpuNv12Frame, _gpuNv12Back) = (_gpuNv12Back, _gpuNv12Frame);
+                _gpuHasFrame = true;
+            }
+            if (previewProduced && _gpuPreviewBack is not null && _gpuPreviewFrame is not null)
+            {
+                (_gpuPreviewFrame, _gpuPreviewBack) = (_gpuPreviewBack, _gpuPreviewFrame);
+                _gpuPreviewHasFrame = true;
+            }
         }
+
+        if (!nv12Ready) return;
 
         lock (_frameLock)
         {
@@ -1135,6 +1340,21 @@ public sealed class VideoCaptureService : IDisposable
             _frameHeight = Height;
             _hasFrame = true;
         }
+        NotePublish();
+    }
+
+    /// <summary>
+    /// Pushes the last submitted frame out of the GPU readback ring when no newer frame is coming to do
+    /// it — see <see cref="GpuFrameProcessor.Process"/>. Without this, whatever was composed last before
+    /// the screen went still (the final position of the cursor, the settled zoom) would sit in the ring
+    /// unpublished until something else happened.
+    /// </summary>
+    private void DrainGpuFrame()
+    {
+        var gpu = _gpu;
+        var nv12 = _gpuNv12Back;
+        if (gpu is null || nv12 is null || !gpu.HasPendingFrame) return;
+        if (gpu.Drain(nv12) == ProcessResult.Ready) PublishGpuFrame(nv12Ready: true, previewProduced: false);
     }
 
     /// <summary>
@@ -1825,6 +2045,33 @@ public sealed class VideoCaptureService : IDisposable
         if (colEnd <= colStart) return;
         int colCount = colEnd - colStart;
 
+        // 1:1 at whole-pixel positions — a captured window that is exactly the canvas size, the common case
+        // for window capture. Every Catmull-Rom weight is then exactly (0, 1, 0, 0), so the 16-tap filter is
+        // the identity and costs ~20 ms per 1080p frame to produce what a row copy produces bit for bit.
+        // That time was taken on the WGC callback thread, which is what sets the cadence of window capture.
+        if (scaleX == 1.0 && scaleY == 1.0 && srcX == Math.Floor(srcX) && srcY == Math.Floor(srcY)
+            && srcX + colStart >= 0 && srcX + colEnd <= srcW && srcY >= 0 && srcY + dstRectH <= srcH)
+        {
+            int srcColumn = (int)srcX + colStart;
+            int srcRow0 = (int)srcY;
+            int copyBytes = colCount * 4;
+            ForEachRowBand(dstRectH, (rowStart, rowEnd) =>
+            {
+                fixed (byte* srcBase = src)
+                fixed (byte* dstBase = dst)
+                {
+                    for (int row = rowStart; row < rowEnd; row++)
+                    {
+                        int y = dstY + row;
+                        if (y < 0 || y >= dstH) continue;
+                        Buffer.MemoryCopy(srcBase + ((long)(srcRow0 + row) * srcW + srcColumn) * 4,
+                            dstBase + ((long)y * dstW + dstX + colStart) * 4, copyBytes, copyBytes);
+                    }
+                }
+            });
+            return;
+        }
+
         // The four source-column offsets and their four weights are a function of the output column
         // alone, so they repeat identically on every one of the ~1000+ output rows. Hoisting them into a
         // table built once per call replaces, per pixel, four CatmullRomWeight evaluations, four
@@ -2447,8 +2694,11 @@ public sealed class VideoCaptureService : IDisposable
         // After the capture thread has joined, so nothing can be mid-Process against these resources.
         _gpu?.Dispose();
         _gpu = null;
+        _composeClock = null;
         _gpuNv12Frame = null;
+        _gpuNv12Back = null;
         _gpuPreviewFrame = null;
+        _gpuPreviewBack = null;
         _gpuHasFrame = false;
         _gpuPreviewHasFrame = false;
         _gpuPreviewWanted = false;

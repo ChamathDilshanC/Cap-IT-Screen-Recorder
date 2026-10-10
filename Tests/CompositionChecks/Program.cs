@@ -2,6 +2,7 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.Text.Json;
 using ScreenRecorderApp.Models;
+using ScreenRecorderApp.Services;
 using ScreenRecorderApp.Services.Encoding;
 using ScreenRecorderApp.Services.Export;
 using ScreenRecorderApp.Services.Capture;
@@ -50,6 +51,58 @@ for (var i = 0; i < 120; i++)
     springPosition = next;
 }
 Check(springVelocity > 0, "Zoom spring reaches its target with no residual reverse motion");
+
+// The recording's frame schedule: slot k opens at exactly k/fps (no millisecond truncation of the period),
+// a late wakeup owes every slot it missed instead of losing them, and a pause cuts its interval out.
+{
+    const long freq = 10_000_000;
+    var c60 = new FrameClock(60, freq, 1_000);
+    Check(c60.Owed(1_000) == 1, "Frame slot 0 opens at the start");
+    c60.MarkEmitted(1);
+    Check(c60.Owed(1_000 + freq - 1) == 59 && c60.Owed(1_000 + freq) == 60, "60fps slot 60 opens at exactly one second, not at 16ms*60");
+
+    // 60fps with a period truncated to 16ms would have produced 62.5 frames in a second; 100 000 jittered
+    // wakeups over about an hour must end up with exactly floor(elapsed*fps)+1 slots filled.
+    var rng = new Random(12345);
+    foreach (var fps in new[] { 24, 30, 60, 120 })
+    {
+        var clock = new FrameClock(fps, freq, 0);
+        long now = 0;
+        for (var i = 0; i < 100_000; i++)
+        {
+            now += rng.Next(1, 400_000); // 0.1ms to 40ms between wakeups, i.e. up to ~2 frames late at 60fps
+            var owed = clock.Owed(now);
+            Check(owed >= 0, "Owed is never negative");
+            clock.MarkEmitted(owed);
+        }
+        Check(clock.Emitted == now * fps / freq + 1, $"Jittered wakeups at {fps}fps lose no slot: {clock.Emitted} vs {now * fps / freq + 1}");
+    }
+
+    var stalled = new FrameClock(60, freq, 0);
+    stalled.MarkEmitted(stalled.Owed(0));
+    Check(stalled.Owed(freq / 10) == 6, "A 100ms stall owes the six slots it missed");
+
+    var paused = new FrameClock(30, freq, 0);
+    paused.MarkEmitted(paused.Owed(freq));
+    Check(paused.Emitted == 31, "One second at 30fps fills 31 slots (0..30)");
+    paused.Pause(freq);
+    Check(paused.IsPaused && paused.Owed(5 * freq) == 0, "A paused clock owes nothing");
+    paused.Resume(5 * freq);
+    Check(!paused.IsPaused && paused.Owed(5 * freq) == 0, "Resuming does not owe the paused interval");
+    Check(paused.Owed(5 * freq + freq / 30) == 0 && paused.Owed(5 * freq + freq / 30 + 1) == 1, "The first slot after a pause opens one period after the resume, on the tick the schedule says");
+    Check(paused.NextSlotTimestamp() == paused.SlotTimestamp(31), "The wait target and the slot-open test agree on the same tick");
+    Check(paused.SlotTimestamp(31) == 4 * freq + (31 * freq + 29) / 30, "Slot timestamps shift by exactly the paused time");
+    paused.Pause(6 * freq); paused.Pause(7 * freq); paused.Resume(8 * freq); paused.Resume(9 * freq);
+    Check(paused.SlotTimestamp(31) == 6 * freq + (31 * freq + 29) / 30, "Pause/Resume are idempotent: only the first Pause and first Resume count");
+    Check(paused.PausedTicks(20 * freq) == 6 * freq, "PausedTicks totals every closed pause interval");
+
+    var audioClock = new FrameClock(30, freq, 0);
+    Check(audioClock.PausedTicks(3 * freq) == 0, "PausedTicks is zero before any pause");
+    audioClock.Pause(2 * freq);
+    Check(audioClock.PausedTicks(5 * freq) == 3 * freq, "PausedTicks counts a pause that is still open up to 'now'");
+    audioClock.Resume(6 * freq);
+    Check(audioClock.PausedTicks(9 * freq) == 4 * freq, "PausedTicks stops growing once resumed (audio elapsed = now - start - paused)");
+}
 
 // Missing, legacy, explicit-null and damaged sidecars must be safe to open.
 var legacyPath = Path.Combine(root, "legacy.mp4");

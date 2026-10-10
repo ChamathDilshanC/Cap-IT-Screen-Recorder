@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Vortice.D3DCompiler;
 using Vortice.Direct3D;
@@ -109,8 +110,13 @@ internal sealed class GpuFrameProcessor : IDisposable
     private readonly ID3D11Texture2D _chromaTex;
     private readonly ID3D11UnorderedAccessView _lumaUav;
     private readonly ID3D11UnorderedAccessView _chromaUav;
-    private readonly ID3D11Texture2D _lumaStaging;
-    private readonly ID3D11Texture2D _chromaStaging;
+    // Two staging slots per plane, used as a ring: this frame's planes are copied into one slot while the
+    // previous frame's are read out of the other. See ProcessResult for why.
+    private const int RingSize = 2;
+    private readonly ID3D11Texture2D[] _lumaStaging;
+    private readonly ID3D11Texture2D[] _chromaStaging;
+    private int _ringWrite;
+    private bool _ringHasPending;
     private readonly ID3D11Texture2D _bgraStaging;
 
     private readonly ID3D11SamplerState _pointSampler;
@@ -162,7 +168,8 @@ internal sealed class GpuFrameProcessor : IDisposable
         public ID3D11ShaderResourceView SrvA = null!, SrvB = null!;
         public ID3D11Texture2D LumaTex = null!, ChromaTex = null!;
         public ID3D11UnorderedAccessView LumaUav = null!, ChromaUav = null!;
-        public ID3D11Texture2D LumaStaging = null!, ChromaStaging = null!, BgraStaging = null!;
+        public ID3D11Texture2D[] LumaStaging = null!, ChromaStaging = null!;
+        public ID3D11Texture2D BgraStaging = null!;
         public ID3D11SamplerState PointSampler = null!;
         public ID3D11BlendState AlphaBlend = null!, InvertBlend = null!, Opaque = null!;
         public ID3D11Buffer ZoomCb = null!, SharpenCb = null!, EffectsCb = null!, QuadCb = null!, Nv12Cb = null!;
@@ -172,17 +179,21 @@ internal sealed class GpuFrameProcessor : IDisposable
     /// Builds the pipeline against an existing device, or returns null if the GPU, the driver or the
     /// shader compiler will not cooperate — in which case the caller keeps using the CPU kernels.
     /// </summary>
+    /// <summary>Why the last <see cref="TryCreate"/> returned null — diagnostic only, so a recording that silently fell back to the CPU kernels can be explained.</summary>
+    public static string? LastFailureReason { get; internal set; }
+
     public static GpuFrameProcessor? TryCreate(ID3D11Device device, ID3D11DeviceContext context, int width, int height)
     {
+        LastFailureReason = null;
         // Odd dimensions have no 4:2:0 representation, and every capture path here produces even ones;
         // rather than silently cropping a column, hand such a frame to the CPU path, which does not care.
-        if (width <= 1 || height <= 1 || width % 2 != 0 || height % 2 != 0) return null;
+        if (width <= 1 || height <= 1 || width % 2 != 0 || height % 2 != 0) { LastFailureReason = $"odd dimensions {width}x{height}"; return null; }
 
         // The NV12 pass stores to typed UAVs. Feature level 11.0 guarantees that only for the R32
         // family, so the two formats this needs are checked rather than assumed — on hardware lacking
         // them the stores would silently do nothing and every recording would come out black.
-        if (!SupportsTypedUavStore(device, Format.R8_UNorm)) return null;
-        if (!SupportsTypedUavStore(device, Format.R8G8_UNorm)) return null;
+        if (!SupportsTypedUavStore(device, Format.R8_UNorm)) { LastFailureReason = "no typed UAV store for R8_UNorm"; return null; }
+        if (!SupportsTypedUavStore(device, Format.R8G8_UNorm)) { LastFailureReason = "no typed UAV store for R8G8_UNorm"; return null; }
 
         var owned = new List<IDisposable>();
         try
@@ -222,8 +233,13 @@ internal sealed class GpuFrameProcessor : IDisposable
             r.ChromaTex = Track(owned, device.CreateTexture2D(PlaneDesc(width / 2, height / 2, Format.R8G8_UNorm)));
             r.LumaUav = Track(owned, device.CreateUnorderedAccessView(r.LumaTex));
             r.ChromaUav = Track(owned, device.CreateUnorderedAccessView(r.ChromaTex));
-            r.LumaStaging = Track(owned, device.CreateTexture2D(StagingDesc(width, height, Format.R8_UNorm)));
-            r.ChromaStaging = Track(owned, device.CreateTexture2D(StagingDesc(width / 2, height / 2, Format.R8G8_UNorm)));
+            r.LumaStaging = new ID3D11Texture2D[RingSize];
+            r.ChromaStaging = new ID3D11Texture2D[RingSize];
+            for (int slot = 0; slot < RingSize; slot++)
+            {
+                r.LumaStaging[slot] = Track(owned, device.CreateTexture2D(StagingDesc(width, height, Format.R8_UNorm)));
+                r.ChromaStaging[slot] = Track(owned, device.CreateTexture2D(StagingDesc(width / 2, height / 2, Format.R8G8_UNorm)));
+            }
             r.BgraStaging = Track(owned, device.CreateTexture2D(StagingDesc(width, height, Format.B8G8R8A8_UNorm)));
 
             // Point sampling, never linear: the kernels do their own filtering and index exact source
@@ -253,8 +269,9 @@ internal sealed class GpuFrameProcessor : IDisposable
 
             return new GpuFrameProcessor(device, context, width, height, r);
         }
-        catch
+        catch (Exception ex)
         {
+            LastFailureReason = ex.GetType().Name + ": " + ex.Message;
             foreach (var d in owned) { try { d.Dispose(); } catch { /* best effort */ } }
             return null;
         }
@@ -467,9 +484,26 @@ internal sealed class GpuFrameProcessor : IDisposable
     /// the live preview, which cannot touch the GPU from its own thread. Returns false if anything in
     /// the chain failed, which the caller should treat as "use the CPU path for this frame".
     /// </summary>
-    public bool Process(ID3D11Texture2D? source, in GpuFrameParams p, ReadOnlySpan<GpuRipple> ripples,
-        byte[] nv12Destination, byte[]? bgraDestination)
+    /// <summary>
+    /// Stores a freshly acquired desktop frame as the source for later <see cref="Process"/> calls, without
+    /// composing anything. Slot-driven capture uses this to release the duplicated frame back to DXGI the
+    /// instant it arrives and compose later, on the output clock.
+    /// </summary>
+    public void CacheSource(ID3D11Texture2D source)
     {
+        _context.CopyResource(_sourceCache, source);
+        _hasCachedSource = true;
+    }
+
+    /// <summary>Optional counters; set by the owner for the duration of a recording.</summary>
+    public RecordingDiagnostics? Diagnostics { get; set; }
+
+    public ProcessResult Process(ID3D11Texture2D? source, in GpuFrameParams p, ReadOnlySpan<GpuRipple> ripples,
+        byte[] nv12Destination, byte[]? bgraDestination, out bool previewProduced)
+    {
+        previewProduced = false;
+        var diag = Diagnostics;
+        long recordStart = diag is null ? 0 : Stopwatch.GetTimestamp();
         try
         {
             if (source is not null)
@@ -479,7 +513,7 @@ internal sealed class GpuFrameProcessor : IDisposable
             }
             else if (!_hasCachedSource)
             {
-                return false; // nothing captured yet, so there is nothing to re-compose
+                return ProcessResult.Failed; // nothing captured yet, so there is nothing to re-compose
             }
 
             _context.CopyResource(_texA, _sourceCache);
@@ -551,25 +585,71 @@ internal sealed class GpuFrameProcessor : IDisposable
             if (bgraDestination is not null)
             {
                 _context.CopyResource(_bgraStaging, current);
-                if (!ReadPlaneInto(_bgraStaging, bgraDestination, 0, _width * 4, _height)) return false;
+                if (!ReadPlaneInto(_bgraStaging, bgraDestination, 0, _width * 4, _height)) return ProcessResult.Failed;
+                previewProduced = true;
             }
 
             RunNv12Pass(currentSrv);
 
-            _context.CopyResource(_lumaStaging, _lumaTex);
-            _context.CopyResource(_chromaStaging, _chromaTex);
+            // This frame's planes go into the ring slot nobody is reading, and the *previous* frame's planes
+            // come out of the other one. The GPU is still busy with this frame while the CPU copies the last
+            // one into managed memory, so the two overlap instead of running one after the other; mapping
+            // the slot just written would instead block this thread for however long the GPU takes (the
+            // zoom and sharpen passes on a busy integrated GPU: several milliseconds, with spikes far past
+            // that), which is the whole frame budget at 60fps. The price is one frame of latency, which a
+            // recording does not care about — everything in the frame was composited together, so it stays
+            // internally consistent.
+            int slot = _ringWrite;
+            _context.CopyResource(_lumaStaging[slot], _lumaTex);
+            _context.CopyResource(_chromaStaging[slot], _chromaTex);
+            diag?.GpuRecordMs.AddTicks(recordStart);
 
-            int lumaBytes = _width * _height;
-            if (nv12Destination.Length < lumaBytes + _chromaWidth * _chromaHeight * 2) return false;
-            if (!ReadPlaneInto(_lumaStaging, nv12Destination, 0, _width, _height)) return false;
-            if (!ReadPlaneInto(_chromaStaging, nv12Destination, lumaBytes, _chromaWidth * 2, _chromaHeight)) return false;
+            bool hadPending = _ringHasPending;
+            _ringWrite = (slot + 1) % RingSize;
+            _ringHasPending = true;
+            if (!hadPending) return ProcessResult.Pending;
 
-            return true;
+            return ReadNv12Slot(_ringWrite, nv12Destination) ? ProcessResult.Ready : ProcessResult.Failed;
         }
         catch
         {
-            return false;
+            _ringHasPending = false;
+            return ProcessResult.Failed;
         }
+    }
+
+    /// <summary>
+    /// True when a frame has been submitted but not yet handed back. The caller should <see cref="Drain"/>
+    /// it once the screen goes quiet, otherwise the last frame before a still period would never be
+    /// published.
+    /// </summary>
+    public bool HasPendingFrame => _ringHasPending;
+
+    /// <summary>Reads out the most recently submitted frame, waiting for the GPU if it is not finished yet. Used when no newer frame is coming to push it through.</summary>
+    public ProcessResult Drain(byte[] nv12Destination)
+    {
+        if (!_ringHasPending) return ProcessResult.Pending;
+        try
+        {
+            // The newest submission is in the slot just before the one the next frame will be written to.
+            int newest = (_ringWrite + RingSize - 1) % RingSize;
+            bool ok = ReadNv12Slot(newest, nv12Destination);
+            _ringHasPending = false;
+            return ok ? ProcessResult.Ready : ProcessResult.Failed;
+        }
+        catch
+        {
+            _ringHasPending = false;
+            return ProcessResult.Failed;
+        }
+    }
+
+    private bool ReadNv12Slot(int slot, byte[] nv12Destination)
+    {
+        int lumaBytes = _width * _height;
+        if (nv12Destination.Length < lumaBytes + _chromaWidth * _chromaHeight * 2) return false;
+        if (!ReadPlaneInto(_lumaStaging[slot], nv12Destination, 0, _width, _height)) return false;
+        return ReadPlaneInto(_chromaStaging[slot], nv12Destination, lumaBytes, _chromaWidth * 2, _chromaHeight);
     }
 
     private void SetCommonState()
@@ -729,7 +809,11 @@ internal sealed class GpuFrameProcessor : IDisposable
     {
         if (destination.Length < offset + rowBytes * rows) return false;
 
+        var diag = Diagnostics;
+        long mapStart = diag is null ? 0 : Stopwatch.GetTimestamp();
         var mapped = _context.Map(staging, 0, MapMode.Read, Vortice.Direct3D11.MapFlags.None);
+        long copyStart = diag is null ? 0 : Stopwatch.GetTimestamp();
+        diag?.GpuWaitMs.Add(RunningStat.Elapsed(mapStart, copyStart));
         try
         {
             int rowPitch = (int)mapped.RowPitch;
@@ -737,6 +821,7 @@ internal sealed class GpuFrameProcessor : IDisposable
             {
                 Marshal.Copy(IntPtr.Add(mapped.DataPointer, y * rowPitch), destination, offset + y * rowBytes, rowBytes);
             }
+            diag?.GpuReadbackMs.AddTicks(copyStart);
         }
         finally
         {
@@ -753,11 +838,24 @@ internal sealed class GpuFrameProcessor : IDisposable
 
         _nv12Cb.Dispose(); _quadCb.Dispose(); _effectsCb.Dispose(); _sharpenCb.Dispose(); _zoomCb.Dispose();
         _opaque.Dispose(); _invertBlend.Dispose(); _alphaBlend.Dispose(); _pointSampler.Dispose();
-        _bgraStaging.Dispose(); _chromaStaging.Dispose(); _lumaStaging.Dispose();
+        _bgraStaging.Dispose();
+        foreach (var t in _chromaStaging) t.Dispose();
+        foreach (var t in _lumaStaging) t.Dispose();
         _chromaUav.Dispose(); _lumaUav.Dispose(); _chromaTex.Dispose(); _lumaTex.Dispose();
         _srvB.Dispose(); _srvA.Dispose(); _rtvB.Dispose(); _rtvA.Dispose();
         _texB.Dispose(); _texA.Dispose(); _sourceCache.Dispose();
         _nv12Cs.Dispose(); _quadPs.Dispose(); _effectsPs.Dispose(); _sharpenPs.Dispose();
         _zoomPs.Dispose(); _quadVs.Dispose(); _fullscreenVs.Dispose();
     }
+}
+
+/// <summary>Outcome of <see cref="GpuFrameProcessor.Process"/> / <see cref="GpuFrameProcessor.Drain"/>.</summary>
+internal enum ProcessResult
+{
+    /// <summary>Something failed; the caller should use the CPU path for this frame.</summary>
+    Failed,
+    /// <summary>The frame was submitted, but there is no finished frame to hand back yet (the first call, or nothing left to drain).</summary>
+    Pending,
+    /// <summary>A finished frame was written to the destination.</summary>
+    Ready,
 }

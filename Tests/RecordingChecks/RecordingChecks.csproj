@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Real-recording regression harness for the capture -> zoom -> pacer -> ffmpeg pipeline. Unlike
+       CompositionChecks (pure geometry/metadata/export), this one drives the actual RecordingManager
+       against a deterministic on-screen timeline and decodes the saved file back, so it only runs on an
+       interactive Windows desktop. It takes over the primary display and the mouse for the duration. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\CapIT.Core\CapIT.Core.csproj" />
+    <ProjectReference Include="..\..\src\CapIT.Infrastructure.Windows\CapIT.Infrastructure.Windows.csproj" />
+  </ItemGroup>
+</Project>

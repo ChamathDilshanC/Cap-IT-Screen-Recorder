@@ -335,7 +335,25 @@ public sealed class FFmpegEncoderService : IDisposable
         };
     }
 
+    /// <summary>
+    /// Signals end-of-video to ffmpeg while leaving the audio pipe(s) open. ffmpeg interleaves its inputs by
+    /// timestamp, so while the video input could still deliver frames it holds audio back; telling it the video is
+    /// finished lets it consume whatever audio is still being delivered up to the end of the recording.
+    /// </summary>
+    public void CompleteVideoInput()
+    {
+        try { _videoPipeServer?.Disconnect(); } catch { /* already gone */ }
+        try { _videoPipeServer?.Dispose(); } catch { /* already gone */ }
+    }
+
     /// <summary>Signals end-of-stream to ffmpeg and waits for it to finalize the output file.</summary>
+    /// <remarks>
+    /// This used to close the pipes and immediately send ffmpeg a <c>q</c>. <c>q</c> makes ffmpeg stop reading
+    /// at once, which discards audio and video that its input threads had already read but not yet encoded — the
+    /// tail of whichever stream had the larger backlog. Closing the pipes is a clean end-of-file on every input;
+    /// ffmpeg encodes everything it has, writes the trailer and exits by itself. <c>q</c> and then a kill remain
+    /// only as fallbacks for an encoder that does not finish.
+    /// </remarks>
     public async Task StopAsync()
     {
         try { _videoPipeServer?.Disconnect(); } catch { /* already gone */ }
@@ -350,29 +368,33 @@ public sealed class FFmpegEncoderService : IDisposable
 
         try
         {
+            // High resolutions/bitrates (e.g. a software x264 encode scaled up to 4K) can leave the encoder
+            // with several seconds of backlog to encode once input stops, so a natural exit gets a generous
+            // allowance before the fallback is used.
+            await _process.WaitForExitAsync(new CancellationTokenSource(TimeSpan.FromSeconds(30)).Token);
+            return;
+        }
+        catch (OperationCanceledException)
+        {
+            // fall through to the fallbacks
+        }
+
+        try
+        {
             if (!_process.HasExited)
             {
                 await _process.StandardInput.WriteAsync("q");
                 await _process.StandardInput.FlushAsync();
             }
-        }
-        catch
-        {
-            // Process may already be exiting; the pipe EOF above is usually enough on its own.
-        }
-
-        try
-        {
-            // High resolutions/bitrates (e.g. a software x264 encode scaled up to 4K) can leave the
-            // encoder with several seconds of backlog still to churn through once input stops; a short
-            // grace period here risks a forced kill mid-encode, which — combined with fragmented MP4
-            // above — no longer corrupts the whole file, but would still truncate it early. 30s gives a
-            // real recording a fair chance to finish encoding its tail before we give up on it.
-            await _process.WaitForExitAsync(new CancellationTokenSource(TimeSpan.FromSeconds(30)).Token);
+            await _process.WaitForExitAsync(new CancellationTokenSource(TimeSpan.FromSeconds(10)).Token);
         }
         catch (OperationCanceledException)
         {
             try { _process.Kill(entireProcessTree: true); } catch { /* best effort */ }
+        }
+        catch
+        {
+            // Process may already be exiting.
         }
     }
 

@@ -35,9 +35,8 @@ public sealed class AudioCaptureService : IDisposable
     private BufferedWaveProvider? _loopbackBuffer;
     private BufferedWaveProvider? _micBuffer;
     private MixingSampleProvider? _mixer;
-    private Thread? _pumpThread;
-    private Thread? _micPumpThread;
-    private volatile bool _running;
+    private PcmLegPump? _pump;
+    private PcmLegPump? _micPump;
     private Stream? _outputStream;
     private Stream? _micOutputStream;
 
@@ -77,6 +76,41 @@ public sealed class AudioCaptureService : IDisposable
     /// </remarks>
     public volatile bool IsPaused;
 
+    /// <summary>
+    /// <see cref="System.Diagnostics.Stopwatch.GetTimestamp"/> value of the video timeline's t=0, set by the
+    /// recording manager before audio starts; 0 means "don't align" (standalone use, e.g. the level meters).
+    /// </summary>
+    /// <remarks>
+    /// ffmpeg timestamps each rawvideo/PCM input from zero at its own first byte, not from the wall clock,
+    /// and it can only open the audio pipe after the video pipe is already carrying frames (see
+    /// FFmpegEncoderService's remarks). So audio always starts some hundreds of milliseconds after video
+    /// does, and without correction both streams call their first sample "t=0" — sound lands in the file
+    /// that much earlier than the picture it belongs to. The pump therefore opens each stream with exactly
+    /// that much silence, which puts audio and video back on the same clock.
+    /// </remarks>
+    public long TimelineStartTimestamp { get; set; }
+
+    /// <summary>
+    /// Elapsed recording time (pauses excluded) at a <see cref="System.Diagnostics.Stopwatch"/> timestamp. Supplied by
+    /// the recording manager so audio and video share one clock; defaults to time since
+    /// <see cref="TimelineStartTimestamp"/> when unset.
+    /// </summary>
+    public Func<long, double>? ElapsedSecondsAt { get; set; }
+
+    private double ElapsedAt(long ts) =>
+        ElapsedSecondsAt is { } f ? f(ts) : (ts - TimelineStartTimestamp) / (double)System.Diagnostics.Stopwatch.Frequency;
+
+    /// <summary>Seconds of leading silence written to align audio with the video timeline (system/pre-mixed pipe only) — diagnostic.</summary>
+    public double LeadSilenceSeconds => _pump?.LeadSilenceSeconds ?? _lastStats.Lead;
+
+    /// <summary>Bytes of PCM handed to the encoder on the system/pre-mixed pipe, leading silence included — diagnostic.</summary>
+    public long BytesWritten => _pump?.WrittenBytes ?? _lastStats.Bytes;
+
+    /// <summary>Counters of the pump that just finished, kept after teardown for the diagnostics summary.</summary>
+    public (double Lead, long Bytes, double StaleMs, double UnderrunMs, double MaxQueuedMs, double WriteStallMs) PumpStats =>
+        _pump is { } p ? (p.LeadSilenceSeconds, p.WrittenBytes, p.StaleDroppedMs, p.UnderrunMs, p.MaxQueuedMs, p.WriteStallMs) : _lastStats;
+    private (double Lead, long Bytes, double StaleMs, double UnderrunMs, double MaxQueuedMs, double WriteStallMs) _lastStats;
+
     /// <summary>Starts capturing with both sources pre-mixed into one stream. Returns false (and does nothing) if neither source is requested.</summary>
     public bool Start(bool captureSystemAudio, bool captureMicrophone, string? microphoneDeviceId, Stream outputStream)
     {
@@ -96,11 +130,10 @@ public sealed class AudioCaptureService : IDisposable
             if (captureMicrophone) AttachMicrophoneLocked(microphoneDeviceId);
         }
 
-        _running = true;
         IsActive = true;
         SupportsLiveSourceChanges = true;
-        _pumpThread = new Thread(() => PumpLoop(_mixer.ToWaveProvider16(), _outputStream)) { IsBackground = true, Name = "AudioPump" };
-        _pumpThread.Start();
+        _pump = new PcmLegPump(_mixer.ToWaveProvider16(), outputStream, ElapsedAt, MixedBacklogMs, DiscardBuffers, () => IsPaused);
+        _pump.Start();
 
         return true;
     }
@@ -189,10 +222,9 @@ public sealed class AudioCaptureService : IDisposable
         var provider = BuildResampledProvider(OpenLoopback(enumerator).ToSampleProvider(), targetFormat).ToWaveProvider16();
         _loopback!.StartRecording();
 
-        _running = true;
         IsActive = true;
-        _pumpThread = new Thread(() => PumpLoop(provider, _outputStream)) { IsBackground = true, Name = "AudioPump-System" };
-        _pumpThread.Start();
+        _pump = new PcmLegPump(provider, systemOutputStream, ElapsedAt, () => _loopbackBuffer?.BufferedDuration.TotalMilliseconds ?? 0, () => _loopbackBuffer?.ClearBuffer(), () => IsPaused);
+        _pump.Start();
     }
 
     /// <summary>Dual-leg mode, stage 2: starts the microphone flowing into its own, separate pipe (to be noise-suppressed by ffmpeg). Call only after <see cref="StartDualSystemLeg"/>.</summary>
@@ -205,8 +237,8 @@ public sealed class AudioCaptureService : IDisposable
         var provider = BuildResampledProvider(OpenMic(enumerator, microphoneDeviceId).ToSampleProvider(), targetFormat).ToWaveProvider16();
         _mic!.StartRecording();
 
-        _micPumpThread = new Thread(() => PumpLoop(provider, _micOutputStream)) { IsBackground = true, Name = "AudioPump-Mic" };
-        _micPumpThread.Start();
+        _micPump = new PcmLegPump(provider, micOutputStream, ElapsedAt, () => _micBuffer?.BufferedDuration.TotalMilliseconds ?? 0, () => _micBuffer?.ClearBuffer(), () => IsPaused);
+        _micPump.Start();
     }
 
     private BufferedWaveProvider OpenLoopback(MMDeviceEnumerator enumerator)
@@ -260,44 +292,54 @@ public sealed class AudioCaptureService : IDisposable
         return working;
     }
 
-    private void PumpLoop(IWaveProvider provider16, Stream? outputStream)
+    private double MixedBacklogMs()
     {
-        var chunk = new byte[SampleRate / 100 * Channels * (BitsPerSample / 8)]; // 10ms chunks
-
-        while (_running)
-        {
-            int read = provider16.Read(chunk, 0, chunk.Length);
-            if (read <= 0) continue;
-
-            // Paused: the samples were still read above (draining the capture buffer so nothing stale
-            // replays on resume), but nothing reaches the encoder — see IsPaused's remarks.
-            if (IsPaused) continue;
-
-            try
-            {
-                outputStream?.Write(chunk, 0, read);
-            }
-            catch (IOException)
-            {
-                break;
-            }
-            catch (ObjectDisposedException)
-            {
-                break;
-            }
-        }
+        var loop = _loopbackBuffer;
+        var mic = _micBuffer;
+        return Math.Max(loop?.BufferedDuration.TotalMilliseconds ?? 0, mic?.BufferedDuration.TotalMilliseconds ?? 0);
     }
 
+    private void DiscardBuffers()
+    {
+        _loopbackBuffer?.ClearBuffer();
+        _micBuffer?.ClearBuffer();
+    }
+
+    /// <summary>
+    /// Ends the recording's audio at <paramref name="stopTimestamp"/>: produces everything up to that instant,
+    /// waits for it to reach the encoder's pipe, then tears the devices down. The caller should close the video
+    /// input first so ffmpeg is free to consume the audio tail (it will not interleave audio ahead of video that
+    /// might still arrive).
+    /// </summary>
+    public void StopAndDrain(long stopTimestamp)
+    {
+        if (!IsActive) return;
+        _pump?.RequestStop(stopTimestamp);
+        _micPump?.RequestStop(stopTimestamp);
+        bool drained = (_pump?.WaitFinished(TimeSpan.FromSeconds(10)) ?? true) & (_micPump?.WaitFinished(TimeSpan.FromSeconds(10)) ?? true);
+        DrainTimedOut = !drained;
+        Teardown();
+    }
+
+    /// <summary>True if the last <see cref="StopAndDrain"/> gave up waiting for the encoder to accept the audio tail.</summary>
+    public bool DrainTimedOut { get; private set; }
+
+    /// <summary>Stops immediately, without delivering what is still queued (failure and dispose paths).</summary>
     public void Stop()
     {
         if (!IsActive) return;
+        _pump?.Abort();
+        _micPump?.Abort();
+        Teardown();
+    }
+
+    private void Teardown()
+    {
         IsActive = false;
         SupportsLiveSourceChanges = false;
-        _running = false;
-        _pumpThread?.Join(1000);
-        _pumpThread = null;
-        _micPumpThread?.Join(1000);
-        _micPumpThread = null;
+        if (_pump is { } p) _lastStats = (p.LeadSilenceSeconds, p.WrittenBytes, p.StaleDroppedMs, p.UnderrunMs, p.MaxQueuedMs, p.WriteStallMs);
+        _pump = null;
+        _micPump = null;
 
         lock (_liveLock)
         {
